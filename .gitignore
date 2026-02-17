@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.tmp-tests/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data
+data/db.sqlite
+data/secrets/
+data/projects/*/saves/
+data/logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+
+# Cache
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+.secret/
+.claude/
+.cache/
+data/*.png
+data/*.jpg
+data/*.json
+

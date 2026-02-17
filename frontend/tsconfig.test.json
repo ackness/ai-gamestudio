@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": ".tmp-tests",
+    "types": ["node"],
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": [
+    "tests/**/*.ts",
+    "src/types/index.ts",
+    "src/utils/sessionBootstrap.ts",
+    "src/stores/sessionTurnUtils.ts",
+    "src/stores/blockInteractionStore.ts",
+    "src/stores/notificationStore.ts",
+    "src/components/status/eventTree.ts",
+    "src/components/game/blockInteractionState.ts",
+    "src/components/game/AutoGuideRenderer.tsx",
+    "src/components/game/CharacterSheetRenderer.tsx",
+    "src/components/game/ChoicesRenderer.tsx",
+    "src/components/game/FormRenderer.tsx",
+    "src/services/blockRenderers.ts"
+  ]
+}

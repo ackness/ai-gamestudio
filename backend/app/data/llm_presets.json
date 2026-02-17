@@ -1,0 +1,20 @@
+{
+  "presets": [
+    {
+      "id": "deepseek-chat",
+      "name": "DeepSeek Chat",
+      "provider": "deepseek",
+      "model": "deepseek/deepseek-chat",
+      "api_base": "https://api.deepseek.com",
+      "description": "DeepSeek V3.2 对话模型"
+    },
+    {
+      "id": "openrouter-custom",
+      "name": "OpenRouter (自定义模型)",
+      "provider": "openrouter",
+      "model": "",
+      "api_base": "https://openrouter.ai/api/v1",
+      "description": "使用 OpenRouter 调用任意模型，格式: openrouter/<提供商>/<模型名>"
+    }
+  ]
+}

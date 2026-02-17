@@ -1,0 +1,146 @@
+#:schema https://mise.jdx.dev/schema/mise.json
+
+[env]
+# 项目级环境变量
+PYTHONDONTWRITEBYTECODE = "1"
+VIRTUAL_ENV = "{{config_root}}/.venv"
+
+[tools]
+python = "3.12"
+node = "22"
+uv = "latest"
+
+[settings]
+python.uv_venv_auto = true
+
+# =============================================================================
+# 开发环境设置
+# =============================================================================
+
+[tasks."setup"]
+description = "初始化完整开发环境"
+depends = ["setup:backend", "setup:frontend"]
+
+[tasks."setup:backend"]
+description = "初始化 Python 后端环境"
+run = "uv sync"
+
+[tasks."setup:frontend"]
+description = "初始化前端环境"
+run = """
+cd frontend && npm install
+"""
+
+# =============================================================================
+# 开发服务器
+# =============================================================================
+
+[tasks."dev"]
+description = "启动完整开发环境（后端 + 前端）"
+depends = ["dev:backend", "dev:frontend"]
+
+[tasks."dev:backend"]
+description = "启动 FastAPI 开发服务器"
+run = "uv run uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000"
+
+[tasks."dev:frontend"]
+description = "启动 Vite 前端开发服务器"
+run = "cd frontend && npm run dev"
+
+# =============================================================================
+# 构建与生产
+# =============================================================================
+
+[tasks."build"]
+description = "构建前端生产版本"
+run = "cd frontend && npm run build"
+
+[tasks."start"]
+description = "生产模式启动（构建前端 + 启动后端）"
+depends = ["build"]
+run = "uv run uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"
+
+# =============================================================================
+# 代码质量
+# =============================================================================
+
+[tasks."lint"]
+description = "运行所有 lint 检查"
+depends = ["lint:backend", "lint:frontend"]
+
+[tasks."lint:backend"]
+description = "Python 代码 lint"
+run = "uv run ruff check backend/"
+
+[tasks."lint:frontend"]
+description = "前端代码 lint"
+run = "cd frontend && npm run lint"
+
+[tasks."format"]
+description = "格式化所有代码"
+depends = ["format:backend", "format:frontend"]
+
+[tasks."format:backend"]
+description = "格式化 Python 代码"
+run = "uv run ruff format backend/"
+
+[tasks."format:frontend"]
+description = "格式化前端代码"
+run = "cd frontend && npm run format"
+
+# =============================================================================
+# 测试
+# =============================================================================
+
+[tasks."test"]
+description = "运行所有测试"
+depends = ["test:backend", "test:frontend"]
+
+[tasks."test:backend"]
+description = "运行后端测试"
+run = "uv run pytest backend/tests/ -v"
+
+[tasks."test:frontend"]
+description = "运行前端测试"
+run = "cd frontend && npm test"
+
+# =============================================================================
+# 数据库
+# =============================================================================
+
+[tasks."db:init"]
+description = "初始化 SQLite 数据库"
+run = "uv run python -m backend.app.db.init"
+
+[tasks."db:reset"]
+description = "重置数据库（删除并重建）"
+run = """
+rm -f data/db.sqlite
+mise run db:init
+"""
+
+# =============================================================================
+# 插件管理
+# =============================================================================
+
+[tasks."plugin:validate"]
+description = "验证所有插件的 PLUGIN.md 格式"
+run = "uv run python -m backend.app.core.plugin_engine validate plugins/"
+
+[tasks."plugin:list"]
+description = "列出所有已安装插件"
+run = "uv run python -m backend.app.core.plugin_engine list plugins/"
+
+# =============================================================================
+# 工具
+# =============================================================================
+
+[tasks."clean"]
+description = "清理构建产物和缓存"
+run = """
+rm -rf frontend/dist
+rm -rf backend/__pycache__
+rm -rf .pytest_cache
+rm -rf .ruff_cache
+find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+"""

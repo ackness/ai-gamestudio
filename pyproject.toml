@@ -1,0 +1,37 @@
+[project]
+name = "ai-gamestudio"
+version = "0.1.0"
+description = "LLM-native low-code RPG game editor and runtime"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # Web framework
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "websockets>=14.0",
+    # LLM
+    "litellm>=1.60.0",
+    # Database
+    "sqlmodel>=0.0.24",
+    "aiosqlite>=0.21.0",
+    # Scheduler
+    "apscheduler>=3.11.0",
+    # Plugin sandbox
+    "RestrictedPython>=7.4",
+    # Logging
+    "loguru>=0.7.0",
+    # Utilities
+    "pyyaml>=6.0",
+    "python-frontmatter>=1.1.0",
+    "jinja2>=3.1.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "greenlet>=3.3.1",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9.0",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+]
