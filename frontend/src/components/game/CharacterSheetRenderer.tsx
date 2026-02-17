@@ -1,0 +1,183 @@
+import { useState } from 'react'
+import type { BlockRendererProps } from '../../services/blockRenderers'
+import {
+  EMPTY_BLOCK_INTERACTION,
+  useBlockInteractionStore,
+} from '../../stores/blockInteractionStore'
+import { buildCharacterSheetInteractionState } from './blockInteractionState'
+
+interface CharacterSheetData {
+  character_id: string
+  name: string
+  editable_fields: string[]
+  attributes: Record<string, string | number>
+  inventory: (string | { name: string; [key: string]: unknown })[]
+  description?: string
+  role?: string
+}
+
+function normalizeInventory(items: CharacterSheetData['inventory']): string[] {
+  return items.map((item) =>
+    typeof item === 'string' ? item : item.name || String(item)
+  )
+}
+
+export function CharacterSheetRenderer({ data, blockId, onAction, locked }: BlockRendererProps) {
+  if (!data || typeof data !== 'object') return null
+
+  const {
+    character_id,
+    name,
+    editable_fields = [],
+    attributes = {},
+    inventory: rawInventory = [],
+    description,
+    role,
+  } = data as CharacterSheetData
+
+  const inventory = normalizeInventory(rawInventory)
+  const interaction = useBlockInteractionStore(
+    (s) => s.interactions[blockId] ?? EMPTY_BLOCK_INTERACTION,
+  )
+  const setInteraction = useBlockInteractionStore((s) => s.setInteraction)
+  const interactionState = buildCharacterSheetInteractionState(
+    name,
+    attributes,
+    interaction,
+    locked,
+  )
+  const [editedName, setEditedName] = useState(interactionState.editedName)
+  const [editedAttrs, setEditedAttrs] = useState<Record<string, string | number>>(
+    interactionState.editedAttrs,
+  )
+  const confirmed = interactionState.confirmed
+
+  const isEditable = (field: string) => !locked && !confirmed && editable_fields.includes(field)
+
+  const updateAttr = (key: string, value: string | number) => {
+    setEditedAttrs((prev) => {
+      const next = { ...prev, [key]: value }
+      setInteraction(blockId, { editedAttrs: next })
+      return next
+    })
+  }
+
+  const handleConfirm = () => {
+    setInteraction(blockId, { confirmed: true, editedName, editedAttrs })
+
+    const changes: Record<string, string | number> = {}
+    if (isEditable('name') && editedName !== name) {
+      changes.name = editedName
+    }
+    for (const key of editable_fields) {
+      if (key !== 'name' && editedAttrs[key] !== attributes[key]) {
+        changes[key] = editedAttrs[key]
+      }
+    }
+
+    if (character_id === 'new') {
+      onAction(
+        JSON.stringify({
+          type: 'form_submit',
+          form_id: 'character_creation',
+          values: { name: editedName, ...editedAttrs },
+        })
+      )
+    } else {
+      onAction(
+        JSON.stringify({
+          type: 'character_edit',
+          character_id,
+          changes,
+        })
+      )
+    }
+  }
+
+  const borderClass = confirmed ? 'border-emerald-600' : 'border-slate-700'
+
+  return (
+    <div className={`bg-slate-800/60 border ${borderClass} rounded-xl px-4 py-3 space-y-3 max-w-[80%]`}>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          {isEditable('name') && !confirmed ? (
+            <input
+              type="text"
+              value={editedName}
+              onChange={(e) => {
+                setEditedName(e.target.value)
+                setInteraction(blockId, { editedName: e.target.value })
+              }}
+              className="bg-slate-700 border border-emerald-600/50 rounded px-2 py-1 text-sm text-slate-200 font-medium focus:outline-none focus:border-emerald-500"
+            />
+          ) : (
+            <h3 className="text-slate-200 text-sm font-medium">{confirmed ? editedName : name}</h3>
+          )}
+          {role && <span className="text-xs text-slate-500 ml-2">{role}</span>}
+        </div>
+        {character_id === 'new' && !confirmed && (
+          <span className="text-xs text-cyan-400 bg-cyan-900/30 px-2 py-0.5 rounded">新角色</span>
+        )}
+      </div>
+
+      {/* Description */}
+      {description && <p className="text-slate-400 text-xs">{description}</p>}
+
+      {/* Attributes */}
+      {Object.keys(editedAttrs).length > 0 && (
+        <div>
+          <p className="text-xs text-slate-500 mb-1">属性</p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+            {Object.entries(editedAttrs).map(([key, value]) => (
+              <div key={key} className="flex items-center justify-between text-sm">
+                <span className="text-slate-400">{key}</span>
+                {isEditable(key) && !confirmed ? (
+                  <input
+                    type={typeof value === 'number' ? 'number' : 'text'}
+                    value={editedAttrs[key] ?? ''}
+                    onChange={(e) =>
+                      updateAttr(
+                        key,
+                        typeof value === 'number' ? Number(e.target.value) : e.target.value
+                      )
+                    }
+                    className="w-20 bg-slate-700 border border-emerald-600/50 rounded px-1.5 py-0.5 text-xs text-slate-200 text-right focus:outline-none focus:border-emerald-500"
+                  />
+                ) : (
+                  <span className="text-slate-200">{String(confirmed ? editedAttrs[key] : value)}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Inventory */}
+      {inventory.length > 0 && (
+        <div>
+          <p className="text-xs text-slate-500 mb-1">物品</p>
+          <div className="flex flex-wrap gap-1">
+            {inventory.map((item, i) => (
+              <span key={i} className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">
+                {item}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Confirm button */}
+      {!confirmed && (
+        <button
+          onClick={handleConfirm}
+          className="text-xs px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded transition-colors"
+        >
+          确认
+        </button>
+      )}
+
+      {confirmed && <p className="text-emerald-500 text-xs">已确认</p>}
+    </div>
+  )
+}
