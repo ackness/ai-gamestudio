@@ -3,11 +3,12 @@ import Markdown from 'react-markdown'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { StreamStatus } from '../../stores/sessionStore'
 import { getBlockRenderer } from '../../services/blockRenderers'
-import type { Message } from '../../types'
+import type { Message, StoryImageData } from '../../types'
 
 interface Props {
   onAction: (msg: string) => void
   onRetry?: () => void
+  onGenerateImage?: (messageId: string) => void
 }
 
 /** Fallback for block types with no registered renderer. */
@@ -68,6 +69,9 @@ function MessageActions({
   onDelete,
   onRegenerate,
   onEdit,
+  onGenerateImage,
+  imageLoading,
+  hasImage,
 }: {
   msg: Message
   isLast: boolean
@@ -75,6 +79,9 @@ function MessageActions({
   onDelete: () => void
   onRegenerate?: () => void
   onEdit?: () => void
+  onGenerateImage?: () => void
+  imageLoading?: boolean
+  hasImage?: boolean
 }) {
   return (
     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -84,6 +91,20 @@ function MessageActions({
           <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" strokeWidth="2" />
         </svg>
       </button>
+      {msg.role === 'assistant' && onGenerateImage && (
+        <button
+          onClick={onGenerateImage}
+          disabled={imageLoading}
+          className="p-1 text-slate-500 hover:text-purple-400 rounded transition-colors disabled:animate-pulse"
+          title={hasImage ? "重新生成配图" : "生成配图"}
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <polyline points="21 15 16 10 5 21" />
+          </svg>
+        </button>
+      )}
       {msg.role === 'assistant' && isLast && onRegenerate && (
         <button onClick={onRegenerate} className="p-1 text-slate-500 hover:text-slate-300 rounded transition-colors" title="重新生成">
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
@@ -165,10 +186,59 @@ function RawMessageViewer({ msg, onClose }: { msg: Message; onClose: () => void 
   )
 }
 
-export function ChatMessages({ onAction, onRetry }: Props) {
-  const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom } = useSessionStore()
+/** Fullscreen image preview modal. */
+function ImagePreviewModal({ image, onClose }: { image: StoryImageData; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center" onClick={onClose}>
+      <img
+        src={image.image_url}
+        alt={image.title || 'Story image'}
+        className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  )
+}
+
+/** Inline image strip rendered below a message. */
+function MessageImageStrip({
+  images,
+  onPreview,
+}: {
+  images: StoryImageData[]
+  onPreview: (image: StoryImageData) => void
+}) {
+  return (
+    <div className="flex justify-start pl-1">
+      <div className="max-w-[80%] space-y-1.5">
+        {images.map((img, i) => (
+          <div key={img.image_id || i} className="relative group/img">
+            <img
+              src={img.image_url}
+              alt={img.title || 'Story image'}
+              className="w-full max-h-[400px] object-contain rounded-xl border border-slate-700/50
+                         bg-slate-900 shadow-lg cursor-zoom-in"
+              loading="lazy"
+              onClick={() => onPreview(img)}
+            />
+            {img.title && (
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent
+                              rounded-b-xl px-3 py-1.5 opacity-0 group-hover/img:opacity-100 transition-opacity">
+                <span className="text-xs text-white/80">{img.title}</span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
+  const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom, messageImages, imageLoadingMessages } = useSessionStore()
   const bottomRef = useRef<HTMLDivElement>(null)
   const [inspectMsg, setInspectMsg] = useState<Message | null>(null)
+  const [previewImage, setPreviewImage] = useState<StoryImageData | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
 
@@ -226,9 +296,9 @@ export function ChatMessages({ onAction, onRetry }: Props) {
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-3">
       {messages.length === 0 && !isStreaming && (
-        <div className="text-center text-slate-500 py-16">
-          <p className="text-lg">Begin your adventure</p>
-          <p className="text-sm mt-1">Send a message to start the game</p>
+        <div className="text-center py-16 space-y-2">
+          <p className="text-base font-medium" style={{ color: 'rgba(127,168,196,0.4)' }}>Begin your adventure</p>
+          <p className="text-xs" style={{ color: 'rgba(127,168,196,0.25)' }}>Send a message to start the game</p>
         </div>
       )}
 
@@ -240,7 +310,13 @@ export function ChatMessages({ onAction, onRetry }: Props) {
         if (msg.role === 'system') {
           return (
             <div key={msg.id} className="flex justify-center group">
-              <div className="bg-slate-700/50 text-slate-400 text-xs px-3 py-1.5 rounded-full max-w-md text-center">
+              <div className="text-xs px-3 py-1.5 rounded-full max-w-md text-center"
+                style={{
+                  background: 'rgba(139, 92, 246, 0.08)',
+                  border: '1px solid rgba(139, 92, 246, 0.15)',
+                  color: 'rgba(167, 139, 250, 0.6)',
+                }}
+              >
                 {msg.content}
               </div>
             </div>
@@ -289,7 +365,12 @@ export function ChatMessages({ onAction, onRetry }: Props) {
                   onEdit={() => handleEdit(msg)}
                 />
                 <div
-                  className="bg-emerald-900/60 border border-emerald-800/50 text-slate-100 px-4 py-2.5 rounded-2xl rounded-br-sm max-w-[75%] text-sm cursor-pointer hover:border-emerald-700/70 transition-colors"
+                  className="px-4 py-2.5 rounded-2xl rounded-br-sm max-w-[75%] text-sm cursor-pointer transition-all duration-200"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(16,185,129,0.18) 0%, rgba(6,182,212,0.12) 100%)',
+                    border: '1px solid rgba(16, 185, 129, 0.25)',
+                    color: '#dff0f7',
+                  }}
                   onClick={() => setInspectMsg(msg)}
                   title="点击查看原始数据"
                 >
@@ -306,7 +387,13 @@ export function ChatMessages({ onAction, onRetry }: Props) {
             <div className="flex justify-start">
               <div className="flex items-end gap-1">
                 <div
-                  className="bg-slate-800 border border-slate-700 text-slate-200 px-4 py-2.5 rounded-2xl rounded-bl-sm max-w-[80%] text-sm markdown-content cursor-pointer hover:border-slate-600 transition-colors"
+                  className="px-4 py-2.5 rounded-2xl rounded-bl-sm max-w-[80%] text-sm markdown-content cursor-pointer transition-all duration-200"
+                  style={{
+                    background: 'rgba(16, 28, 46, 0.75)',
+                    border: '1px solid rgba(148, 163, 184, 0.1)',
+                    color: '#dff0f7',
+                    backdropFilter: 'blur(8px)',
+                  }}
                   onClick={() => setInspectMsg(msg)}
                   title="点击查看原始数据"
                 >
@@ -318,9 +405,27 @@ export function ChatMessages({ onAction, onRetry }: Props) {
                   onCopy={() => handleCopy(msg.content)}
                   onDelete={() => handleDelete(msg.id)}
                   onRegenerate={isLast && !isStreaming ? onRetry : undefined}
+                  onGenerateImage={onGenerateImage ? () => onGenerateImage(msg.id) : undefined}
+                  imageLoading={imageLoadingMessages.has(msg.id)}
+                  hasImage={!!messageImages[msg.id]?.length}
                 />
               </div>
             </div>
+            {/* Inline story images for this message */}
+            {messageImages[msg.id]?.length > 0 && (
+              <MessageImageStrip
+                images={messageImages[msg.id]}
+                onPreview={setPreviewImage}
+              />
+            )}
+            {imageLoadingMessages.has(msg.id) && (
+              <div className="flex justify-start pl-1">
+                <div className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 max-w-[80%] flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs text-slate-400">生成配图中...</span>
+                </div>
+              </div>
+            )}
             {/* Render blocks attached to this message */}
             {msg.blocks && msg.blocks.length > 0 && (
               <BlockList
@@ -336,16 +441,30 @@ export function ChatMessages({ onAction, onRetry }: Props) {
 
       {isStreaming && streamingContent && (
         <div className="flex justify-start">
-          <div className="bg-slate-800 border border-slate-700 text-slate-200 px-4 py-2.5 rounded-2xl rounded-bl-sm max-w-[80%] text-sm markdown-content">
+          <div className="px-4 py-2.5 rounded-2xl rounded-bl-sm max-w-[80%] text-sm markdown-content"
+            style={{
+              background: 'rgba(16, 28, 46, 0.75)',
+              border: '1px solid rgba(16, 185, 129, 0.15)',
+              color: '#dff0f7',
+              backdropFilter: 'blur(8px)',
+              boxShadow: '0 0 20px rgba(16, 185, 129, 0.05)',
+            }}
+          >
             <Markdown>{streamingContent}</Markdown>
-            <span className="inline-block w-2 h-4 bg-cyan-400 animate-pulse ml-0.5" />
+            <span className="streaming-cursor" />
           </div>
         </div>
       )}
 
       {isStreaming && !streamingContent && (
         <div className="flex justify-start">
-          <div className="bg-slate-800 border border-slate-700 text-slate-400 px-4 py-2.5 rounded-2xl rounded-bl-sm text-sm">
+          <div className="px-4 py-2.5 rounded-2xl rounded-bl-sm text-sm"
+            style={{
+              background: 'rgba(16, 28, 46, 0.75)',
+              border: '1px solid rgba(148, 163, 184, 0.08)',
+              color: 'rgba(127, 168, 196, 0.6)',
+            }}
+          >
             <span className="flex gap-1">
               <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
               <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -375,6 +494,9 @@ export function ChatMessages({ onAction, onRetry }: Props) {
 
       {/* Raw message inspector */}
       {inspectMsg && <RawMessageViewer msg={inspectMsg} onClose={() => setInspectMsg(null)} />}
+
+      {/* Image preview modal */}
+      {previewImage && <ImagePreviewModal image={previewImage} onClose={() => setPreviewImage(null)} />}
     </div>
   )
 }

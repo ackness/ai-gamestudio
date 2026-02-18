@@ -9,15 +9,34 @@ interface Props {
 
 export function SceneBar({ currentScene, scenes, onSceneSwitch }: Props) {
   const [showDropdown, setShowDropdown] = useState(false)
-
   const otherScenes = scenes.filter((s) => s.id !== currentScene.id)
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2 bg-slate-800/80 border-b border-slate-700 text-sm">
+    <div
+      className="flex items-center gap-3 px-4 py-2 text-sm"
+      style={{
+        background: 'rgba(10, 20, 37, 0.8)',
+        borderBottom: '1px solid rgba(148, 163, 184, 0.08)',
+        backdropFilter: 'blur(8px)',
+      }}
+    >
       <div className="flex items-center gap-2 min-w-0 flex-1">
-        <span className="text-emerald-400 font-medium truncate">{currentScene.name}</span>
+        {/* Scene indicator dot */}
+        <span
+          className="w-1.5 h-1.5 rounded-full shrink-0"
+          style={{
+            background: '#10b981',
+            boxShadow: '0 0 6px rgba(16, 185, 129, 0.6)',
+          }}
+        />
+        <span className="font-medium truncate" style={{ color: '#67c4a0', fontSize: '0.8rem' }}>
+          {currentScene.name}
+        </span>
         {currentScene.description && (
-          <span className="text-slate-500 truncate hidden sm:inline">
+          <span
+            className="truncate hidden sm:inline text-xs"
+            style={{ color: 'rgba(127, 168, 196, 0.4)' }}
+          >
             — {currentScene.description}
           </span>
         )}
@@ -27,12 +46,28 @@ export function SceneBar({ currentScene, scenes, onSceneSwitch }: Props) {
         <div className="relative">
           <button
             onClick={() => setShowDropdown(!showDropdown)}
-            className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors whitespace-nowrap"
+            className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-colors"
+            style={{
+              background: 'rgba(148, 163, 184, 0.07)',
+              border: '1px solid rgba(148, 163, 184, 0.12)',
+              color: 'rgba(127, 168, 196, 0.7)',
+            }}
           >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M2 4l3 3 3-3" />
+            </svg>
             切换场景
           </button>
           {showDropdown && (
-            <div className="absolute right-0 top-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-10 min-w-[160px]">
+            <div
+              className="absolute right-0 top-full mt-1.5 rounded-xl z-10 min-w-[160px] overflow-hidden"
+              style={{
+                background: 'rgba(16, 28, 46, 0.96)',
+                border: '1px solid rgba(148, 163, 184, 0.12)',
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+                backdropFilter: 'blur(16px)',
+              }}
+            >
               {otherScenes.map((scene) => (
                 <button
                   key={scene.id}
@@ -40,7 +75,16 @@ export function SceneBar({ currentScene, scenes, onSceneSwitch }: Props) {
                     onSceneSwitch(scene.id)
                     setShowDropdown(false)
                   }}
-                  className="block w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-700 first:rounded-t-lg last:rounded-b-lg transition-colors"
+                  className="block w-full text-left px-3 py-2 text-xs transition-colors"
+                  style={{ color: 'rgba(223, 240, 247, 0.7)' }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(16, 185, 129, 0.08)'
+                    e.currentTarget.style.color = '#67c4a0'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent'
+                    e.currentTarget.style.color = 'rgba(223, 240, 247, 0.7)'
+                  }}
                 >
                   {scene.name}
                 </button>
