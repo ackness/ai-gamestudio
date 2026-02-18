@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
+import socket
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -14,6 +16,26 @@ from backend.app.core.logging import setup_logging
 from backend.app.db.engine import init_db
 
 
+def _print_startup_banner(port: int) -> None:
+    from loguru import logger
+
+    in_docker = pathlib.Path("/.dockerenv").exists()
+    hostname = socket.gethostname()
+
+    lines = ["", "  AI GameStudio  "]
+    if in_docker:
+        # Standard Docker / docker compose port mapping
+        lines.append(f"  Local   →  http://localhost:{port}")
+        # OrbStack: containers are reachable at <hostname>.orb.local
+        lines.append(f"  OrbStack→  http://{hostname}.orb.local")
+    else:
+        lines.append(f"  Dev     →  http://localhost:{port}")
+
+    lines.append("")
+    banner = "\n".join(lines)
+    logger.info(banner)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Logging first so every subsequent log goes through loguru
@@ -23,6 +45,10 @@ async def lifespan(app: FastAPI):
     # Ensure data/ directory exists and init DB tables
     pathlib.Path(settings.DATA_DIR).mkdir(parents=True, exist_ok=True)
     await init_db()
+
+    port = int(os.getenv("PORT", "8000"))
+    _print_startup_banner(port)
+
     yield
 
 
