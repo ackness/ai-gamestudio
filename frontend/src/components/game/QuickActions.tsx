@@ -5,7 +5,6 @@ interface Props {
 
 const TRIGGERS = [
   { type: 'guide', label: '输出指引' },
-  { type: 'story_image', label: '输出配图' },
 ]
 
 export function QuickActions({ onTrigger, disabled }: Props) {

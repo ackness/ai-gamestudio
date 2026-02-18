@@ -3,6 +3,11 @@ import type { LlmProfile, PresetModel } from '../../types'
 import { useProjectStore } from '../../stores/projectStore'
 import * as api from '../../services/api'
 import type { LlmInfo } from '../../services/api'
+import {
+  clearBrowserLlmConfig,
+  getBrowserLlmConfig,
+  saveBrowserLlmConfig,
+} from '../../utils/browserLlmConfig'
 
 interface Props {
   llmInfo: LlmInfo | null
@@ -27,6 +32,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
   const [saving, setSaving] = useState(false)
   const [saveProfileName, setSaveProfileName] = useState('')
   const [showSaveProfile, setShowSaveProfile] = useState(false)
+  const browserConfig = currentProject ? getBrowserLlmConfig(currentProject.id) : {}
 
   // Load profiles and preset models on mount
   useEffect(() => {
@@ -57,12 +63,13 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
   // Initialize fields from current project
   useEffect(() => {
     if (currentProject) {
-      setModel(currentProject.llm_model || '')
-      setApiKey('')
-      setApiBase(currentProject.llm_api_base || '')
-      setImageModel(currentProject.image_model || '')
-      setImageApiKey('')
-      setImageApiBase(currentProject.image_api_base || '')
+      const local = getBrowserLlmConfig(currentProject.id)
+      setModel(local.model || currentProject.llm_model || '')
+      setApiKey(local.apiKey || '')
+      setApiBase(local.apiBase || currentProject.llm_api_base || '')
+      setImageModel(local.imageModel || currentProject.image_model || '')
+      setImageApiKey(local.imageApiKey || '')
+      setImageApiBase(local.imageApiBase || currentProject.image_api_base || '')
     }
   }, [currentProject])
 
@@ -83,22 +90,31 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
     
     if (profileId === '') {
       // Reset to project values or empty
-      setModel(currentProject?.llm_model || '')
-      setApiKey('')
-      setApiBase(currentProject?.llm_api_base || '')
+      const local = currentProject ? getBrowserLlmConfig(currentProject.id) : {}
+      setModel(local.model || currentProject?.llm_model || '')
+      setApiKey(local.apiKey || '')
+      setApiBase(local.apiBase || currentProject?.llm_api_base || '')
       return
     }
     
     const profile = profiles.find((p) => p.id === profileId)
     if (!profile || !currentProject) return
     
-    // Auto-apply profile to project immediately
+    // Auto-apply profile to project immediately (API key is browser-local by default)
     setSaving(true)
     try {
-      await api.applyLlmProfile(profile.id, currentProject.id)
+      await updateProject({
+        llm_model: profile.model || undefined,
+        llm_api_key: '',
+        llm_api_base: profile.api_base || undefined,
+      })
+      saveBrowserLlmConfig(currentProject.id, {
+        model: profile.model,
+        apiBase: profile.api_base || undefined,
+      })
       // Update local state to reflect applied profile
       setModel(profile.model)
-      setApiKey('')
+      setApiKey(getBrowserLlmConfig(currentProject.id).apiKey || '')
       setApiBase(profile.api_base || '')
       onSaved() // Refresh parent component
     } catch {
@@ -115,9 +131,10 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
     
     if (presetId === '') {
       // Reset to project values or empty
-      setModel(currentProject?.llm_model || '')
-      setApiKey('')
-      setApiBase(currentProject?.llm_api_base || '')
+      const local = currentProject ? getBrowserLlmConfig(currentProject.id) : {}
+      setModel(local.model || currentProject?.llm_model || '')
+      setApiKey(local.apiKey || '')
+      setApiBase(local.apiBase || currentProject?.llm_api_base || '')
       return
     }
     
@@ -138,8 +155,13 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
       
       await updateProject({
         llm_model: newModel || undefined,
-        llm_api_key: undefined, // Clear key when switching presets - user must enter their own
+        llm_api_key: '',
         llm_api_base: newApiBase || undefined,
+      })
+      saveBrowserLlmConfig(currentProject.id, {
+        model: newModel || undefined,
+        apiKey: undefined,
+        apiBase: newApiBase || undefined,
       })
       
       setModel(newModel)
@@ -157,12 +179,20 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
     if (!currentProject) return
     setSaving(true)
     try {
+      saveBrowserLlmConfig(currentProject.id, {
+        model,
+        apiKey,
+        apiBase,
+        imageModel,
+        imageApiKey,
+        imageApiBase,
+      })
       await updateProject({
         llm_model: model || undefined,
-        llm_api_key: apiKey || undefined,
+        llm_api_key: '',
         llm_api_base: apiBase || undefined,
         image_model: imageModel || undefined,
-        image_api_key: imageApiKey || undefined,
+        image_api_key: '',
         image_api_base: imageApiBase || undefined,
       })
       onSaved()
@@ -180,7 +210,8 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
       const newProfile = await api.createLlmProfile({
         name: saveProfileName.trim(),
         model: model.trim(),
-        api_key: apiKey || undefined,
+        // API key stays in browser storage by default.
+        api_key: undefined,
         api_base: apiBase || undefined,
       })
       setProfiles((prev) => [newProfile, ...prev])
@@ -212,12 +243,13 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
     try {
       await updateProject({
         llm_model: undefined,
-        llm_api_key: undefined,
+        llm_api_key: '',
         llm_api_base: undefined,
         image_model: undefined,
-        image_api_key: undefined,
+        image_api_key: '',
         image_api_base: undefined,
       })
+      clearBrowserLlmConfig(currentProject.id)
       setModel('')
       setApiKey('')
       setApiBase('')
@@ -233,6 +265,10 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
 
   // Determine source for each field
   const getSource = (field: 'model' | 'api_key' | 'api_base') => {
+    const browserVal = field === 'model' ? browserConfig.model :
+                       field === 'api_key' ? browserConfig.apiKey :
+                       browserConfig.apiBase
+    if (browserVal) return 'browser'
     const projectVal = field === 'model' ? currentProject?.llm_model :
                        field === 'api_key' ? (currentProject?.has_llm_api_key ? '***' : null) :
                        currentProject?.llm_api_base
@@ -246,6 +282,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
 
   const sourceLabel = (field: 'model' | 'api_key' | 'api_base') => {
     const src = getSource(field)
+    if (src === 'browser') return 'browser'
     if (src === 'project') return 'project'
     if (src === 'env') return '.env'
     return ''
@@ -402,7 +439,13 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
               type="password"
               value={imageApiKey}
               onChange={(e) => setImageApiKey(e.target.value)}
-              placeholder={currentProject?.has_image_api_key ? '(set in project/.env)' : 'sk-...'}
+              placeholder={
+                browserConfig.imageApiKey
+                  ? '(set in browser)'
+                  : currentProject?.has_image_api_key
+                    ? '(set in project/.env)'
+                    : 'sk-...'
+              }
               className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
             />
           </div>

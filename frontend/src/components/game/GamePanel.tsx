@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
-import type { ArchiveVersion, Session, Character, GameEvent } from '../../types'
+import type { ArchiveVersion, Session, Character, GameEvent, StoryImageData } from '../../types'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useGameStateStore } from '../../stores/gameStateStore'
 import { useProjectStore } from '../../stores/projectStore'
@@ -18,6 +18,10 @@ import { DebugLogPanel } from './DebugLogPanel'
 import { SessionSelector } from './SessionSelector'
 import * as api from '../../services/api'
 import type { LlmInfo } from '../../services/api'
+import {
+  buildBrowserImageOverrides,
+  buildBrowserLlmOverrides,
+} from '../../utils/browserLlmConfig'
 
 interface Props {
   currentSession: Session | null
@@ -52,6 +56,7 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
   const [archiveBusy, setArchiveBusy] = useState(false)
   const [showRestoreModal, setShowRestoreModal] = useState(false)
   const [initError, setInitError] = useState<string | null>(null)
+  const [wsStatus, setWsStatus] = useState<'connected' | 'reconnecting' | 'disconnected'>('connected')
   const { currentProject } = useProjectStore()
   const {
     sessions,
@@ -75,6 +80,9 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
     switchSession,
     fetchSessions,
     deleteSession,
+    setMessageImage,
+    setImageLoading,
+    hydrateMessageImages,
   } = useSessionStore()
   const { setCharacters, mergeCharacters, setWorldState, addEvent, setEvents } = useGameStateStore()
 
@@ -126,19 +134,45 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
     setWorldState({})
 
     const ws = new GameWebSocket()
+    ws.setLlmOverrideResolver(() => {
+      const projectId = useProjectStore.getState().currentProject?.id ?? null
+      return buildBrowserLlmOverrides(projectId)
+    })
+    ws.setImageOverrideResolver(() => {
+      const projectId = useProjectStore.getState().currentProject?.id ?? null
+      return buildBrowserImageOverrides(projectId)
+    })
     wsRef.current = ws
+
+    // Reset connection status for new session
+    setWsStatus('connected')
+
+    ws.onConnected = () => {
+      setWsStatus('connected')
+    }
+
+    ws.onReconnecting = () => {
+      setWsStatus('reconnecting')
+    }
+
+    ws.onDisconnected = () => {
+      setWsStatus('disconnected')
+      setStreaming(false)
+      setStreamStatus('error')
+      clearStreamContent()
+    }
 
     ws.onChunk = (content) => {
       setStreamStatus('streaming')
       appendStreamContent(content)
     }
 
-    ws.onDone = (fullContent, turnId, hasBlocks) => {
+    ws.onDone = (fullContent, turnId, hasBlocks, messageId) => {
       setStreaming(false)
       setStreamStatus('done')
       if (fullContent || hasBlocks) {
         addMessage({
-          id: crypto.randomUUID(),
+          id: messageId || crypto.randomUUID(),
           session_id: currentSession.id,
           role: 'assistant',
           content: fullContent || '（结构化响应）',
@@ -253,6 +287,17 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
       flushPendingBlocksForTurn(turnId)
     }
 
+    ws.onMessageImage = (messageId, imageData) => {
+      setImageLoading(messageId, false)
+      if (imageData && (imageData as Record<string, unknown>).status !== 'error') {
+        setMessageImage(messageId, imageData as StoryImageData)
+      }
+    }
+
+    ws.onMessageImageLoading = (messageId) => {
+      setImageLoading(messageId, true)
+    }
+
     ws.onError = (error) => {
       setStreaming(false)
       setStreamStatus('error')
@@ -281,6 +326,9 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
     // Load persisted game state for this session
     api.getCharacters(currentSession.id).then(setCharacters).catch(() => {})
     api.getSessionState(currentSession.id).then((state) => setWorldState(state.world || {})).catch(() => {})
+
+    // Hydrate message images from API
+    hydrateMessageImages(currentSession.id)
 
     // Load scenes and events if session is already in a progressed phase
     if (currentSession.phase === 'playing' || currentSession.phase === 'character_creation') {
@@ -422,6 +470,14 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
       wsRef.current.sendForceTrigger(blockType)
     },
     [isStreaming, setStreaming, setStreamStatus, clearStreamContent],
+  )
+
+  const handleGenerateImage = useCallback(
+    (messageId: string) => {
+      if (!wsRef.current || isStreaming) return
+      wsRef.current.sendGenerateMessageImage(messageId)
+    },
+    [isStreaming],
   )
 
   const handleSceneSwitch = useCallback(
@@ -642,11 +698,32 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
         </div>
       </div>
 
+      {/* Connection status banner */}
+      {wsStatus !== 'connected' && (
+        <div className={`flex items-center gap-2 px-4 py-1.5 text-xs border-b ${
+          wsStatus === 'reconnecting'
+            ? 'bg-amber-900/30 border-amber-700/50 text-amber-300'
+            : 'bg-red-900/30 border-red-700/50 text-red-300'
+        }`}>
+          {wsStatus === 'reconnecting' ? (
+            <>
+              <span className="w-2.5 h-2.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin shrink-0" />
+              <span>正在重连后端...</span>
+            </>
+          ) : (
+            <>
+              <span className="text-red-400 shrink-0">&#10007;</span>
+              <span>连接已断开，请检查后端服务是否运行</span>
+            </>
+          )}
+        </div>
+      )}
+
       {phase === 'init' && <WelcomeScreen onStart={handleInitGame} loading={isStreaming} error={initError} />}
 
       {phase === 'ended' && (
         <>
-          <ChatMessages onAction={handleSend} onRetry={handleRetry} />
+          <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} />
           <div className="px-4 py-3 bg-slate-900/80 border-t border-slate-700 text-center">
             <p className="text-slate-400 text-sm mb-2">游戏结束</p>
             <button
@@ -668,7 +745,7 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
               onSceneSwitch={handleSceneSwitch}
             />
           )}
-          <ChatMessages onAction={handleSend} onRetry={handleRetry} />
+          <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} />
           <QuickActions onTrigger={handleForceTrigger} disabled={isStreaming} />
           <ChatInput onSend={handleSend} disabled={isStreaming} />
         </>
