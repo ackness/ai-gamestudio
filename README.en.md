@@ -117,16 +117,16 @@ Open `http://localhost:5173` to start building your world.
 ### Minimal .env
 
 ```env
-LLM_MODEL=gpt-4o-mini
-LLM_API_KEY=your-api-key-here
-```
-
-### Using DeepSeek
-
-```env
 LLM_MODEL=deepseek/deepseek-chat
 LLM_API_KEY=your-deepseek-key
 LLM_API_BASE=https://api.deepseek.com
+```
+
+### Using OpenAI
+
+```env
+LLM_MODEL=gpt-4o-mini
+LLM_API_KEY=your-openai-key
 ```
 
 ### Using Ollama (local model)

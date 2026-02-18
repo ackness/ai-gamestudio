@@ -18,12 +18,12 @@ class Settings(BaseSettings):
     DATA_DIR: str | None = None
     LOG_DIR: str | None = None
     DATABASE_URL: str | None = None
-    LLM_MODEL: str = "gpt-4o-mini"
+    LLM_MODEL: str = "deepseek/deepseek-chat"
     LLM_API_KEY: str | None = None
-    LLM_API_BASE: str | None = None
+    LLM_API_BASE: str | None = "https://api.deepseek.com"
     IMAGE_GEN_MODEL: str = "gemini-2.5-flash-image-preview"
     IMAGE_GEN_API_KEY: str | None = None
-    IMAGE_GEN_API_BASE: str = "https://api.whatai.cc/v1/chat/completions"
+    IMAGE_GEN_API_BASE: str | None = None
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
     PLUGINS_DIR: str = "plugins"
     TEMPLATES_DIR: str = "templates/worlds"

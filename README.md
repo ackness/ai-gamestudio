@@ -117,16 +117,16 @@ mise run dev:frontend  # Vite，端口 5173
 ### 最小 .env 配置
 
 ```env
-LLM_MODEL=gpt-4o-mini
-LLM_API_KEY=your-api-key-here
-```
-
-### 使用 DeepSeek
-
-```env
 LLM_MODEL=deepseek/deepseek-chat
 LLM_API_KEY=your-deepseek-key
 LLM_API_BASE=https://api.deepseek.com
+```
+
+### 使用 OpenAI
+
+```env
+LLM_MODEL=gpt-4o-mini
+LLM_API_KEY=your-openai-key
 ```
 
 ### 使用 Ollama（本地模型）
