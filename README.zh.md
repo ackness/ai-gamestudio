@@ -94,5 +94,5 @@ DATABASE_URL=postgresql+asyncpg://<user>:<pass>@<host>/<db>
 ## 更多文档
 
 - 架构：`docs/ARCHITECTURE.md`
-- 插件规范：`docs/PLUGIN-SPEC-v2.md`
+- 插件规范：`docs/PLUGIN-SPEC.md`
 - 产品需求：`docs/PRD.md`

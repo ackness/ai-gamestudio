@@ -375,15 +375,18 @@ LLM 响应中的结构化数据通过 `` ```json:<type> `` 代码块传递。这
 | 层级 | 方案 |
 |------|------|
 | 前端框架 | React 19 + Vite (SPA) |
-| UI 组件 | shadcn/ui + Tailwind CSS |
+| UI 样式 | Tailwind CSS + 自定义组件 |
 | 状态管理 | Zustand |
-| Markdown 编辑器 | Milkdown |
+| Markdown 编辑器 | 原生 textarea + react-markdown 预览 |
+| 浏览器存储 | IndexedDB（离线 / Vercel 模式） |
 | 后端框架 | Python FastAPI |
 | ORM | SQLModel (Pydantic + SQLAlchemy) |
-| 数据库 | SQLite + aiosqlite |
+| 数据库 | SQLite（本地）/ PostgreSQL（生产） |
 | LLM 接入 | LiteLLM (100+ provider) |
 | 模板引擎 | Jinja2 |
-| 实时通信 | WebSocket |
+| 实时通信 | WebSocket + HTTP fallback（Vercel 用） |
+| 插件脚本 | Python subprocess（stdin/stdout JSON） |
+| 审计日志 | JSON-lines append-only 文件 |
 
 ---
 
@@ -401,26 +404,41 @@ LLM 响应中的结构化数据通过 `` ```json:<type> `` 代码块传递。这
 
 ---
 
-## 8. MVP 范围（第一阶段）
+## 8. 已实现功能（当前状态）
 
-### 必须实现
-- [ ] Web 端世界观 Markdown 编辑器
-- [ ] 基础游戏对话/交互界面（玩家/NPC/系统消息区分）
-- [ ] LLM API 接入（至少支持一种模型）+ DM Agent 基础实现
-- [ ] Prompt 组装器（世界观 + 插件上下文注入）
-- [ ] 插件加载框架（PLUGIN.md 解析、生命周期管理）
-- [ ] 数据库插件（持久化存储）
-- [ ] 角色插件（基础属性管理 + NPC 人格定义）
+### 核心引擎
+- [x] Web 端世界观 Markdown 编辑器（含模板选择 + AI 生成）
+- [x] 游戏对话/交互界面（流式输出、Block 渲染、会话管理）
+- [x] LiteLLM 接入（100+ 模型供应商，WebSocket + HTTP 双通道）
+- [x] Prompt 组装器（6 位置注入，Jinja2 模板）
+- [x] 插件系统（manifest.json V2 + PLUGIN.md V1 回退，依赖拓扑排序）
+- [x] Block 协议（提取、校验、分发、前端渲染注册系统）
 
-### 推荐实现
-- [ ] 记忆插件
-- [ ] 技能插件
-- [ ] 语言/场景插件
+### 内置插件（9 个）
+- [x] core-blocks（状态同步、角色卡、场景、事件、通知）
+- [x] database（持久状态上下文）
+- [x] archive（长会话摘要 + 版本化快照）
+- [x] memory（记忆注入）
+- [x] character（玩家/NPC 状态管理）
+- [x] choices（交互选项 Block）
+- [x] auto-guide（AI 推荐行动）
+- [x] dice-roll（骰子 Block + 脚本执行）
+- [x] story-image（剧情图片生成 + 连续性）
 
-### 后续迭代
-- [ ] 时间插件
-- [ ] 随机事件插件
-- [ ] 脚本沙箱（Python/JS 自定义逻辑）
+### 基础设施
+- [x] `json:plugin_use` 能力调用协议（CapabilityExecutor）
+- [x] Python 脚本执行（ScriptRunner，stdin/stdout JSON）
+- [x] 审计日志（AuditLogger，JSON-lines）
+- [x] 插件导入/验证/安装 API
+- [x] 运行时设置（按插件 + 按 project/session 范围）
+- [x] 多语言界面（中/英，含插件设置 i18n）
+- [x] 灵活存储（SQLite 本地 / IndexedDB 浏览器离线，自动探测）
+- [x] Vercel 无服务器部署支持
+
+### 后续规划
+- [ ] `hooks` 生命周期脚本执行框架
+- [ ] JavaScript 脚本支持
+- [ ] 插件导出（zip/tarball）
 - [ ] 插件市场 / 社区分享
 - [ ] 多人协作编辑
 - [ ] 游戏发布与分享
@@ -460,4 +478,4 @@ LLM 响应中的结构化数据通过 `` ```json:<type> `` 代码块传递。这
 
 ---
 
-*文档版本：v0.3 | 更新日期：2026-02-16*
+*文档版本：v0.4 | 更新日期：2026-02-19*
