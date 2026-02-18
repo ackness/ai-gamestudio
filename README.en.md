@@ -116,6 +116,11 @@ Open `http://localhost:5173` to start building your world.
 
 ### Minimal .env
 
+The default model is **DeepSeek V3** (`deepseek-chat`). Reasons:
+- **1M context window**: entire world doc + full chat history fits in a single call, no truncation
+- **Stable tool calling**: the `json:xxx` block protocol stays reliable across dozens of consecutive turns without degrading
+- **Best price/performance ratio**: lowest cost among models of comparable quality; cheaper models can't match its block-call stability
+
 ```env
 LLM_MODEL=deepseek/deepseek-chat
 LLM_API_KEY=your-deepseek-key
