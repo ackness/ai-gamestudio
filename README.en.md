@@ -95,7 +95,7 @@ AI GameStudio is an **LLM-native low-code RPG engine**. You don't write any game
 ```bash
 # Clone the repository
 git clone <repo-url>
-cd ai-gamestudio-v2
+cd ai-gamestudio
 
 # Install tool dependencies
 mise trust && mise install
@@ -155,7 +155,7 @@ IMAGE_GEN_API_BASE=https://api.example.com/v1/chat/completions
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `LLM_MODEL` | Yes | `gpt-4o-mini` | Model name in LiteLLM format |
+| `LLM_MODEL` | Yes | `deepseek/deepseek-chat` | Model name in LiteLLM format |
 | `LLM_API_KEY` | Yes | — | LLM provider API key |
 | `LLM_API_BASE` | No | — | Custom API endpoint (Ollama / OpenRouter / self-hosted) |
 | `IMAGE_GEN_MODEL` | No | — | Image generation model name |
@@ -203,33 +203,41 @@ CORS_ORIGINS=https://your-domain.vercel.app
 
 ## Docker Deployment
 
-The project uses the official [mise](https://mise.jdx.dev/) image for multi-stage builds — the frontend is compiled first, then merged into a single production image.
+The project ships with ready-to-use Docker support, built on `debian:12-slim` + mise in a multi-stage build — the frontend is compiled in Stage 1 and merged into the production image in Stage 2. **SQLite is the default database; no external database service is required.**
 
-### Quick start (SQLite, single host)
+### Prerequisites
+
+- Docker 20.10+ (or OrbStack)
+- A `.env` file (copy from `.env.example`)
+
+### Quick start
 
 ```bash
-# Copy and configure environment variables
+# 1. Configure environment variables
 cp .env.example .env
-# Fill in LLM_MODEL, LLM_API_KEY, etc.
+# Edit .env — at minimum set LLM_API_KEY
 
-# Build and start
+# 2. Build and start
 docker compose up -d --build
-
-# Open
-open http://localhost:8000
 ```
 
-Data is persisted in the Docker volume `ai-gamestudio-data` and survives restarts.
+On startup the logs print the access URLs:
 
-### Production deployment (PostgreSQL)
-
-```bash
-# Add to .env
-POSTGRES_PASSWORD=your-strong-password
-
-# Start app + postgres together
-docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build
 ```
+  AI GameStudio
+  Local   →  http://localhost:8000
+  OrbStack→  http://ai-gamestudio.orb.local
+```
+
+The SQLite database is stored in the Docker volume `ai-gamestudio-data` and survives container restarts and image rebuilds.
+
+### File reference
+
+| File | Description |
+|------|-------------|
+| `Dockerfile` | Multi-stage build: Stage 1 compiles frontend, Stage 2 runs backend |
+| `docker-compose.yml` | Single-host deployment, SQLite database, persistent volume |
+| `docker-compose.postgres.yml` | Optional overlay that adds a PostgreSQL service |
 
 ### Common operations
 
@@ -243,16 +251,32 @@ docker compose down
 # Rebuild after code changes
 docker compose up -d --build
 
-# Backup SQLite data
-docker run --rm -v ai-gamestudio-data:/data -v $(pwd):/backup \
-  alpine tar czf /backup/data-backup.tar.gz /data
+# Custom port (default: 8000)
+PORT=9000 docker compose up -d
+
+# Backup the SQLite database
+docker run --rm \
+  -v ai-gamestudio-data:/data \
+  -v $(pwd):/backup \
+  alpine tar czf /backup/db-backup.tar.gz /data
+
+# Open a shell inside the container
+docker exec -it ai-gamestudio bash
 ```
 
-### Custom port
+### Switching to PostgreSQL (optional)
+
+SQLite works well for personal use and small teams. For multi-instance or higher concurrency, apply the PostgreSQL overlay:
 
 ```bash
-PORT=9000 docker compose up -d
+# Add to .env
+POSTGRES_PASSWORD=your-strong-password
+
+# Start with the postgres overlay
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build
 ```
+
+PostgreSQL data is persisted in a separate volume `ai-gamestudio-pg`. Recommended for self-hosted production deployments.
 
 ---
 
@@ -277,7 +301,6 @@ mise run db:reset         # Drop and recreate the database
 ## Project Structure
 
 ```
-ai-gamestudio-v2/
 ├── backend/
 │   └── app/
 │       ├── api/           # FastAPI routers (projects, sessions, chat, plugins, templates)
@@ -299,7 +322,7 @@ ai-gamestudio-v2/
 
 ## Further Reading
 
-- [Plugin Spec v2](docs/PLUGIN-SPEC.md) — How to write custom plugins
+- [Plugin Spec](docs/PLUGIN-SPEC.md) — How to write custom plugins
 - [Plugin Ecosystem Architecture](docs/PLUGIN-ECOSYSTEM-ARCHITECTURE.md) — Plugin system design
 - [Architecture](docs/ARCHITECTURE.md) — System overview
 
