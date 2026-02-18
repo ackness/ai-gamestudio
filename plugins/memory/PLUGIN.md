@@ -1,20 +1,12 @@
 ---
 name: memory
-description: Optional memory-context injection plugin that reads stored memories and injects them at prompt position `memory`.
-type: global
-required: false
-version: "1.1"
-dependencies:
-  - database
-prompt:
-  position: memory
-  priority: 10
-  template: prompts/memory-context.md
-storage:
-  keys:
-    - short-term-memory
-    - long-term-memory
-    - memory-index
+version: 2.0.0
+description: 可选记忆上下文注入插件，读取存储的记忆并注入到 prompt memory 位置。
+when_to_use:
+  - 需要回忆之前发生的事件
+  - 长期游戏需要保持一致性
+avoid_when:
+  - 短期测试游戏
 ---
 
 ## Memory Plugin

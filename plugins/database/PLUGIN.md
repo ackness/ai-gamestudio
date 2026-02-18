@@ -1,17 +1,10 @@
 ---
 name: database
-description: Provides persistent state context for prompts and is required for all game sessions.
-type: global
-required: true
-version: "1.1"
-storage:
-  keys:
-    - world-state
-    - event-log
-prompt:
-  position: world-state
-  priority: 100
-  template: prompts/world-state.md
+version: 2.0.0
+description: 提供持久化状态上下文注入，是所有游戏会话的必需插件。
+when_to_use:
+  - 需要世界/状态上下文时（始终启用）
+avoid_when: []
 ---
 
 ## Database Plugin

@@ -3,6 +3,7 @@ import type {
   Session,
   Message,
   Plugin,
+  PluginDetail,
   Scene,
   GameEvent,
   Character,
@@ -12,14 +13,23 @@ import type {
   WorldTemplateDetail,
   PresetModel,
   RuntimeSettingField,
+  StoryImageData,
 } from '../types'
+import { buildBrowserLlmHeaders } from '../utils/browserLlmConfig'
 
-const BASE_URL = '/api'
+function getBaseUrl(): string {
+  const configured = String(import.meta.env.VITE_API_BASE_URL || '').trim()
+  const base = configured || '/api'
+  return base.endsWith('/') ? base.slice(0, -1) : base
+}
+
+const BASE_URL = getBaseUrl()
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: {
       'Content-Type': 'application/json',
+      ...buildBrowserLlmHeaders(),
       ...options?.headers,
     },
     ...options,
@@ -146,6 +156,10 @@ export function togglePlugin(name: string, projectId: string, enabled: boolean):
     method: 'POST',
     body: JSON.stringify({ project_id: projectId, enabled }),
   })
+}
+
+export function getPluginDetail(name: string): Promise<PluginDetail> {
+  return request(`/plugins/${name}/detail`)
 }
 
 // Scenes
@@ -283,4 +297,30 @@ export function patchRuntimeSettings(data: {
     method: 'PATCH',
     body: JSON.stringify(data),
   })
+}
+
+// Plugin Import & Audit
+export function validatePluginImport(pluginDir: string): Promise<{
+  valid: boolean
+  errors: string[]
+  warnings: string[]
+}> {
+  return request('/plugins/import/validate', {
+    method: 'POST',
+    body: JSON.stringify({ plugin_dir: pluginDir }),
+  })
+}
+
+export function getPluginAudit(pluginName: string, limit?: number): Promise<Record<string, unknown>[]> {
+  const query = limit ? `?limit=${limit}` : ''
+  return request(`/plugins/${encodeURIComponent(pluginName)}/audit${query}`)
+}
+
+// Session Story Images
+export async function getSessionStoryImages(sessionId: string): Promise<StoryImageData[]> {
+  try {
+    return await request(`/sessions/${sessionId}/story-images`)
+  } catch {
+    return []
+  }
 }

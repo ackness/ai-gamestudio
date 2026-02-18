@@ -2,6 +2,10 @@
 
 {% set image_cfg = runtime_settings.get('story-image', {}) if runtime_settings else {} %}
 
+{% if image_cfg.get('emit_mode', 'manual') == 'manual' %}
+Do NOT output any `json:story_image` block. Image generation is handled manually by the player.
+No story image blocks should appear in your response under any circumstances.
+{% else %}
 Use `json:story_image` only when the scene benefits from a visual frame (major reveal, transition, combat beat, emotional close-up).
 
 Required block format:
@@ -32,7 +36,7 @@ Rules:
 - If this turn is character creation and includes `json:character_sheet`, skip `json:story_image`.
 - When narrative spans multiple scenes/parallel beats, prefer `scene_frames` and set `layout_preference` to `comic`.
 
-{% if image_cfg.get('emit_mode', 'key_moments') == 'every_turn' %}
+{% if image_cfg.get('emit_mode', 'manual') == 'every_turn' %}
 Mandatory policy:
 - For every narration response (except character creation), append one `json:story_image` block.
 {% else %}
@@ -48,4 +52,5 @@ Recent image references (newest last):
 {% endfor %}
 {% else %}
 No previous image exists yet; if this is a meaningful scene, output an initial `json:story_image` now.
+{% endif %}
 {% endif %}

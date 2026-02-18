@@ -89,10 +89,42 @@ export interface Plugin {
   type: 'global' | 'gameplay'
   required: boolean
   enabled: boolean
+  default_enabled?: boolean
+  supersedes?: string[]
   auto_enabled?: boolean
   explicitly_disabled?: boolean
   dependencies?: string[]
   required_by?: string[]
+  version?: string
+  manifest_source?: 'manifest' | 'v1_fallback'
+  capabilities?: string[]
+  schema_status?: string
+  i18n?: Record<string, { name?: string; description?: string }>
+}
+
+export interface PluginDetail {
+  name: string
+  version: string
+  description: string
+  type: string
+  required: boolean
+  default_enabled: boolean
+  supersedes: string[]
+  dependencies: string[]
+  prompt: {
+    position: string | null
+    priority: number | null
+    template: string | null
+    content: string | null
+  } | null
+  blocks: Record<string, {
+    instruction?: string
+    schema?: Record<string, unknown>
+    ui?: Record<string, unknown>
+    requires_response?: boolean
+  }>
+  capabilities: Record<string, { description: string; type: string }>
+  i18n: Record<string, { name?: string; description?: string }>
 }
 
 export interface LlmProfile {
@@ -128,6 +160,7 @@ export interface ArchiveVersion {
 export interface RuntimeSettingOption {
   label: string
   value: string | number | boolean
+  i18n?: Record<string, { label?: string }>
 }
 
 export interface RuntimeSettingField {
@@ -146,6 +179,7 @@ export interface RuntimeSettingField {
   min?: number
   max?: number
   step?: number
+  i18n?: Record<string, { label?: string; description?: string; default?: string }>
 }
 
 export interface WorldTemplate {
@@ -160,4 +194,14 @@ export interface WorldTemplate {
 export interface WorldTemplateDetail extends WorldTemplate {
   content: string
   raw: string
+}
+
+export interface StoryImageData {
+  image_id?: string
+  message_id?: string
+  image_url?: string
+  title?: string
+  status?: string
+  error?: string
+  created_at?: string
 }

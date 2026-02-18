@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from loguru import logger
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -30,6 +31,7 @@ async def get_enabled_plugins(
     discovered = pe.discover(settings.PLUGINS_DIR)
     discovered_map = {p["name"]: p for p in discovered}
     required_names = {p["name"] for p in discovered if p.get("required")}
+    default_enabled_names = {p["name"] for p in discovered if p.get("default_enabled")}
 
     # Parse world_doc frontmatter for default plugins
     world_default_names: set[str] = set()
@@ -50,22 +52,26 @@ async def get_enabled_plugins(
     )
     result = await session.exec(stmt)
     rows = list(result.all())
-    enabled_names: set[str] = set(required_names) | {
-        name for name in world_default_names if name in discovered_map
-    }
+    enabled_names: set[str] = (
+        set(required_names)
+        | {name for name in world_default_names if name in discovered_map}
+        | {name for name in default_enabled_names if name in discovered_map}
+    )
+    explicitly_user_enabled: set[str] = set()
     explicitly_disabled: set[str] = set()
     for row in rows:
         data = json.loads(row.value_json)
         if data.get("enabled"):
             enabled_names.add(row.plugin_name)
+            explicitly_user_enabled.add(row.plugin_name)
             explicitly_disabled.discard(row.plugin_name)
         else:
             explicitly_disabled.add(row.plugin_name)
             # Required plugins cannot be disabled by storage toggle.
             if row.plugin_name in required_names:
                 enabled_names.add(row.plugin_name)
-            # World-default plugins CAN be explicitly disabled.
-            elif row.plugin_name in world_default_names:
+            # World-default and default_enabled plugins CAN be explicitly disabled.
+            elif row.plugin_name in world_default_names or row.plugin_name in default_enabled_names:
                 enabled_names.discard(row.plugin_name)
 
     # Auto-enable dependencies of effective enabled plugins.
@@ -80,6 +86,19 @@ async def get_enabled_plugins(
                 enabled_names.add(dep)
                 auto_enabled_names.add(dep)
                 queue.append(dep)
+
+    # Apply supersedes: if a plugin is enabled and supersedes others,
+    # remove superseded plugins unless user explicitly enabled them.
+    for plugin_name in list(enabled_names):
+        meta = discovered_map.get(plugin_name) or {}
+        for superseded in meta.get("supersedes", []):
+            if superseded in enabled_names and superseded not in explicitly_user_enabled:
+                enabled_names.discard(superseded)
+                logger.debug(
+                    "Plugin '{}' superseded by '{}', suppressing from active set",
+                    superseded,
+                    plugin_name,
+                )
 
     enabled: list[dict[str, Any]] = [
         {

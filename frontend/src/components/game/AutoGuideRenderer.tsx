@@ -8,8 +8,15 @@ import { buildGuideInteractionState } from './blockInteractionState'
 
 interface GuideCategory {
   style: 'safe' | 'aggressive' | 'creative' | 'wild'
-  label: string
+  label?: string
   suggestions: string[]
+}
+
+const STYLE_LABELS: Record<string, string> = {
+  safe: '稳妥',
+  aggressive: '激进',
+  creative: '另辟蹊径',
+  wild: '天马行空',
 }
 
 interface GuideData {
@@ -90,7 +97,7 @@ export function AutoGuideRenderer({ data, blockId, onAction, locked }: BlockRend
             {categories.map((cat) => (
               <div key={cat.style} className="auto-guide-category">
                 <span className={`auto-guide-category-label ${cat.style}`}>
-                  {styleIcons[cat.style] || ''} {cat.label}
+                  {styleIcons[cat.style] || ''} {cat.label ?? STYLE_LABELS[cat.style] ?? cat.style}
                 </span>
                 <div className="auto-guide-suggestions">
                   {cat.suggestions.map((s, i) => (
