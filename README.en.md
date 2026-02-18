@@ -201,6 +201,61 @@ CORS_ORIGINS=https://your-domain.vercel.app
 
 ---
 
+## Docker Deployment
+
+The project uses the official [mise](https://mise.jdx.dev/) image for multi-stage builds — the frontend is compiled first, then merged into a single production image.
+
+### Quick start (SQLite, single host)
+
+```bash
+# Copy and configure environment variables
+cp .env.example .env
+# Fill in LLM_MODEL, LLM_API_KEY, etc.
+
+# Build and start
+docker compose up -d --build
+
+# Open
+open http://localhost:8000
+```
+
+Data is persisted in the Docker volume `ai-gamestudio-data` and survives restarts.
+
+### Production deployment (PostgreSQL)
+
+```bash
+# Add to .env
+POSTGRES_PASSWORD=your-strong-password
+
+# Start app + postgres together
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build
+```
+
+### Common operations
+
+```bash
+# Follow logs
+docker compose logs -f
+
+# Stop
+docker compose down
+
+# Rebuild after code changes
+docker compose up -d --build
+
+# Backup SQLite data
+docker run --rm -v ai-gamestudio-data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/data-backup.tar.gz /data
+```
+
+### Custom port
+
+```bash
+PORT=9000 docker compose up -d
+```
+
+---
+
 ## Common Commands
 
 ```bash

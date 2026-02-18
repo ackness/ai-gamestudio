@@ -1,0 +1,33 @@
+# docker-compose.postgres.yml
+# Usage: docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
+#
+# Adds a PostgreSQL service and wires DATABASE_URL automatically.
+# Set POSTGRES_PASSWORD in your .env before using this file.
+
+services:
+  app:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ai_gamestudio:${POSTGRES_PASSWORD}@db:5432/ai_gamestudio
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    container_name: ai-gamestudio-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ai_gamestudio
+      POSTGRES_USER: ai_gamestudio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ai-gamestudio-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_gamestudio"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ai-gamestudio-pg:
+    driver: local
