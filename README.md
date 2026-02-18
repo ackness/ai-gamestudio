@@ -116,7 +116,7 @@ mise run dev:frontend  # Vite，端口 5173
 
 ### 最小 .env 配置
 
-默认使用 **DeepSeek V3**（`deepseek-chat`），推荐理由：
+默认使用 **DeepSeek V3.2**（`deepseek-chat`），推荐理由：
 - **1M 超长上下文**：长篇世界观文档 + 完整对话历史一次性放入，不截断
 - **工具调用稳定**：`json:xxx` Block 协议在几十轮连续对话中依然可靠触发，不退化
 - **性价比最高**：同等能力里价格最低；更便宜的模型在 Block 稳定性上不如它
