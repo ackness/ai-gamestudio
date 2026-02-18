@@ -17,11 +17,11 @@ from backend.app.db.engine import init_db
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Logging first so every subsequent log goes through loguru
-    pathlib.Path("data/logs").mkdir(parents=True, exist_ok=True)
+    pathlib.Path(settings.LOG_DIR).mkdir(parents=True, exist_ok=True)
     setup_logging()
 
     # Ensure data/ directory exists and init DB tables
-    pathlib.Path("data").mkdir(parents=True, exist_ok=True)
+    pathlib.Path(settings.DATA_DIR).mkdir(parents=True, exist_ok=True)
     await init_db()
     yield
 
@@ -65,7 +65,12 @@ app.include_router(runtime_settings_router)
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok"}
+    import os
+    running_on_vercel = bool(os.getenv("VERCEL"))
+    # SQLite in /tmp is ephemeral (Vercel serverless); any external DB URL is persistent
+    db_url = settings.DATABASE_URL or ""
+    storage_persistent = not (running_on_vercel and "sqlite" in db_url)
+    return {"status": "ok", "storage_persistent": storage_persistent}
 
 
 @app.get("/api/llm/info")

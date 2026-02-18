@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Session, Message, Scene } from '../types'
+import type { Session, Message, Scene, StoryImageData } from '../types'
 import * as api from '../services/api'
 import { attachPendingBlocksForTurn, type TurnPendingBlock } from './sessionTurnUtils'
 
@@ -18,6 +18,8 @@ interface SessionStore {
   phase: string
   currentScene: Scene | null
   scenes: Scene[]
+  messageImages: Record<string, StoryImageData[]>
+  imageLoadingMessages: Set<string>
   fetchSessions: (projectId: string) => Promise<void>
   createSession: (projectId: string) => Promise<Session>
   switchSession: (session: Session) => Promise<void>
@@ -39,6 +41,10 @@ interface SessionStore {
   removeLastAssistantMessage: () => void
   deleteMessage: (messageId: string) => void
   deleteMessagesFrom: (messageId: string) => void
+  setMessageImage: (messageId: string, image: StoryImageData) => void
+  setImageLoading: (messageId: string, loading: boolean) => void
+  clearMessageImages: () => void
+  hydrateMessageImages: (sessionId: string) => Promise<void>
 }
 
 export const useSessionStore = create<SessionStore>((set) => ({
@@ -52,6 +58,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
   phase: 'init',
   currentScene: null,
   scenes: [],
+  messageImages: {},
+  imageLoadingMessages: new Set<string>(),
 
   fetchSessions: async (projectId) => {
     try {
@@ -76,6 +84,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
         streamingContent: '',
         streamStatus: 'idle' as StreamStatus,
         isStreaming: false,
+        messageImages: {},
+        imageLoadingMessages: new Set<string>(),
       }))
       return session
     } catch (err) {
@@ -97,6 +107,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
       streamingContent: '',
       streamStatus: 'idle' as StreamStatus,
       isStreaming: false,
+      messageImages: {},
+      imageLoadingMessages: new Set<string>(),
     })
     try {
       const messages = await api.getMessages(session.id)
@@ -124,6 +136,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
             streamingContent: '',
             streamStatus: 'idle' as StreamStatus,
             isStreaming: false,
+            messageImages: {},
+            imageLoadingMessages: new Set<string>(),
           }
         }
         return { sessions }
@@ -206,4 +220,46 @@ export const useSessionStore = create<SessionStore>((set) => ({
       if (idx < 0) return state
       return { messages: state.messages.slice(0, idx), pendingBlocks: [] }
     }),
+
+  setMessageImage: (messageId, image) =>
+    set((state) => {
+      const existing = state.messageImages[messageId] || []
+      return {
+        messageImages: {
+          ...state.messageImages,
+          [messageId]: [...existing, image],
+        },
+      }
+    }),
+
+  setImageLoading: (messageId, loading) =>
+    set((state) => {
+      const next = new Set(state.imageLoadingMessages)
+      if (loading) {
+        next.add(messageId)
+      } else {
+        next.delete(messageId)
+      }
+      return { imageLoadingMessages: next }
+    }),
+
+  clearMessageImages: () => set({ messageImages: {}, imageLoadingMessages: new Set<string>() }),
+
+  hydrateMessageImages: async (sessionId) => {
+    try {
+      const images = await api.getSessionStoryImages(sessionId)
+      const map: Record<string, StoryImageData[]> = {}
+      for (const img of images) {
+        if (img.message_id) {
+          if (!map[img.message_id]) {
+            map[img.message_id] = []
+          }
+          map[img.message_id].push(img)
+        }
+      }
+      set({ messageImages: map })
+    } catch {
+      // ignore
+    }
+  },
 }))
