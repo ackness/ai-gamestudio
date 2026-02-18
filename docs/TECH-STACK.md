@@ -153,7 +153,7 @@ mise 自动为项目目录激活正确的工具版本。Python 依赖通过 `uv`
 ## 4. 项目目录结构
 
 ```
-ai-gamestudio-v2/
+ai-gamestudio/
 ├── mise.toml                    # mise 工具版本 + 任务定义
 ├── .env.example                 # 环境变量模板
 ├── app.py                       # Vercel 入口（from backend.app.main import app）
