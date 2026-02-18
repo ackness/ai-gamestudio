@@ -201,6 +201,61 @@ CORS_ORIGINS=https://your-domain.vercel.app
 
 ---
 
+## Docker 部署
+
+项目使用 [mise](https://mise.jdx.dev/) 官方镜像作为基础，多阶段构建前端后合并到单一生产镜像。
+
+### 快速启动（SQLite，单机）
+
+```bash
+# 复制并编辑环境变量
+cp .env.example .env
+# 编辑 .env，填写 LLM_MODEL / LLM_API_KEY 等
+
+# 构建并启动
+docker compose up -d --build
+
+# 访问
+open http://localhost:8000
+```
+
+数据持久化在 Docker volume `ai-gamestudio-data`，重启不丢失。
+
+### 生产部署（PostgreSQL）
+
+```bash
+# .env 中额外设置
+POSTGRES_PASSWORD=your-strong-password
+
+# 同时启动 app + postgres
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build
+```
+
+### 常用操作
+
+```bash
+# 查看日志
+docker compose logs -f
+
+# 停止
+docker compose down
+
+# 重建镜像（代码有更新时）
+docker compose up -d --build
+
+# 备份 SQLite 数据
+docker run --rm -v ai-gamestudio-data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/data-backup.tar.gz /data
+```
+
+### 自定义端口
+
+```bash
+PORT=9000 docker compose up -d
+```
+
+---
+
 ## 常用命令
 
 ```bash

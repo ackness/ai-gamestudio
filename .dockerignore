@@ -1,0 +1,33 @@
+# Version control
+.git
+.gitignore
+
+# Python
+.venv
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.ruff_cache
+uv.lock
+
+# Frontend
+frontend/node_modules
+frontend/dist
+
+# Runtime data (mounted as volume)
+data/
+
+# Docs / dev files
+docs/
+*.md
+!README.md
+
+# Environment files (use --env-file or Docker secrets)
+.env
+.env.*
+
+# IDE
+.vscode
+.idea
+*.DS_Store
