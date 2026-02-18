@@ -1,56 +1,30 @@
 # AI GameStudio (English)
 
-[中文](README.zh.md) | [Home](README.md)
+[中文](README.md) | [中文独立页](README.zh.md)
 
-LLM-native low-code RPG editor and runtime platform.
+Write your world in Markdown, run the story as a chat session, and generate key scene images when needed.
 
-> **WIP (Work in Progress):** This project is in active development. APIs, plugin behaviors, and docs may change frequently.
+![image.png](.assets/image.png)
 
-![AI GameStudio Full UI](.assets/full.png)
+## What the screenshot already tells you
 
-## What Is AI GameStudio?
+- Left: `World Doc` holds your setting, factions, and rules in plain text.
+- Center: `Game Session` is where each player message advances story and state.
+- Lower center: the story image card renders `story_image` blocks and supports regeneration.
+- Right: one side panel for characters, plugins, settings, and events.
+- Top and bottom: practical controls (`Save / Restore / Debug / Sessions`) and turn input box.
 
-AI GameStudio is a web-based platform for building and playing RPG games with LLMs. Instead of hardcoding game logic, you write world rules in Markdown and extend gameplay with document-driven plugins (`PLUGIN.md`).
+## What changed in the latest updates
 
-## Core Concepts
+- Plugins now use clear `manifest.json` files, so dependencies, blocks, and settings are runtime-readable.
+- The story-image pipeline is now end-to-end: generation, continuity references, UI rendering, and regenerate flow.
+- Backend foundations were strengthened with capability execution, script execution, and audit logging.
+- Plugin toggles and runtime settings sync with the UI more reliably for day-to-day debugging.
 
-- **World Doc as Source Code**: game setting, rules, factions, lore, and tone are defined in Markdown.
-- **Document-Driven Plugins**: plugins are declared in `plugins/*/PLUGIN.md`, with optional templates/schemas/scripts.
-- **LLM-Native Runtime**: a DM-style orchestration model coordinates narration, state updates, and events.
-- **Block Protocol (`json:<type>`)**: structured blocks are parsed by backend handlers and rendered by frontend components.
+## Quick start
 
-## Current Runtime (Implemented)
-
-- **Frontend**: React + Zustand chat/game UI with block renderers and side panels.
-- **Backend**: FastAPI + SQLModel + SQLite + WebSocket streaming.
-- **Plugin Runtime**:
-  - Implemented: plugin discovery, validation, dependency ordering, prompt injection, declarative block actions, request-scoped event bus.
-  - Reserved (declared, not fully executed as framework): `hooks`, plugin-level `llm` task runtime, `exports.commands/queries` bus.
-- **Archive System**: required archive plugin with periodic summary + snapshot restore.
-
-Architecture baseline source: `docs/ARCHITECTURE.md` (updated: 2026-02-16).
-
-## Built-in Plugin Set
-
-- Required: `core-blocks`, `database`, `character`, `archive`
-- Optional: `memory`, `choices`, `dice-roll`, `auto-guide`
-
-## Tech Stack
-
-- **Frontend**: Vite, React 19, TypeScript, Zustand, Tailwind CSS
-- **Backend**: FastAPI, SQLModel, SQLite (`aiosqlite`), WebSocket
-- **LLM Gateway**: LiteLLM
-- **Tooling**: `mise` + `uv` + Node.js
-
-See details in `docs/TECH-STACK.md`.
-
-## Quick Start
-
-### 1. Prerequisites
-
-- Install [mise](https://mise.jdx.dev/)
-
-### 2. Setup
+1. Install [mise](https://mise.jdx.dev/)
+2. Initialize:
 
 ```bash
 mise trust
@@ -59,62 +33,66 @@ cp .env.example .env
 mise run setup
 ```
 
-Set your model key in `.env`:
+3. Configure model access in `.env`:
 
 ```env
 LLM_MODEL=gpt-4o-mini
 LLM_API_KEY=your-api-key-here
-# LLM_API_BASE=...  # optional (for custom gateway / local models)
 ```
 
-### 3. Run in Development
-
-Use two terminals:
+4. Start dev servers (two terminals):
 
 ```bash
 mise run dev:backend
-```
-
-```bash
 mise run dev:frontend
 ```
 
 - Frontend: `http://localhost:5173`
-- Backend API: `http://localhost:8000`
-- Health check: `http://localhost:8000/api/health`
+- Backend: `http://localhost:8000`
 
-### 4. Run in Production-like Local Mode
-
-```bash
-mise run start
-```
-
-Then open `http://localhost:8000`.
-
-## Useful Commands
+## Common commands
 
 ```bash
+mise run test
 mise run lint
-mise run format
 mise run plugin:validate
 mise run plugin:list
-mise run db:init
-mise run db:reset
 ```
 
-## World Templates
+## Deploy on Vercel
 
-Prebuilt world settings are available under `templates/worlds/`:
+This repo now supports Vercel deployment, using HTTP chat transport by default for production.
 
-- `wuxia.md`
-- `cyberpunk.md`
-- `dark-fantasy.md`
-- `epoch.md`
+1. Import this repository in Vercel and deploy directly (`vercel.json` + `app.py` entrypoint are included).
+2. Configure at least these environment variables:
 
-## Documentation
+```env
+# Frontend build-time
+VITE_CHAT_TRANSPORT=http
+VITE_API_BASE_URL=/api
 
-- Product requirements: `docs/PRD.md`
-- Current architecture: `docs/ARCHITECTURE.md`
-- Plugin specification: `docs/PLUGIN-SPEC.md`
-- Tech stack and environment: `docs/TECH-STACK.md`
-- Architecture review report: `docs/ARCHITECTURE-REVIEW-2026-02-17.md`
+# Backend runtime
+LLM_MODEL=gpt-4o-mini
+LLM_API_KEY=your-api-key
+DATABASE_URL=postgresql+asyncpg://<user>:<pass>@<host>/<db>
+# CORS_ORIGINS=https://your-domain.vercel.app
+```
+
+3. Redeploy and open the Vercel URL.
+
+Notes:
+- If `DATABASE_URL` is not set, the app falls back to SQLite under `/tmp` on Vercel, which is demo-only and not durable.
+- If you use story image generation, also configure `IMAGE_GEN_API_KEY` (and optionally `IMAGE_GEN_MODEL` / `IMAGE_GEN_API_BASE`).
+
+## Repo map
+
+- `frontend/`: game UI and interactions
+- `backend/`: orchestration, plugin runtime, API/WebSocket
+- `plugins/`: built-in plugins (including `story-image`)
+- `templates/worlds/`: world templates
+
+## More docs
+
+- Architecture: `docs/ARCHITECTURE.md`
+- Plugin spec: `docs/PLUGIN-SPEC-v2.md`
+- Product doc: `docs/PRD.md`

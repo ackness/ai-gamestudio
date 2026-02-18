@@ -1,56 +1,30 @@
 # AI GameStudio（中文）
 
-[English](README.en.md) | [首页](README.md)
+[首页（默认中文）](README.md) | [English](README.en.md)
 
-LLM-Native 低代码 RPG 编辑器与运行平台。
+把世界观写成文档，像聊天一样推进剧情，并在关键时刻生成剧情画面。
 
-> **WIP（开发中）：** 当前项目处于快速迭代阶段，API、插件行为与文档都可能频繁变化。
+![image.png](.assets/image.png)
 
-![AI GameStudio Full UI](.assets/full.png)
+## 这张图里你看到的，就是项目核心
 
-## AI GameStudio 是什么？
+- 左侧是 `World Doc`：世界观、门派、规则直接写在 Markdown 里。
+- 中间是 `Game Session`：玩家输入一句话，系统持续叙事并更新状态。
+- 中间下方是剧情图片卡片：在关键场景输出 `story_image`，可直接重生成。
+- 右侧是状态面板：角色、插件、设置、事件都在同一处查看和调节。
+- 顶部和底部是实用操作：`Save / Restore / Debug / Sessions` 与回合输入框。
 
-AI GameStudio 是一个基于 Web 的 LLM-Native 低代码 RPG 编辑器与运行平台。你不需要硬编码游戏逻辑，而是通过 Markdown 编写世界观规则，并通过文档驱动插件（`PLUGIN.md`）扩展玩法。
+## 这次更新后的重点
 
-## 核心理念
-
-- **世界观文档即源码**：用 Markdown 定义设定、规则、势力、叙事风格。
-- **文档驱动插件系统**：插件声明在 `plugins/*/PLUGIN.md`，可配合模板/Schema/脚本扩展。
-- **LLM 原生运行时**：采用 DM 协调式叙事与状态管理。
-- **Block 协议（`json:<type>`）**：结构化输出由后端处理，再由前端组件渲染。
-
-## 当前实现状态
-
-- **前端**：React + Zustand，包含聊天/游玩界面、Block 渲染器、侧边状态面板。
-- **后端**：FastAPI + SQLModel + SQLite，支持 WebSocket 流式输出。
-- **插件运行时**：
-  - 已实现：插件发现、校验、依赖排序、Prompt 注入、声明式 Block Action、请求级事件总线。
-  - 预留位（可声明，但尚未形成完整通用执行框架）：`hooks`、插件级 `llm` 任务、`exports.commands/queries`。
-- **归档系统**：内置必选 `archive` 插件，支持周期摘要与快照恢复。
-
-架构基线见：`docs/ARCHITECTURE.md`（更新日期：2026-02-16）。
-
-## 内置插件
-
-- 必选：`core-blocks`、`database`、`character`、`archive`
-- 可选：`memory`、`choices`、`dice-roll`、`auto-guide`
-
-## 技术栈
-
-- **前端**：Vite、React 19、TypeScript、Zustand、Tailwind CSS
-- **后端**：FastAPI、SQLModel、SQLite（`aiosqlite`）、WebSocket
-- **LLM 网关**：LiteLLM
-- **工具链**：`mise` + `uv` + Node.js
-
-详细说明见 `docs/TECH-STACK.md`。
+- 插件现在有清晰的 `manifest.json`，依赖、Block、设置项都可被运行时直接识别。
+- 新的故事图片链路更完整：生成、续帧参考、前端展示与重生成功能已经打通。
+- 后端补齐了能力执行、脚本执行、审计日志等基础能力，便于排查与扩展。
+- 插件启用状态、运行时设置与前端面板联动更稳定，调试体验更直接。
 
 ## 快速开始
 
-### 1. 前置条件
-
-- 安装 [mise](https://mise.jdx.dev/)
-
-### 2. 初始化
+1. 安装 [mise](https://mise.jdx.dev/)
+2. 初始化项目：
 
 ```bash
 mise trust
@@ -59,62 +33,66 @@ cp .env.example .env
 mise run setup
 ```
 
-在 `.env` 中配置模型：
+3. 在 `.env` 里配置模型：
 
 ```env
 LLM_MODEL=gpt-4o-mini
 LLM_API_KEY=your-api-key-here
-# LLM_API_BASE=...  # 可选，用于自定义网关/本地模型
 ```
 
-### 3. 开发模式运行
-
-建议使用两个终端：
+4. 启动开发环境（两个终端）：
 
 ```bash
 mise run dev:backend
-```
-
-```bash
 mise run dev:frontend
 ```
 
 - 前端：`http://localhost:5173`
-- 后端 API：`http://localhost:8000`
-- 健康检查：`http://localhost:8000/api/health`
-
-### 4. 本地生产模式运行
-
-```bash
-mise run start
-```
-
-然后访问 `http://localhost:8000`。
+- 后端：`http://localhost:8000`
 
 ## 常用命令
 
 ```bash
+mise run test
 mise run lint
-mise run format
 mise run plugin:validate
 mise run plugin:list
-mise run db:init
-mise run db:reset
 ```
 
-## 世界观模板
+## 部署到 Vercel
 
-`templates/worlds/` 中已提供示例世界观：
+项目已支持 Vercel 部署，线上默认建议使用 HTTP Chat 通道（不依赖 WebSocket）。
 
-- `wuxia.md`（武侠）
-- `cyberpunk.md`（赛博朋克）
-- `dark-fantasy.md`（黑暗奇幻）
-- `epoch.md`（纪元）
+1. 在 Vercel 导入本仓库，直接部署即可（仓库内已提供 `vercel.json` 与 `app.py` 入口）。
+2. 在 Vercel 项目环境变量中至少配置：
 
-## 文档导航
+```env
+# Frontend build-time
+VITE_CHAT_TRANSPORT=http
+VITE_API_BASE_URL=/api
 
-- 产品需求文档：`docs/PRD.md`
-- 当前运行时架构：`docs/ARCHITECTURE.md`
-- 插件规范：`docs/PLUGIN-SPEC.md`
-- 技术栈与开发环境：`docs/TECH-STACK.md`
-- 架构审查报告：`docs/ARCHITECTURE-REVIEW-2026-02-17.md`
+# Backend runtime
+LLM_MODEL=gpt-4o-mini
+LLM_API_KEY=your-api-key
+DATABASE_URL=postgresql+asyncpg://<user>:<pass>@<host>/<db>
+# CORS_ORIGINS=https://your-domain.vercel.app
+```
+
+3. 重新部署后访问站点即可体验。
+
+说明：
+- 如果不配置 `DATABASE_URL`，系统会在 Vercel 上回退到 `/tmp` 下的 SQLite，仅适合临时演示，不保证持久化。
+- 如果启用了故事图片能力，还需要配置 `IMAGE_GEN_API_KEY`（以及可选 `IMAGE_GEN_MODEL` / `IMAGE_GEN_API_BASE`）。
+
+## 目录速览
+
+- `frontend/`：游戏界面与交互
+- `backend/`：会话编排、插件运行时、API/WebSocket
+- `plugins/`：内置插件（含 `story-image`）
+- `templates/worlds/`：世界观模板
+
+## 更多文档
+
+- 架构：`docs/ARCHITECTURE.md`
+- 插件规范：`docs/PLUGIN-SPEC-v2.md`
+- 产品需求：`docs/PRD.md`
