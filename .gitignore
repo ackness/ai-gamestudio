@@ -16,11 +16,8 @@ frontend/.tmp-tests/
 *.swp
 *.swo
 
-# Data
-data/db.sqlite
-data/secrets/
-data/projects/*/saves/
-data/logs/
+# Runtime data (database, logs, audit trail, secrets, uploads)
+data/
 
 # OS
 .DS_Store
@@ -35,10 +32,7 @@ Thumbs.db
 .ruff_cache/
 .mypy_cache/
 
+# Misc
 .secret/
 .claude/
 .cache/
-data/*.png
-data/*.jpg
-data/*.json
-
