@@ -2,15 +2,23 @@
   "presets": [
     {
       "id": "deepseek-chat",
-      "name": "DeepSeek Chat",
+      "name": "[推荐]DeepSeek Chat",
       "provider": "deepseek",
       "model": "deepseek/deepseek-chat",
       "api_base": "https://api.deepseek.com",
-      "description": "DeepSeek V3.2 对话模型"
+      "description": "DeepSeek V3.2 对话模型, 推荐. 最新版本的便宜好用, 上下文很大, 速度很快."
+    },
+    {
+      "id": "openrouter-free",
+      "name": "[免费]OpenRouter (免费模型)",
+      "provider": "openrouter",
+      "model": "openrouter/openrouter/free",
+      "api_base": "https://openrouter.ai/api/v1",
+      "description": "使用 OpenRouter 调用免费路由"
     },
     {
       "id": "openrouter-custom",
-      "name": "OpenRouter (自定义模型)",
+      "name": "[自定义]OpenRouter (自定义模型)",
       "provider": "openrouter",
       "model": "",
       "api_base": "https://openrouter.ai/api/v1",

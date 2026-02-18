@@ -1,421 +1,390 @@
-# AI GameStudio 插件生态架构 V2（Skill-First + Agent Skills 融合版）
+# AI GameStudio 插件生态架构 V2
 
-> 本文是 V2 架构执行蓝图。目标是把插件系统从“配置 + 局部硬编码”升级为“运行手册 + 事实源 manifest + 强约束 schemas + 可扩展执行内核”。
+> 本文是 V2 架构执行蓝图。V2 在 V1 基础上引入 `manifest.json` 事实源、`json:plugin_use` 统一调用协议和脚本执行能力，同时保留 V1 的 PromptBuilder 6 位置注入和 `json:xxx` Direct Block 体系不变。
 >
-> 设计参考：
->
-> 1. [Agent Skills](https://agentskills.io/)
-> 2. [Specification](https://agentskills.io/specification)
-> 3. [Integrate skills](https://agentskills.io/integrate-skills)
+> 配套规范：`docs/PLUGIN-SPEC-v2.md`（实现级字段定义与完整示例）。
 
 ---
 
-## 1. 定位与冻结决策
+## 1. 设计原则（冻结决策）
 
-本架构采用以下冻结决策，作为实现约束：
+以下 7 条决策已冻结，作为实现约束：
 
-1. V2 在独立 worktree 开发，不在当前主线渐进掺入。
-2. V2 单运行时，不保留 V1/V2 并行运行层。
-3. 现有内置插件全部升级到 V2 后再切换默认运行时。
-4. 包结构最小强制：`PLUGIN.md`、`README.md`、`manifest.json`、`schemas/`。
-5. `PLUGIN.md` 是 LLM 运行手册；`manifest.json` 是唯一事实源。
-6. `PLUGIN.md` frontmatter 的 `name/version` 必须与 `manifest.json` 一致。
-7. `schemas/` 强制独立，支持 JSON/YAML，加载顺序为“索引优先、扫描回退”。
-8. 协议新增 `json:plugin_use` 与 `json:plugin_script`，并保留既有 `json:*` block 体系。
-9. 插件激活使用纯规则匹配，不使用 LLM 语义匹配。
-10. 脚本执行首期仅 Python，本地直跑，默认不确认，后续可扩展语言。
-11. 安全默认：`global` 插件默认可联网，`gameplay` 插件默认禁网；文件访问默认 `插件目录 + data 目录`。
-12. API 不加 `/v2` 前缀，直接替换现有 `/api/plugins/*` 语义。
-13. Phase 1 仅做导入，不做导出。
-14. Phase 1 模板仅支持插件自带模板，不支持项目级覆盖模板。
+1. **Prompt injection 是一等机制**：PromptBuilder 6 位置（system / character / world-state / memory / chat-history / pre-response）不变；`manifest.json.prompt` 承载 position / priority / template。
+2. **`json:plugin_use` 是唯一调用协议**：LLM 需要后端执行能力时统一输出 `json:plugin_use`；脚本执行是 capability 的 implementation 细节，不暴露 `json:plugin_script` 给 LLM。
+3. **Direct Output Blocks 与 Capability Invocation Blocks 分离**：LLM 直接输出的 `json:xxx` blocks（state_update / notification / choices 等）走 V1 既有流程；`json:plugin_use` 由后端执行后产出 result blocks。
+4. **manifest.json 接管所有机器元数据**：PLUGIN.md frontmatter 只保留 LLM 专有字段（name / version / description / when_to_use / avoid_when / capability_summary）。
+5. **when_to_use / avoid_when 是 LLM 提示词，不是规则引擎**：没有 Rule Matcher，LLM 在 pre-response 指令中看到激活条件后自行判断。
+6. **最小必需文件区分内外**：builtin 插件仅需 `PLUGIN.md` + `manifest.json`；external 插件需额外 `README.md` + `schemas/`。
+7. **运行时端点不独立暴露**：`plugin_use` 在 `chat_service.process_message()` 的 WebSocket 流中执行，不暴露独立 HTTP API。
 
 ---
 
-## 2. 职责分离（必须遵守）
+## 2. V1 → V2 完整迁移映射表
 
-## 2.1 `PLUGIN.md`（运行手册）
+### 2.1 机制迁移
 
-`PLUGIN.md` 的职责是“指导 LLM 如何使用插件能力”，不是产品说明。
+| V1 机制 | V2 去向 | 变更类型 |
+|---------|---------|---------|
+| PLUGIN.md frontmatter `name/description/type/required` | `manifest.json` 顶层字段 | 移动 |
+| PLUGIN.md frontmatter `version` | `manifest.json.version` | 移动 |
+| PLUGIN.md frontmatter `dependencies` | `manifest.json.dependencies` | 移动 |
+| PLUGIN.md frontmatter `prompt` (position/priority/template) | `manifest.json.prompt` | 移动 |
+| PLUGIN.md frontmatter `blocks` | `manifest.json.blocks` | 移动 |
+| PLUGIN.md frontmatter `events` | `manifest.json.events` | 移动 |
+| PLUGIN.md frontmatter `storage` | `manifest.json.storage` | 移动 |
+| PLUGIN.md frontmatter `extensions` | `manifest.json.extensions` | 移动 |
+| PLUGIN.md body（Markdown 正文） | 不变，仍作为 prompt 内容注入 | 保留 |
+| PluginEngine.discover() | 增强：优先读 manifest.json，回退 PLUGIN.md | 增强 |
+| PluginEngine.load() | 增强：合并 manifest + PLUGIN.md | 增强 |
+| PluginEngine.get_prompt_injections() | 不变，从 manifest.prompt 读取配置 | 保留 |
+| PluginEngine.get_block_declarations() | 增强：从 manifest.blocks 读取，含 schema 文件引用 | 增强 |
+| block_parser.extract_blocks() | 不变 | 保留 |
+| block_handlers.dispatch_block() | 增强：新增 plugin_use 分支 | 增强 |
+| block_validation.validate_block_data() | 增强：支持 schemas/ 文件加载 | 增强 |
+| chat_service.process_message() | 增强：plugin_use block 触发 capability 执行 | 增强 |
+| event_bus (PluginEventBus) | 不变 | 保留 |
+| PluginStorage | 不变 | 保留 |
 
-1. 提供触发与使用规则（什么时候用、什么时候不用）。
-2. 提供执行步骤（如何调用能力/脚本/模板）。
-3. 定义输出要求（必须输出哪些结构化 blocks）。
-4. 定义失败降级策略（脚本失败、上下文不足时怎么退化）。
+### 2.2 移除项
 
-## 2.2 `README.md`（人类文档）
+| 原 V2 草案概念 | 处置 |
+|---------------|------|
+| `json:plugin_script` 协议 | 移除。脚本执行由 `json:plugin_use` 的 capability implementation 内部调度 |
+| Rule Matcher (规则引擎) | 移除。when_to_use / avoid_when 作为 LLM 提示词注入 |
+| `POST /api/plugins/runtime/activate` | 移除 |
+| `POST /api/plugins/runtime/plugin-use` | 移除。在 WebSocket 流内执行 |
+| `POST /api/plugins/runtime/plugin-script` | 移除 |
+| `GET /api/plugins/runtime/invocations/{id}` | 移除 |
+| 4 文件强制要求（含 README.md / schemas/） | 改为 builtin 2 文件，external 4 文件 |
 
-`README.md` 只服务开发者和维护者：
+### 2.3 每个 V1 插件的迁移要点
 
-1. 插件功能介绍。
-2. 安装、调试、测试说明。
-3. 示例与注意事项。
-
-## 2.3 `manifest.json`（事实源）
-
-`manifest.json` 是唯一机器事实源：
-
-1. 依赖、权限、能力、入口由 manifest 决定。
-2. 运行时以 manifest 解析结果为准。
-3. 与 `PLUGIN.md` 的一致性冲突时按“导入失败”处理，而不是运行时猜测。
-
-## 2.4 `schemas/`（契约源）
-
-`schemas/` 是强约束契约：
-
-1. block/ui/command/template schema 必须可解析。
-2. 运行时与 API 均以 `schemas/` 为主，不再以 `PLUGIN.md` 内嵌结构为主。
+| 插件 | 类型 | 迁移要点 |
+|------|------|---------|
+| core-blocks | global/required | blocks（state_update / character_sheet / scene_update / event / notification）→ manifest.json.blocks；prompt(system, 95) → manifest.json.prompt；runtime_settings → manifest.json.extensions |
+| database | global/required | prompt(world-state, 100) → manifest.json.prompt；storage keys → manifest.json.storage |
+| character | gameplay/required | prompt(character, 10) → manifest.json.prompt；dep(database, core-blocks) → manifest.json.dependencies；storage keys → manifest.json.storage |
+| memory | global/optional | prompt(memory, 10) → manifest.json.prompt；dep(database) → manifest.json.dependencies；storage keys → manifest.json.storage |
+| archive | global/required | prompt(memory, 5) → manifest.json.prompt；dep(database) → manifest.json.dependencies；storage keys → manifest.json.storage |
+| choices | gameplay/optional | blocks(choices) → manifest.json.blocks；prompt(pre-response, 80) → manifest.json.prompt；runtime_settings → manifest.json.extensions |
+| auto-guide | gameplay/optional | blocks(guide) → manifest.json.blocks；prompt(pre-response, 90) → manifest.json.prompt；runtime_settings → manifest.json.extensions |
+| dice-roll | gameplay/optional | blocks(dice_result) → manifest.json.blocks；events(dice-rolled) → manifest.json.events；prompt(pre-response, 70) → manifest.json.prompt。V2 可选增加 capability `dice.roll`（implementation: script） |
+| story-image | gameplay/optional | blocks(story_image) → manifest.json.blocks；prompt(pre-response, 92) → manifest.json.prompt；dep(core-blocks, database) → manifest.json.dependencies；runtime_settings → manifest.json.extensions |
 
 ---
 
-## 3. 运行时总览
+## 3. 组件架构
 
-```mermaid
-flowchart TD
-  A["Plugin Library"] --> B["Discovery (frontmatter)"]
-  B --> C["Rule Matcher"]
-  C --> D["Activation (load PLUGIN.md body + manifest + schemas)"]
-  D --> E["Execution Ingress (plugin_use / plugin_script / template_call)"]
-  E --> F["Invocation Router"]
-  F --> G["Template Registry"]
-  F --> H["Action Runtime"]
-  H --> I["State Persistence (core + PluginStorage)"]
-  H --> J["Block/Event Outbox"]
-  J --> K["Frontend Generic Renderer"]
+### 3.1 保留组件（V1 不变）
+
+| 组件 | 代码位置 | 职责 |
+|------|---------|------|
+| PromptBuilder | `backend/app/core/prompt_builder.py` | 6 位置 prompt 组装 |
+| block_parser | `backend/app/core/block_parser.py` | `extract_blocks()` / `strip_blocks()` |
+| block_validation | `backend/app/core/block_validation.py` | builtin schema 校验 + 语义校验 |
+| PluginEventBus | `backend/app/core/event_bus.py` | 请求级事件总线 |
+| GameStateManager | `backend/app/core/game_state.py` | DB 操作（messages / characters / world） |
+| PluginStorage | `backend/app/models/plugin_storage.py` | 插件键值存储 |
+
+### 3.2 增强组件
+
+| 组件 | 代码位置 | V2 变更 |
+|------|---------|--------|
+| PluginEngine | `backend/app/core/plugin_engine.py` | discover/load 支持 manifest.json；get_prompt_injections 从 manifest 读 prompt 配置；get_block_declarations 从 manifest 读 blocks |
+| dispatch_block | `backend/app/core/block_handlers.py` | 新增 `plugin_use` block 类型分支 → 路由到 capability 执行 |
+| validate_block_data | `backend/app/core/block_validation.py` | 支持从 schemas/ 目录加载外部 schema 文件 |
+| chat_service | `backend/app/services/chat_service.py` | process_message 中处理 plugin_use block：执行 capability → 收集 result blocks → 注入后续流程 |
+| plugins API | `backend/app/api/plugins.py` | GET /api/plugins 返回 manifest 级元数据；新增导入/审计端点 |
+
+### 3.3 新增组件
+
+| 组件 | 代码位置（规划） | 职责 |
+|------|----------------|------|
+| CapabilityExecutor | `backend/app/core/capability_executor.py` | 执行 plugin_use 请求：校验 capability 声明 → 分发到 implementation（builtin / script / template）→ 收集结果 |
+| ScriptRunner | `backend/app/core/script_runner.py` | Python 脚本执行：stdin JSON → subprocess → stdout JSON + exit code → 审计记录 |
+| ManifestLoader | `backend/app/core/manifest_loader.py` | 解析 manifest.json + schemas/ 目录，生成运行时 PluginManifest 对象 |
+| AuditLogger | `backend/app/core/audit_logger.py` | 脚本执行审计日志记录 |
+
+---
+
+## 4. 执行流程
+
+### 4.1 Prompt 组装流（每轮 Turn 开始时）
+
+与 V1 一致，V2 仅改变元数据来源：
+
+```
+chat_service.process_message()
+  │
+  ├─ PluginEngine.resolve_dependencies(enabled_names)   # 拓扑排序
+  ├─ PluginEngine.get_prompt_injections(enabled_names, context)
+  │     │
+  │     ├─ 读 manifest.json.prompt → {position, priority, template}   # V2 新
+  │     ├─ 渲染 Jinja2 模板（或 PLUGIN.md body）
+  │     └─ 返回 [{position, priority, content}, ...]
+  │
+  ├─ PluginEngine.get_block_declarations(enabled_names)
+  │     │
+  │     ├─ 读 manifest.json.blocks → BlockDeclaration[]   # V2 新
+  │     └─ 返回 {block_type → BlockDeclaration}
+  │
+  ├─ PromptBuilder.inject() × N                          # 6 位置不变
+  │     位置 1: system     — world doc + global plugins
+  │     位置 2: character  — character state + scene
+  │     位置 3: world-state — game state + plugin state data
+  │     位置 4: memory     — long/short-term memory + archive
+  │     位置 5: chat-history — recent messages
+  │     位置 6: pre-response — block instructions + capability list   # V2 增强
+  │
+  └─ PromptBuilder.build() → [{role, content}, ...]
 ```
 
-运行时阶段定义：
+**V2 对 pre-response 的增强**：除了 Direct Block 的 instruction 列表外，还注入已启用插件的 capability 列表和 `json:plugin_use` 调用格式说明。
 
-1. Discovery：仅读取 frontmatter 级元信息（轻量）。
-2. Matching：规则引擎选择激活插件。
-3. Activation：加载 `PLUGIN.md` 正文、manifest、schemas。
-4. Execution：执行 `plugin_use/plugin_script/template_call`。
-5. Commit：Action Runtime 统一提交副作用并发出 blocks/events。
+### 4.2 Turn 处理流（LLM 响应后）
 
----
-
-## 4. 核心扩展三件套
-
-## 4.1 Invocation Router
-
-职责：把调用请求路由到正确执行路径。
-
-1. 输入：`plugin_use`、`plugin_script`、`template_call`。
-2. 校验：插件启用状态、能力声明、权限、schema。
-3. 路由：
-   1. `plugin_use` -> capability/action。
-   2. `plugin_script` -> script runner。
-   3. `template_call` -> Template Registry。
-
-## 4.2 Template Registry
-
-职责：管理并执行插件自带模板（Phase 1）。
-
-1. 模板来源：仅插件包内模板。
-2. 模板入口：由 manifest 声明。
-3. 模板输出：标准 `json:*` blocks 或 `plugin_use`。
-4. 失败处理：按模板声明 fallback 或返回可解释错误 block。
-
-## 4.3 Action Runtime
-
-职责：统一副作用执行与提交边界。
-
-1. 统一执行插件动作，不允许插件直接持有数据库会话。
-2. 统一事务边界，保证调用过程可审计。
-3. 统一产出 blocks/events/state updates，保持前端链路一致。
-
----
-
-## 5. 结构化协议（最小对象）
-
-## 5.1 `json:plugin_use`
-
-```json
-{
-  "plugin": "quest-system",
-  "capability": "quest.create",
-  "args": {
-    "title": "失落手稿",
-    "issuer": "馆长"
-  },
-  "mode": "sync"
-}
+```
+LLM streaming response
+  │
+  ├─ block_parser.extract_blocks(full_response)
+  │     返回 [{type, data, raw}, ...]
+  │
+  ├─ 遍历 blocks:
+  │     ├─ type == "plugin_use" ?
+  │     │     ├─ 是 → CapabilityExecutor.execute(data, context)    # V2 新
+  │     │     │         ├─ 校验 plugin/capability/args
+  │     │     │         ├─ 查 manifest.capabilities[cap].implementation
+  │     │     │         │     ├─ "builtin" → 调用注册的内置 handler
+  │     │     │         │     ├─ "script"  → ScriptRunner.run(script_path, args)
+  │     │     │         │     └─ "template" → 渲染 Jinja2 模板
+  │     │     │         ├─ 收集 result_blocks + state_updates
+  │     │     │         └─ 返回 result
+  │     │     └─ result blocks 加入 processed_blocks
+  │     │
+  │     └─ 其他 type → dispatch_block() (V1 流程不变)
+  │           ├─ builtin handler (state_update / character_sheet / ...)
+  │           ├─ declarative handler (storage_write / emit_event / ...)
+  │           └─ pass-through (转发前端)
+  │
+  ├─ event_bus.drain(context)
+  ├─ 保存 assistant message
+  └─ yield processed_blocks → WebSocket → 前端
 ```
 
-字段约束：
+### 4.3 V1 回退流（无 manifest.json 的插件）
 
-1. `plugin`: string，必须是已安装且已启用插件名。
-2. `capability`: string，必须在 manifest 能力表中声明。
-3. `args`: object，按能力输入 schema 校验。
-4. `mode`: enum，可选，默认 `sync`。
+```
+PluginEngine.load(plugin_name)
+  │
+  ├─ manifest.json 存在？
+  │     ├─ 是 → ManifestLoader 解析，返回 V2 PluginManifest
+  │     └─ 否 → 回退 PLUGIN.md frontmatter 解析（V1 路径）
+  │             └─ logger.warning("Plugin '{}' has no manifest.json, using V1 fallback")
+  │
+  └─ 后续流程统一（prompt injection / block declarations 接口不变）
+```
 
-## 5.2 `json:plugin_script`
+---
+
+## 5. Block 分类
+
+### 5.1 Direct Output Blocks（LLM 直接输出）
+
+LLM 在叙事文本中直接输出 `` ```json:<type> `` 格式。后端 `block_parser` 提取后走 `dispatch_block()` 既有路径。
+
+| Block Type | 来源插件 | 后端 Handler | 前端 Renderer |
+|-----------|---------|-------------|--------------|
+| state_update | core-blocks | StateUpdateHandler (builtin) | 无（静默应用） |
+| character_sheet | core-blocks | CharacterSheetHandler (builtin) | custom: character_sheet |
+| scene_update | core-blocks | SceneUpdateHandler (builtin) | custom: scene_update |
+| event | core-blocks | EventHandler (builtin) | 无（静默应用） |
+| notification | core-blocks | 无（pass-through） | custom: notification |
+| choices | choices | 无（pass-through） | custom: choices |
+| guide | auto-guide | 无（pass-through） | custom: guide |
+| dice_result | dice-roll | DeclarativeBlockHandler (storage_write + emit_event) | card (schema UI) |
+| story_image | story-image | StoryImageHandler (builtin) | custom: story_image |
+
+### 5.2 Capability Invocation Blocks（`json:plugin_use`）
+
+LLM 输出 `json:plugin_use`，后端执行 capability 后产出 result blocks。
 
 ```json
 {
   "plugin": "dice-roll",
-  "script": "scripts/roll.py",
-  "input": {
-    "expr": "2d6+3"
-  },
-  "timeout_ms": 5000
+  "capability": "dice.roll",
+  "args": { "expr": "2d6+3" }
 }
 ```
 
-字段约束：
+**执行流程**：
+1. `dispatch_block()` 识别 type == "plugin_use"
+2. 交给 `CapabilityExecutor`
+3. 查 `manifest.json.capabilities["dice.roll"].implementation`
+4. implementation.type == "script" → `ScriptRunner.run("scripts/roll.py", args)`
+5. 脚本 stdout JSON 解析为 result
+6. result 封装为 result blocks（如 `dice_result`）返回
 
-1. `plugin`: string。
-2. `script`: string，相对插件目录路径。
-3. `input`: object。
-4. `timeout_ms`: integer，可选，默认由系统配置提供。
-
----
-
-## 6. 目录与存储
-
-## 6.1 插件目录优先级
-
-加载优先级固定：
-
-1. `project`：`/data/projects/<project_id>/plugins/<plugin-name>`
-2. `user library`：`/data/plugin-library/<plugin-name>/<version>`
-3. `builtin`：`/plugins/<plugin-name>`
-
-同名插件按优先级覆盖；被覆盖插件不参与该项目运行时。
-
-## 6.2 存储模型
-
-坚持单主库策略：
-
-1. 核心实体继续使用现有 core 表。
-2. 插件状态继续使用 `PluginStorage`（命名空间隔离）。
-3. 需要结构化插件实体时，可新增 `plugin_entities`，但不拆分为每插件独立主库。
+**与 Direct Blocks 的关系**：
+- Direct Blocks：LLM 已知输出格式，直接产出结构化数据
+- Capability Blocks：LLM 只知道"调用什么能力"，由后端决定如何执行并产出结果
+- 一个插件可以同时声明 Direct Blocks 和 Capabilities
 
 ---
 
-## 7. 安全与执行边界
+## 6. 安全模型
 
-## 7.1 默认执行策略
+### 6.1 脚本执行
 
-1. 脚本执行默认无需确认。
-2. 每次执行必须记录审计日志。
-3. 脚本仅支持 Python（Phase 1）。
+| 策略 | 规则 |
+|------|------|
+| 确认策略 | 默认无需确认（开发效率优先） |
+| 支持语言 | Phase 1 仅 Python |
+| 超时 | 默认 5000ms，manifest 可声明覆盖 |
+| 文件系统 | 仅允许访问插件目录 + `data/` 目录 |
+| 审计 | 每次执行必须记录 invocation_id / plugin / script / args / exit_code / duration_ms / stdout / stderr |
 
-## 7.2 网络默认策略
+### 6.2 网络策略
 
-按插件类型默认：
+| 插件类型 | 默认网络策略 |
+|---------|------------|
+| global | 允许联网 |
+| gameplay | 禁止联网 |
 
-1. `global` 插件：默认允许联网。
-2. `gameplay` 插件：默认禁网。
+manifest.json 的 `permissions.network` 可显式覆盖默认值。
 
-manifest 可显式声明覆盖默认值，但必须通过导入校验。
+### 6.3 存储隔离
 
-## 7.3 文件系统范围
-
-脚本默认访问范围：
-
-1. 当前插件目录。
-2. `data/` 目录。
-
-超出范围的读写请求必须拒绝并记录审计。
-
-## 7.4 审计日志
-
-每次脚本调用至少记录：
-
-1. `invocation_id`
-2. `plugin`
-3. `script`
-4. `args/input`
-5. `exit_code`
-6. `duration_ms`
-7. `stdout`
-8. `stderr`
+插件存储通过 `PluginStorage` 表的 `(project_id, plugin_name, key)` 三元组隔离，V2 不变。
 
 ---
 
-## 8. API 变更（直接替换 `/api/plugins/*` 语义）
+## 7. API 变更
 
-## 8.1 插件管理接口
+### 7.1 增强现有端点
 
-1. `GET /api/plugins`
-2. `POST /api/plugins/{plugin_name}/toggle`
-3. `GET /api/plugins/enabled/{project_id}`
-4. `GET /api/plugins/block-schemas?project_id=...`
-5. `GET /api/plugins/block-conflicts?project_id=...`
-6. `POST /api/plugins/import/validate`
-7. `POST /api/plugins/import/install`
+| 端点 | 变更 |
+|------|------|
+| `GET /api/plugins` | 返回新增字段：version / manifest_source / capabilities / schema_status |
+| `POST /api/plugins/{name}/toggle` | 不变 |
+| `GET /api/plugins/enabled/{project_id}` | 不变 |
+| `GET /api/plugins/block-schemas?project_id=...` | schema 来源改为 manifest.json.blocks + schemas/ 文件 |
+| `GET /api/plugins/block-conflicts?project_id=...` | 不变 |
 
-## 8.2 新增运行时接口
+### 7.2 新增端点
 
-1. `POST /api/plugins/runtime/activate`
-2. `POST /api/plugins/runtime/plugin-use`
-3. `POST /api/plugins/runtime/plugin-script`
-4. `GET /api/plugins/runtime/invocations/{invocation_id}`
+| 端点 | 用途 |
+|------|------|
+| `POST /api/plugins/import/validate` | 校验待导入插件包（manifest + PLUGIN.md + schemas 一致性） |
+| `POST /api/plugins/import/install` | 安装外部插件到 user library |
+| `GET /api/plugins/{name}/audit` | 查询插件脚本执行审计日志 |
 
-运行时接口最小请求/响应契约：
+### 7.3 移除端点（原 V2 草案中的 runtime 端点）
 
-1. `POST /api/plugins/runtime/plugin-use`
-   1. Request:
-      ```json
-      {
-        "project_id": "p_123",
-        "session_id": "s_123",
-        "payload": {
-          "plugin": "quest-system",
-          "capability": "quest.create",
-          "args": {"title": "失落手稿"},
-          "mode": "sync"
-        }
-      }
-      ```
-   2. Response:
-      ```json
-      {
-        "ok": true,
-        "invocation_id": "inv_001",
-        "blocks": [{"type": "event", "data": {}}],
-        "events": [{"name": "quest_created", "payload": {}}],
-        "state_updates": []
-      }
-      ```
-2. `POST /api/plugins/runtime/plugin-script`
-   1. Request:
-      ```json
-      {
-        "project_id": "p_123",
-        "session_id": "s_123",
-        "payload": {
-          "plugin": "dice-roll",
-          "script": "scripts/roll.py",
-          "input": {"expr": "2d6+3"},
-          "timeout_ms": 5000
-        }
-      }
-      ```
-   2. Response:
-      ```json
-      {
-        "ok": true,
-        "invocation_id": "inv_002",
-        "result": {"total": 11, "detail": [4, 4], "mod": 3},
-        "blocks": [{"type": "dice_result", "data": {}}],
-        "audit_ref": "audit_002"
-      }
-      ```
-3. `GET /api/plugins/runtime/invocations/{invocation_id}`
-   1. Response:
-      ```json
-      {
-        "invocation_id": "inv_002",
-        "plugin": "dice-roll",
-        "status": "success",
-        "started_at": "2026-02-17T10:00:00Z",
-        "ended_at": "2026-02-17T10:00:00Z",
-        "duration_ms": 62,
-        "audit": {
-          "script": "scripts/roll.py",
-          "exit_code": 0
-        }
-      }
-      ```
+以下端点**不再实现**，plugin_use 在 WebSocket 聊天流中执行：
 
-## 8.3 关键响应字段变化
-
-`GET /api/plugins` 必须新增字段：
-
-1. `version`
-2. `manifest_source`
-3. `schema_status`
-4. `script_mode`
-5. `network_default`
-
-`GET /api/plugins/block-schemas` 的 schema 来源改为 `schemas/`，不再以 `PLUGIN.md` 内嵌结构为主。
-
-前端 `Plugin` 类型最小定义（必须同步更新）：
-
-```ts
-export interface Plugin {
-  name: string
-  description: string
-  type: 'global' | 'gameplay'
-  required: boolean
-  enabled: boolean
-  dependencies: string[]
-  version: string
-  manifest_source: 'project' | 'library' | 'builtin'
-  schema_status: 'ok' | 'index_fallback' | 'missing' | 'invalid'
-  script_mode: 'python-only'
-  network_default: 'allow' | 'deny'
-}
-```
+- ~~POST /api/plugins/runtime/activate~~
+- ~~POST /api/plugins/runtime/plugin-use~~
+- ~~POST /api/plugins/runtime/plugin-script~~
+- ~~GET /api/plugins/runtime/invocations/{id}~~
 
 ---
 
-## 9. 落地映射（需要改动的代码路径）
+## 8. 前端影响
 
-## 9.1 后端
+### 8.1 无变化
 
-1. `/Users/wuyong/codes/game/ai-gamestudio/backend/app/core/plugin_engine.py`
-2. `/Users/wuyong/codes/game/ai-gamestudio/backend/app/core/block_validation.py`
-3. `/Users/wuyong/codes/game/ai-gamestudio/backend/app/core/block_parser.py`
-4. `/Users/wuyong/codes/game/ai-gamestudio/backend/app/services/chat_service.py`
-5. `/Users/wuyong/codes/game/ai-gamestudio/backend/app/api/plugins.py`
+- WebSocket 事件协议不变：`chunk` / `done` / `state_update` / `error` / 自定义 block type
+- Block renderer 注册系统不变：`registerBlockRenderer(type, Component)`
+- 现有 custom renderers（choices / guide / notification / character_sheet / scene_update / story_image）不变
+- sessionStore 的 pendingBlocks 机制不变
 
-新增：
+### 8.2 需更新
 
-1. `/Users/wuyong/codes/game/ai-gamestudio/backend/app/core/invocation_router.py`
-2. `/Users/wuyong/codes/game/ai-gamestudio/backend/app/core/template_registry.py`
-3. `/Users/wuyong/codes/game/ai-gamestudio/backend/app/core/action_runtime.py`
-4. `/Users/wuyong/codes/game/ai-gamestudio/backend/app/core/plugin_matcher.py`
-5. `/Users/wuyong/codes/game/ai-gamestudio/backend/app/services/plugin_script_runner.py`
-6. `/Users/wuyong/codes/game/ai-gamestudio/backend/app/services/plugin_import_service.py`
-
-## 9.2 前端
-
-1. `/Users/wuyong/codes/game/ai-gamestudio/frontend/src/types/index.ts`
-2. `/Users/wuyong/codes/game/ai-gamestudio/frontend/src/services/api.ts`
-3. `/Users/wuyong/codes/game/ai-gamestudio/frontend/src/stores/pluginStore.ts`
-4. `/Users/wuyong/codes/game/ai-gamestudio/frontend/src/stores/blockSchemaStore.ts`
-5. `/Users/wuyong/codes/game/ai-gamestudio/frontend/src/components/plugins/PluginPanel.tsx`
+| 变更 | 说明 |
+|------|------|
+| `Plugin` 类型定义 | 新增 version / manifest_source / capabilities / schema_status 字段 |
+| PluginPanel 组件 | 展示 manifest 级元数据（version / capabilities / schema_status） |
+| pluginStore | 消费 GET /api/plugins 新增字段 |
+| plugin_use result blocks | 新 block type 需注册对应 renderer（或使用 generic JSON fallback） |
 
 ---
 
-## 10. 分阶段实施
+## 9. 分阶段实施
 
-## Phase A：调用内核（plugin_use/plugin_script + invocation + action）
+### Phase A：manifest.json 基础 + V1 回退
 
-1. 实现 `plugin_use` 与 `plugin_script` 协议。
-2. 实现 Invocation Router 与 Action Runtime 基础链路。
-3. 实现脚本审计与执行边界。
+1. 实现 ManifestLoader（解析 manifest.json + schemas/ 目录）
+2. 增强 PluginEngine：优先读 manifest，无 manifest 回退 V1
+3. 迁移 9 个内置插件的 frontmatter → manifest.json
+4. PLUGIN.md frontmatter 精简为 LLM 专有字段
+5. 增强 GET /api/plugins 返回 manifest 级元数据
 
-## Phase B：模板注册中心
+### Phase B：plugin_use 调用协议
 
-1. 实现插件自带模板注册与调用。
-2. 接入 `template_call` 到统一执行链路。
-3. 确保模板产物可回到现有 block 渲染路径。
+1. 实现 CapabilityExecutor + ScriptRunner + AuditLogger
+2. 增强 dispatch_block 支持 plugin_use 分支
+3. 增强 pre-response 指令：注入 capability 列表和 plugin_use 格式
+4. 实现 dice-roll 的 V2 capability（dice.roll → scripts/roll.py）作为首个端到端验证
 
-## Phase C：导入完善与生态化
+### Phase C：导入与审计
 
-1. 完成导入校验与安装流程收敛。
-2. 完善 schema 状态与冲突可视化。
-3. 为后续导出、多语言脚本扩展留出接口。
+1. 实现 import/validate + import/install 端点
+2. 实现 schemas/ 索引优先 / 扫描回退加载
+3. 实现审计日志查询端点
+4. 前端 PluginPanel 展示 manifest 元数据
+
+### Phase D：生态扩展（后续）
+
+1. 插件导出功能
+2. 多语言脚本支持
+3. 项目级模板覆盖
+4. 插件市场基础设施
 
 ---
 
-## 11. 验收标准
+## 10. 代码路径映射
 
-1. 新插件接入能力时，不需要改核心后端业务分支。
-2. 新插件新增交互时，不需要改前端业务组件，仅靠 schema 渲染。
-3. 脚本执行具备可追踪、可限权、可回放能力。
-4. `PLUGIN.md` 与 manifest 不一致会在导入阶段失败，而不是运行期容错。
-5. 无索引 schema 可扫描回退；有索引 schema 必须优先使用。
+### 10.1 后端 — 现有文件（需修改）
+
+| 文件 | 修改内容 |
+|------|---------|
+| `backend/app/core/plugin_engine.py` | discover/load 支持 manifest.json；回退 V1 |
+| `backend/app/core/block_handlers.py` | dispatch_block 新增 plugin_use 分支 |
+| `backend/app/core/block_validation.py` | 支持外部 schema 文件加载 |
+| `backend/app/services/chat_service.py` | process_message 处理 plugin_use block |
+| `backend/app/api/plugins.py` | 新增导入/审计端点；增强 list 返回值 |
+| `backend/app/services/plugin_service.py` | get_enabled_plugins 适配 manifest |
+
+### 10.2 后端 — 新增文件
+
+| 文件 | 职责 |
+|------|------|
+| `backend/app/core/manifest_loader.py` | manifest.json 解析 + schemas/ 加载 |
+| `backend/app/core/capability_executor.py` | plugin_use 请求执行 |
+| `backend/app/core/script_runner.py` | Python 脚本 subprocess 执行 |
+| `backend/app/core/audit_logger.py` | 脚本执行审计 |
+
+### 10.3 前端（需修改）
+
+| 文件 | 修改内容 |
+|------|---------|
+| `frontend/src/types/index.ts` 或 `stores/pluginStore.ts` | Plugin 类型新增字段 |
+| `frontend/src/services/api.ts` | 消费新增 API 字段 |
+| `frontend/src/components/plugins/PluginPanel.tsx` | 展示 manifest 元数据 |
 
 ---
 
-## 12. 假设与默认值
+## 11. 假设与默认值
 
 1. 首期脚本语言仅支持 Python。
 2. 首期不做插件导出。
 3. 首期不做项目级模板覆盖。
-4. API 路径不加 `/v2`，直接替换旧语义。
-5. 规范中的“推荐”在首版实现中按“必须”执行，避免双轨语义。
+4. API 路径不加 `/v2`，直接增强现有语义。
+5. 规范中的"推荐"在首版实现中按"必须"执行。
+6. 无 manifest.json 的插件自动回退 V1 解析路径，日志输出弃用警告。
+
+---
+
+文档版本：v2.0
+更新日期：2026-02-17

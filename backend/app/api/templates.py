@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import frontmatter
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from loguru import logger
 from pydantic import BaseModel
 
@@ -99,7 +99,12 @@ async def get_world_template(slug: str):
 
 
 @router.post("/worlds/generate", response_model=GenerateWorldResponse)
-async def generate_world(body: GenerateWorldRequest):
+async def generate_world(
+    body: GenerateWorldRequest,
+    x_llm_model: str | None = Header(default=None),
+    x_llm_api_key: str | None = Header(default=None),
+    x_llm_api_base: str | None = Header(default=None),
+):
     """Generate a world document using AI."""
     # Load WORLD-SPEC as system prompt
     spec_path = Path("docs/WORLD-SPEC.md")
@@ -132,5 +137,11 @@ async def generate_world(body: GenerateWorldRequest):
         {"role": "user", "content": user_prompt},
     ]
 
-    result = await completion(messages, stream=False)
+    result = await completion(
+        messages,
+        stream=False,
+        model=x_llm_model,
+        api_key=x_llm_api_key,
+        api_base=x_llm_api_base,
+    )
     return GenerateWorldResponse(world_doc=result)

@@ -246,11 +246,19 @@ def validate_block_data(
     declaration: "BlockDeclaration | None" = None,
 ) -> list[str]:
     """Validate block data against plugin schema and built-in constraints."""
-    schema = (
-        declaration.schema
-        if declaration and isinstance(declaration.schema, dict)
-        else _BUILTIN_BLOCK_SCHEMAS.get(block_type)
-    )
+    schema = None
+    if declaration:
+        if isinstance(declaration.schema, dict):
+            schema = declaration.schema
+        elif declaration.schema_ref:
+            # schema_ref is a string path — resolved schemas would be loaded
+            # from ManifestLoader.load_schemas() and injected by the caller.
+            # If not resolved, fall back to builtin schemas.
+            schema = _BUILTIN_BLOCK_SCHEMAS.get(block_type)
+        else:
+            schema = _BUILTIN_BLOCK_SCHEMAS.get(block_type)
+    else:
+        schema = _BUILTIN_BLOCK_SCHEMAS.get(block_type)
     errors: list[str] = []
     if isinstance(schema, dict):
         errors.extend(_validate_schema(data, schema))

@@ -9,6 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from backend.app.core.game_state import GameStateManager
 
 if TYPE_CHECKING:
+    from backend.app.core.capability_executor import CapabilityExecutor
     from backend.app.core.event_bus import PluginEventBus
     from backend.app.core.plugin_engine import BlockDeclaration
 
@@ -22,6 +23,7 @@ class BlockContext:
     event_bus: PluginEventBus | None = field(default=None)
     autocommit: bool = True
     turn_id: str | None = None
+    image_overrides: dict[str, str] | None = None
 
 
 class BlockHandler(Protocol):
@@ -45,9 +47,31 @@ async def dispatch_block(
     block: dict,
     context: BlockContext,
     block_declarations: dict[str, BlockDeclaration] | None = None,
-) -> dict:
-    """Look up handler for block type, call process, return (possibly enriched) block."""
+    capability_executor: "CapabilityExecutor | None" = None,
+) -> dict | list[dict]:
+    """Look up handler for block type, call process, return (possibly enriched) block.
+
+    For plugin_use blocks, returns a list of result blocks from CapabilityExecutor.
+    For all other blocks, returns a single block dict.
+    """
     block_type = block.get("type", "")
+
+    # 0. plugin_use → CapabilityExecutor
+    if block_type == "plugin_use" and capability_executor is not None:
+        result = await capability_executor.execute(
+            block.get("data", {}),
+            context={"session_id": context.session_id, "project_id": context.project_id},
+        )
+        if result.success and result.result_blocks:
+            return result.result_blocks
+        elif not result.success:
+            logger.warning("plugin_use failed: {}", result.error)
+            return {"type": "notification", "data": {
+                "level": "warning",
+                "title": "Plugin capability failed",
+                "content": result.error,
+            }}
+        return block
 
     # 1. Check built-in handler registry (highest priority, backward compatible)
     handler = get_block_handler(block_type)
@@ -341,6 +365,7 @@ class StoryImageHandler:
                 layout_preference=layout_preference,
                 turn_id=context.turn_id,
                 autocommit=context.autocommit,
+                image_overrides=context.image_overrides,
             )
         except Exception as exc:
             logger.exception("story_image generation failed")

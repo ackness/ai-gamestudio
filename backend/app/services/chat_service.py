@@ -15,11 +15,13 @@ from backend.app.core.block_validation import validate_block_data
 from backend.app.core.config import settings
 from backend.app.core.event_bus import PluginEventBus
 from backend.app.core.game_state import GameStateManager
-from backend.app.core.llm_config import get_effective_config_for_project
+from backend.app.core.llm_config import resolve_llm_config
 from backend.app.core.llm_gateway import completion_with_config
 from backend.app.core.plugin_engine import BlockDeclaration, PluginEngine
 from backend.app.core.plugin_registry import get_plugin_engine
 from backend.app.core.prompt_builder import PromptBuilder
+from backend.app.core.audit_logger import AuditLogger
+from backend.app.core.capability_executor import CapabilityExecutor
 from backend.app.db.engine import engine
 from backend.app.models.project import Project
 from backend.app.models.session import GameSession
@@ -42,6 +44,8 @@ async def process_message(
     *,
     save_user_msg: bool = True,
     save_assistant_msg: bool = True,
+    llm_overrides: dict[str, str] | None = None,
+    image_overrides: dict[str, str] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Process a user message end-to-end and yield streaming events.
 
@@ -289,6 +293,7 @@ async def process_message(
 
         # 8. Inject plugin prompts and collect block declarations
         block_declarations: dict[str, BlockDeclaration] = {}
+        capability_declarations: list[dict[str, Any]] = []
         pe = get_plugin_engine()
         try:
             if enabled_names:
@@ -355,6 +360,13 @@ async def process_message(
                     )
                 # Collect block declarations from enabled plugins
                 block_declarations = pe.get_block_declarations(enabled_names)
+                # Collect capability declarations for pre-response injection
+                try:
+                    capability_declarations = pe.get_capability_declarations(
+                        enabled_names, settings.PLUGINS_DIR
+                    )
+                except Exception:
+                    logger.exception("Failed to get capability declarations")
         except Exception:
             logger.exception("Failed to inject plugin prompts")
 
@@ -377,7 +389,10 @@ async def process_message(
         builder.inject(
             "pre-response",
             0,
-            _build_pre_response_instructions(block_declarations),
+            _build_pre_response_instructions(
+                block_declarations,
+                capability_declarations=capability_declarations,
+            ),
         )
         if runtime_settings_prompt:
             builder.inject(
@@ -388,7 +403,7 @@ async def process_message(
 
         # 9. Build messages and call LLM
         messages = builder.build()
-        config = get_effective_config_for_project(project)
+        config = resolve_llm_config(project=project, overrides=llm_overrides)
         logger.info(f"Using LLM: model={config.model}, source={config.source}")
 
         try:
@@ -425,6 +440,20 @@ async def process_message(
         event_bus = PluginEventBus()
         _register_event_listeners(event_bus, pe, enabled_names)
 
+        # Create capability executor for plugin_use blocks
+        capability_executor: CapabilityExecutor | None = None
+        try:
+            if capability_declarations:
+                audit_logger = AuditLogger()
+                capability_executor = CapabilityExecutor(
+                    plugin_engine=pe,
+                    plugins_dir=settings.PLUGINS_DIR,
+                    enabled_plugins=enabled_names,
+                    audit_logger=audit_logger,
+                )
+        except Exception:
+            logger.exception("Failed to initialize capability executor")
+
         block_context = BlockContext(
             session_id=session_id,
             project_id=project.id,
@@ -433,6 +462,7 @@ async def process_message(
             event_bus=event_bus,
             autocommit=False,
             turn_id=turn_id,
+            image_overrides=image_overrides,
         )
 
         processed_blocks: list[dict[str, Any]] = []
@@ -440,6 +470,7 @@ async def process_message(
         has_content = clean_response.strip() or blocks
         should_increment_turn = bool(save_assistant_msg and has_content)
         stage_b_has_writes = bool(blocks)
+        saved_message_id: str | None = None
 
         try:
             for idx, block in enumerate(blocks):
@@ -479,15 +510,27 @@ async def process_message(
                     continue
 
                 enriched = await dispatch_block(
-                    block, block_context, block_declarations
+                    block, block_context, block_declarations,
+                    capability_executor=capability_executor,
                 )
-                processed_blocks.append(
-                    {
-                        "type": enriched["type"],
-                        "data": enriched["data"],
-                        "block_id": block_id,
-                    }
-                )
+                # dispatch_block may return a list (plugin_use) or a single dict
+                if isinstance(enriched, list):
+                    for rb in enriched:
+                        processed_blocks.append(
+                            {
+                                "type": rb.get("type", "plugin_result"),
+                                "data": rb.get("data", {}),
+                                "block_id": f"{block_id}:cap",
+                            }
+                        )
+                else:
+                    processed_blocks.append(
+                        {
+                            "type": enriched["type"],
+                            "data": enriched["data"],
+                            "block_id": block_id,
+                        }
+                    )
 
             # Drain event bus (process any events emitted by block handlers)
             await event_bus.drain(block_context)
@@ -513,7 +556,7 @@ async def process_message(
                     [b["type"] for b in processed_blocks],
                     len(full_response),
                 )
-                await state_mgr.add_message(
+                saved_msg = await state_mgr.add_message(
                     session_id,
                     "assistant",
                     clean_response,
@@ -522,6 +565,7 @@ async def process_message(
                     raw_content=full_response,
                     scene_id=updated_scene_id,
                 )
+                saved_message_id = saved_msg.id
                 stage_b_has_writes = True
 
             # 13. Increment turn count
@@ -550,6 +594,13 @@ async def process_message(
                 "type": block["type"],
                 "data": block["data"],
                 "block_id": block.get("block_id"),
+                "turn_id": turn_id,
+            }
+
+        if saved_message_id:
+            yield {
+                "type": "_message_saved",
+                "message_id": saved_message_id,
                 "turn_id": turn_id,
             }
 
@@ -639,12 +690,15 @@ def _format_llm_error(exc: Exception, model: str) -> str:
 
 def _build_pre_response_instructions(
     block_declarations: dict[str, BlockDeclaration] | None = None,
+    *,
+    capability_declarations: list[dict[str, Any]] | None = None,
 ) -> str:
     """Build the pre-response block format instructions for the LLM.
 
-    When block_declarations are provided (from plugin PLUGIN.md frontmatter),
+    When block_declarations are provided (from plugin manifest or PLUGIN.md frontmatter),
     instructions are dynamically assembled from each declaration's ``instruction``
-    field. Falls back to a minimal generic message when no declarations exist.
+    field. Capability declarations add plugin_use invocation guidance.
+    Falls back to a minimal generic message when no declarations exist.
     """
     header = (
         "Respond in character as the DM. You may include structured data blocks "
@@ -672,11 +726,34 @@ def _build_pre_response_instructions(
                 "You may include multiple blocks in a single response. "
                 "Each block MUST be wrapped in triple-backtick fences as shown above."
             )
-            return header
 
-    # Fallback when no plugin declarations are available
-    header += (
-        "You may output structured data as ```json:<type>``` blocks at the end "
-        "of your narrative text when game state changes occur."
-    )
+    # Add capability declarations (plugin_use protocol)
+    if capability_declarations:
+        cap_sections: list[str] = []
+        for cap in capability_declarations:
+            cap_sections.append(
+                f"- **{cap['capability_id']}** (plugin: {cap['plugin']}): "
+                f"{cap.get('description', '')}"
+            )
+        header += (
+            "\n\n## Plugin Capabilities (plugin_use protocol)\n\n"
+            "You can invoke plugin capabilities by outputting a `json:plugin_use` block. "
+            "The backend will execute the capability and return the result.\n\n"
+            "Format:\n"
+            "```\n"
+            "```json:plugin_use\n"
+            '{"plugin": "<plugin-name>", "capability": "<capability-id>", "args": {<arguments>}}\n'
+            "```\n"
+            "```\n\n"
+            "Available capabilities:\n"
+            + "\n".join(cap_sections)
+        )
+
+    if not block_declarations and not capability_declarations:
+        # Fallback when no plugin declarations are available
+        header += (
+            "You may output structured data as ```json:<type>``` blocks at the end "
+            "of your narrative text when game state changes occur."
+        )
+
     return header

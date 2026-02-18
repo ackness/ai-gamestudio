@@ -71,16 +71,40 @@ class ResolvedImageConfig:
     model: str
     api_key: str | None
     api_base: str
-    source: str  # "project" | "env" | "default"
+    source: str  # "project" | "env" | "default" | "browser"
 
     def has_api_key(self) -> bool:
         return not _is_empty(self.api_key)
 
 
-def resolve_image_config(project: Project | None = None) -> ResolvedImageConfig:
+def _normalize_image_overrides(
+    overrides: dict[str, str] | None,
+) -> dict[str, str]:
+    if not isinstance(overrides, dict):
+        return {}
+
+    model = str(overrides.get("model") or "").strip()
+    api_key = str(overrides.get("api_key") or "").strip()
+    api_base = str(overrides.get("api_base") or "").strip()
+
+    normalized: dict[str, str] = {}
+    if model:
+        normalized["model"] = model
+    if api_key:
+        normalized["api_key"] = api_key
+    if api_base:
+        normalized["api_base"] = api_base
+    return normalized
+
+
+def resolve_image_config(
+    project: Project | None = None,
+    overrides: dict[str, str] | None = None,
+) -> ResolvedImageConfig:
+    base_config: ResolvedImageConfig
     if project and not _is_empty(project.image_model):
         project_api_key = _resolve_project_image_api_key(project)
-        return ResolvedImageConfig(
+        base_config = ResolvedImageConfig(
             model=project.image_model or settings.IMAGE_GEN_MODEL,
             api_key=project_api_key
             if not _is_empty(project_api_key)
@@ -90,21 +114,32 @@ def resolve_image_config(project: Project | None = None) -> ResolvedImageConfig:
             ),
             source="project",
         )
-
-    if not _is_empty(settings.IMAGE_GEN_MODEL):
-        return ResolvedImageConfig(
+    elif not _is_empty(settings.IMAGE_GEN_MODEL):
+        base_config = ResolvedImageConfig(
             model=settings.IMAGE_GEN_MODEL,
             api_key=settings.IMAGE_GEN_API_KEY,
             api_base=_normalize_image_api_base(settings.IMAGE_GEN_API_BASE),
             source="env",
         )
+    else:
+        base_config = ResolvedImageConfig(
+            model="gemini-2.5-flash-image-preview",
+            api_key=None,
+            api_base=_DEFAULT_IMAGE_ENDPOINT,
+            source="default",
+        )
 
-    return ResolvedImageConfig(
-        model="gemini-2.5-flash-image-preview",
-        api_key=None,
-        api_base=_DEFAULT_IMAGE_ENDPOINT,
-        source="default",
-    )
+    normalized_overrides = _normalize_image_overrides(overrides)
+    if normalized_overrides:
+        return ResolvedImageConfig(
+            model=normalized_overrides.get("model", base_config.model),
+            api_key=normalized_overrides.get("api_key", base_config.api_key),
+            api_base=_normalize_image_api_base(
+                normalized_overrides.get("api_base", base_config.api_base)
+            ),
+            source="browser",
+        )
+    return base_config
 
 
 def _storage_key_for_session(session_id: str) -> str:
@@ -832,9 +867,11 @@ async def generate_story_image(
     scene_frames: list[str] | None = None,
     layout_preference: str | None = None,
     turn_id: str | None = None,
+    message_id: str | None = None,
     regenerated_from: str | None = None,
     max_retries: int = 1,
     autocommit: bool = False,
+    image_overrides: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     story_background = (story_background or "").strip()
     prompt = (prompt or "").strip()
@@ -875,7 +912,7 @@ async def generate_story_image(
             error=f"Project not found: {project_id}",
         )
 
-    config = resolve_image_config(project)
+    config = resolve_image_config(project, overrides=image_overrides)
     if not config.has_api_key():
         return _image_error_payload(
             title=title,
@@ -985,6 +1022,7 @@ async def generate_story_image(
         "image_id": image_id,
         "session_id": session_id,
         "turn_id": turn_id,
+        "message_id": message_id,
         "title": title or "Story Image",
         "story_background": story_background,
         "prompt": prompt,
@@ -1064,6 +1102,7 @@ async def regenerate_story_image(
     reason: str | None = None,
     turn_id: str | None = None,
     autocommit: bool = False,
+    image_overrides: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     history_rows = await get_session_story_images(
         db,
@@ -1122,4 +1161,70 @@ async def regenerate_story_image(
         turn_id=turn_id,
         regenerated_from=image_id,
         autocommit=autocommit,
+        image_overrides=image_overrides,
     )
+
+
+async def generate_message_image(
+    db: AsyncSession,
+    *,
+    project_id: str,
+    session_id: str,
+    message_id: str,
+    message_content: str,
+    context_messages: list[str],
+    autocommit: bool = False,
+    image_overrides: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Generate a story image for a specific message using its content as the prompt.
+
+    Builds story_background from context_messages, uses message_content as the
+    frame prompt, and builds continuity_notes from the current world state.
+    Delegates to generate_story_image() for actual generation.
+    """
+    # Build story_background from recent context messages
+    story_background = "\n".join(
+        _truncate(msg, 300) for msg in context_messages[-3:]
+    ).strip()
+    if not story_background:
+        story_background = _truncate(message_content, 400)
+
+    # Truncate message content for use as prompt
+    prompt = _truncate(message_content, 800)
+    if not prompt:
+        return {
+            "status": "error",
+            "message_id": message_id,
+            "error": "Message content is empty.",
+        }
+
+    # Build continuity_notes from world state (characters, scene, events)
+    continuity_notes = await _build_text_world_state(db, session_id=session_id)
+
+    # Fetch previous images for reference continuity
+    history_rows = await get_session_story_images(
+        db, project_id=project_id, session_id=session_id
+    )
+    reference_image_ids = [
+        str(row["image_id"])
+        for row in history_rows[-2:]
+        if isinstance(row, dict) and isinstance(row.get("image_id"), str)
+    ]
+
+    result = await generate_story_image(
+        db,
+        project_id=project_id,
+        session_id=session_id,
+        title="Story Image",
+        story_background=story_background,
+        prompt=prompt,
+        continuity_notes=continuity_notes,
+        reference_image_ids=reference_image_ids,
+        message_id=message_id,
+        autocommit=autocommit,
+        image_overrides=image_overrides,
+    )
+
+    # Ensure message_id is in the result
+    result["message_id"] = message_id
+    return result
