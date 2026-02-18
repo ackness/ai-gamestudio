@@ -13,6 +13,8 @@ services:
     environment:
       # Override DATABASE_URL to point inside the container data volume
       DATABASE_URL: sqlite+aiosqlite:///data/db.sqlite
+      # Pass host port into container so startup banner shows the correct URL
+      PORT: "${PORT:-8000}"
     volumes:
       # Persist database, logs, audit trail, and secrets across restarts
       - ai-gamestudio-data:/app/data
