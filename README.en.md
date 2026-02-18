@@ -94,7 +94,7 @@ AI GameStudio is an **LLM-native low-code RPG engine**. You don't write any game
 
 ```bash
 # Clone the repository
-git clone <repo-url>
+git clone https://github.com/ackness/ai-gamestudio
 cd ai-gamestudio
 
 # Install tool dependencies
@@ -130,14 +130,14 @@ LLM_API_BASE=https://api.deepseek.com
 ### Using OpenAI
 
 ```env
-LLM_MODEL=gpt-4o-mini
+LLM_MODEL=gpt-5-mini-2025-08-07
 LLM_API_KEY=your-openai-key
 ```
 
 ### Using Ollama (local model)
 
 ```env
-LLM_MODEL=ollama/qwen2.5:7b
+LLM_MODEL=ollama/glm-4.7-flash
 LLM_API_BASE=http://localhost:11434
 ```
 
@@ -179,7 +179,7 @@ Set these environment variables in your Vercel project:
 ```env
 VITE_CHAT_TRANSPORT=http
 VITE_API_BASE_URL=/api
-LLM_MODEL=gpt-4o-mini
+LLM_MODEL=deepseek/deepseek-chat
 LLM_API_KEY=your-api-key
 ```
 
@@ -191,13 +191,11 @@ LLM_API_KEY=your-api-key
 ```env
 VITE_CHAT_TRANSPORT=http
 VITE_API_BASE_URL=/api
-LLM_MODEL=gpt-4o-mini
+LLM_MODEL=deepseek/deepseek-chat
 LLM_API_KEY=your-api-key
 DATABASE_URL=postgresql+asyncpg://<user>:<pass>@<host>/<db>
 CORS_ORIGINS=https://your-domain.vercel.app
 ```
-
-[Neon](https://neon.tech) and [Supabase](https://supabase.com) both offer free PostgreSQL tiers.
 
 ---
 

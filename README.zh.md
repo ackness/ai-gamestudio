@@ -36,8 +36,9 @@ mise run setup
 3. 在 `.env` 里配置模型：
 
 ```env
-LLM_MODEL=gpt-4o-mini
+LLM_MODEL=deepseek/deepseek-chat
 LLM_API_KEY=your-api-key-here
+LLM_API_BASE=https://api.deepseek.com
 ```
 
 4. 启动开发环境（两个终端）：
@@ -72,7 +73,7 @@ VITE_CHAT_TRANSPORT=http
 VITE_API_BASE_URL=/api
 
 # Backend runtime
-LLM_MODEL=gpt-4o-mini
+LLM_MODEL=deepseek/deepseek-chat
 LLM_API_KEY=your-api-key
 DATABASE_URL=postgresql+asyncpg://<user>:<pass>@<host>/<db>
 # CORS_ORIGINS=https://your-domain.vercel.app
