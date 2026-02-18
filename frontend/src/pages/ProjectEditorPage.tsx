@@ -2,11 +2,17 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { useProjectStore } from '../stores/projectStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { useUiStore } from '../stores/uiStore'
 import { MarkdownEditor } from '../components/editor/MarkdownEditor'
 import { InitPromptEditor } from '../components/editor/InitPromptEditor'
 import { GamePanel } from '../components/game/GamePanel'
 import { SidePanel } from '../components/status/SidePanel'
 import { decideSessionBootstrap } from '../utils/sessionBootstrap'
+
+const SUPPORTED_LANGS = [
+  { code: 'en', label: 'EN' },
+  { code: 'zh', label: '中文' },
+]
 
 type LeftTab = 'world' | 'init-prompt'
 
@@ -66,6 +72,8 @@ export function ProjectEditorPage() {
       fetchMessages(active.id)
     }
   }, [sessions, id, currentSession, setCurrentSession, fetchMessages, sessionsFetched])
+
+  const { language, setLanguage } = useUiStore()
 
   const handleNewSession = async () => {
     if (!id) return
@@ -141,7 +149,26 @@ export function ProjectEditorPage() {
           >
             {rightCollapsed ? '<' : '>'}
           </button>
-          {!rightCollapsed && <span className="text-sm font-medium text-slate-300">Status</span>}
+          {!rightCollapsed && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-slate-300">Status</span>
+              <div className="flex items-center gap-1">
+                {SUPPORTED_LANGS.map((lang) => (
+                  <button
+                    key={lang.code}
+                    onClick={() => setLanguage(lang.code)}
+                    className={`text-xs px-2 py-0.5 rounded font-medium transition-colors ${
+                      language === lang.code
+                        ? 'bg-slate-600 text-slate-100'
+                        : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/50'
+                    }`}
+                  >
+                    {lang.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         {!rightCollapsed && <SidePanel />}
       </div>

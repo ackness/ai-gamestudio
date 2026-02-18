@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RuntimeSettingField } from '../../types'
 import { useProjectStore } from '../../stores/projectStore'
 import { useSessionStore } from '../../stores/sessionStore'
-import * as api from '../../services/api'
+import { usePluginStore } from '../../stores/pluginStore'
+import { useUiStore } from '../../stores/uiStore'
+import { StorageFactory, type ISettingsStorage } from '../../services/settingsStorage'
 
 type Scope = 'project' | 'session'
 
@@ -42,6 +44,26 @@ function displayValue(field: RuntimeSettingField, value: unknown): string {
 export function RuntimeSettingsPanel() {
   const currentProject = useProjectStore((s) => s.currentProject)
   const currentSession = useSessionStore((s) => s.currentSession)
+  const plugins = usePluginStore((s) => s.plugins)
+  const language = useUiStore((s) => s.language)
+
+  const pluginDisplayName = useCallback(
+    (name: string): string => {
+      const plugin = plugins.find((p) => p.name === name)
+      if (!plugin) return name
+      return plugin.i18n?.[language]?.name || plugin.name
+    },
+    [plugins, language],
+  )
+
+  const localizeField = useCallback(
+    (field: RuntimeSettingField) => ({
+      label: field.i18n?.[language]?.label || field.label,
+      description: field.i18n?.[language]?.description || field.description,
+      localizedDefault: field.i18n?.[language]?.default,
+    }),
+    [language],
+  )
   const [scope, setScope] = useState<Scope>('project')
   const [loading, setLoading] = useState(false)
   const [fields, setFields] = useState<RuntimeSettingField[]>([])
@@ -50,6 +72,15 @@ export function RuntimeSettingsPanel() {
   const [sessionOverrides, setSessionOverrides] = useState<Record<string, unknown>>({})
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const storageRef = useRef<ISettingsStorage | null>(null)
+
+  const getStorage = useCallback(async () => {
+    if (!storageRef.current) {
+      storageRef.current = await StorageFactory.create()
+    }
+    return storageRef.current
+  }, [])
 
   const refresh = useCallback(async () => {
     if (!currentProject?.id) {
@@ -62,9 +93,10 @@ export function RuntimeSettingsPanel() {
     setLoading(true)
     setError(null)
     try {
+      const storage = await getStorage()
       const [schemaRes, valuesRes] = await Promise.all([
-        api.getRuntimeSettingsSchema(currentProject.id),
-        api.getRuntimeSettings(currentProject.id, currentSession?.id),
+        storage.getSchema(currentProject.id),
+        storage.getValues(currentProject.id, currentSession?.id),
       ])
       setFields(schemaRes.fields || [])
       setValues(valuesRes.values || {})
@@ -77,7 +109,7 @@ export function RuntimeSettingsPanel() {
     } finally {
       setLoading(false)
     }
-  }, [currentProject?.id, currentSession?.id])
+  }, [currentProject?.id, currentSession?.id, getStorage])
 
   useEffect(() => {
     refresh()
@@ -118,9 +150,10 @@ export function RuntimeSettingsPanel() {
       setValues((prev) => ({ ...prev, [field.key]: normalized }))
 
       try {
-        const patched = await api.patchRuntimeSettings({
-          project_id: currentProject.id,
-          session_id: targetScope === 'session' ? currentSession?.id : undefined,
+        const storage = await getStorage()
+        const patched = await storage.patch({
+          projectId: currentProject.id,
+          sessionId: targetScope === 'session' ? currentSession?.id : undefined,
           scope: targetScope,
           values: { [field.key]: normalized },
         })
@@ -134,7 +167,7 @@ export function RuntimeSettingsPanel() {
         setSavingKey(null)
       }
     },
-    [currentProject?.id, currentSession?.id, scope, refresh],
+    [currentProject?.id, currentSession?.id, scope, refresh, getStorage],
   )
 
   if (!currentProject) {
@@ -196,7 +229,10 @@ export function RuntimeSettingsPanel() {
       {Object.entries(fieldsByPlugin).map(([pluginName, pluginFields]) => (
         <div key={pluginName} className="bg-slate-800 border border-slate-700 rounded-lg p-3 space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-medium text-slate-200">{pluginName}</p>
+            <p className="text-sm font-medium text-slate-200">{pluginDisplayName(pluginName)}</p>
+            {pluginDisplayName(pluginName) !== pluginName && (
+              <span className="text-[10px] text-slate-500 font-mono">{pluginName}</span>
+            )}
           </div>
           {pluginFields.map((field) => {
             const currentValue = values[field.key]
@@ -205,11 +241,20 @@ export function RuntimeSettingsPanel() {
               ? Object.prototype.hasOwnProperty.call(projectOverrides, field.key)
               : Object.prototype.hasOwnProperty.call(sessionOverrides, field.key)
             const disabledByScope = field.scope === 'session' && !currentSession
+            const { label: fieldLabel, description: fieldDescription, localizedDefault } = localizeField(field)
+
+            // Show localized default when the field hasn't been explicitly overridden
+            // and the localized locale provides an alternative default value.
+            const effectiveDisplayValue = (v: unknown) => {
+              const raw = displayValue(field, v)
+              if (!isOverridden && localizedDefault !== undefined) return localizedDefault
+              return raw
+            }
 
             return (
               <div key={field.key} className="space-y-1 border border-slate-700/70 rounded-md p-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs text-slate-200 font-medium">{field.label}</p>
+                  <p className="text-xs text-slate-200 font-medium">{fieldLabel}</p>
                   <div className="flex items-center gap-1">
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">
                       {field.scope}
@@ -225,8 +270,8 @@ export function RuntimeSettingsPanel() {
                   </div>
                 </div>
 
-                {field.description && (
-                  <p className="text-[11px] text-slate-500">{field.description}</p>
+                {fieldDescription && (
+                  <p className="text-[11px] text-slate-500">{fieldDescription}</p>
                 )}
 
                 {field.type === 'boolean' ? (
@@ -248,13 +293,13 @@ export function RuntimeSettingsPanel() {
                   >
                     {(field.options || []).map((opt) => (
                       <option key={String(opt.value)} value={String(opt.value)}>
-                        {opt.label}
+                        {opt.i18n?.[language]?.label || opt.label}
                       </option>
                     ))}
                   </select>
                 ) : field.component === 'textarea' ? (
                   <textarea
-                    value={displayValue(field, currentValue)}
+                    value={effectiveDisplayValue(currentValue)}
                     disabled={disabledByScope}
                     onChange={(e) => patchField(field, e.target.value)}
                     className="w-full min-h-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 disabled:opacity-50"
@@ -265,7 +310,7 @@ export function RuntimeSettingsPanel() {
                     min={field.min}
                     max={field.max}
                     step={field.step || (field.type === 'integer' ? 1 : undefined)}
-                    value={displayValue(field, currentValue)}
+                    value={effectiveDisplayValue(currentValue)}
                     disabled={disabledByScope}
                     onChange={(e) => patchField(field, e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 disabled:opacity-50"
@@ -276,13 +321,24 @@ export function RuntimeSettingsPanel() {
                   <p className="text-[10px] text-slate-500">
                     key: <code>{field.key}</code>
                   </p>
-                  <button
-                    onClick={() => patchField(field, null, true)}
-                    disabled={disabledByScope}
-                    className="text-[10px] px-2 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 disabled:opacity-50"
-                  >
-                    Reset
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {localizedDefault !== undefined && (
+                      <button
+                        onClick={() => patchField(field, localizedDefault)}
+                        disabled={disabledByScope}
+                        className="text-[10px] px-2 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 disabled:opacity-50"
+                      >
+                        {language === 'zh' ? '用中文默认值' : 'Use localized default'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => patchField(field, null, true)}
+                      disabled={disabledByScope}
+                      className="text-[10px] px-2 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 disabled:opacity-50"
+                    >
+                      Reset
+                    </button>
+                  </div>
                 </div>
               </div>
             )
