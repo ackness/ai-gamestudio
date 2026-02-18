@@ -1,7 +1,6 @@
 # AI GameStudio Architecture (Current Runtime)
 
-> This document describes the architecture that is actually implemented in code today.
-> Date baseline: 2026-02-16.
+> Describes the architecture implemented in code as of 2026-02-19.
 
 ---
 
@@ -9,21 +8,29 @@
 
 ```text
 Frontend (React + Zustand)
-  - Chat UI
-  - Block renderers (custom + schema-driven)
-  - Side panels (characters/events/world/plugins)
+  - Chat UI (streaming, block renderers)
+  - Side panels: characters / events / plugins / runtime settings
+  - World editor (Markdown)
+  - Storage: IndexedDB (offline) or backend API
             |
             | WebSocket (/ws/chat/{session_id})
+            | HTTP fallback (/api/chat/{session_id}/command)
             | REST (/api/*)
             v
-Backend (FastAPI + SQLModel + SQLite)
-  - chat.py websocket router
-  - chat_service.process_message orchestration
-  - plugin_engine / prompt_builder / block_parser / block_handlers
-  - game_state manager + archive_service
+Backend (FastAPI + SQLModel + SQLite / PostgreSQL)
+  - chat.py          — WebSocket & HTTP chat router
+  - chat_service     — turn orchestration (async generator)
+  - plugin_engine    — discovery / loading / manifest / dependency resolution
+  - prompt_builder   — 6-position prompt assembly
+  - block_parser     — json:xxx block extraction
+  - block_handlers   — dispatch + built-in handlers
+  - capability_executor — plugin_use capability invocation
+  - script_runner    — Python subprocess execution
+  - audit_logger     — append-only invocation audit trail
+  - game_state       — DB operations (messages / characters / world)
             |
             v
-LLM Gateway (litellm)
+LLM Gateway (litellm — supports 100+ providers)
 ```
 
 ---
@@ -32,122 +39,117 @@ LLM Gateway (litellm)
 
 ### 2.1 Player Turn (message)
 
-1. Frontend sends `{type:"message", content:"..."}` to WebSocket.
-2. Backend stores user message (`Message`).
-3. Backend resolves enabled plugins for the project.
-4. Backend builds prompt:
+1. Frontend sends `{type:"message", content:"..."}` over WebSocket (or HTTP).
+2. Backend stores the user message (`Message`).
+3. Backend resolves enabled plugins for the project (topological sort).
+4. Backend builds the prompt:
    - world doc system instruction
-   - character/scene/event context
-   - plugin template injections
+   - character / scene / event context (from manifest `prompt` configs)
+   - plugin Jinja2 template injections
    - chat history
-   - pre-response block instructions
-5. Backend calls LLM in streaming mode.
-6. Backend emits `chunk` events as tokens arrive.
-7. After stream ends:
-   - parse `json:xxx` blocks from full response
-   - validate block data schema/minimal constraints
-   - dispatch each block to handler
-   - emit block events
-8. Backend strips blocks from narration and stores assistant message.
-9. Backend increments `turn_count` and optionally triggers archive summary.
+   - pre-response block instructions + capability list
+5. Backend calls LLM in streaming mode; emits `chunk` events as tokens arrive.
+6. After stream ends:
+   - extract all `json:xxx` blocks from the full response
+   - validate block data against plugin-declared schemas
+   - dispatch each block: `plugin_use` → CapabilityExecutor; others → dispatch_block()
+   - emit block events to frontend
+7. Backend strips blocks from narration and stores assistant message.
+8. Backend increments `turn_count`; optionally triggers archive summary.
 
-### 2.2 WebSocket event ordering (important)
+### 2.2 WebSocket event ordering
 
-For one turn, the backend sends (all events carry `turn_id`):
+For one turn the backend sends (all carry `turn_id`):
 
-1. `chunk` (0..n)
+1. `chunk` (0…n)
 2. `done`
-3. parsed block events (e.g. `scene_update`, `choices`, `event`)
+3. Parsed block events (`scene_update`, `choices`, `story_image`, `guide`, etc.)
 4. `turn_end`
 
-Frontend relies on `turn_id + turn_end` and attaches pending blocks to the matching assistant message.
+Frontend attaches pending blocks to the matching assistant message via `turn_id + turn_end`.
+
+### 2.3 HTTP chat fallback
+
+`POST /api/chat/{session_id}/command` runs the same `process_message` pipeline and returns all events as a JSON array. Used on Vercel (no persistent WebSocket).
 
 ---
 
 ## 3. Plugin Runtime Model
 
-The plugin system is **document-driven + declarative**.
+The plugin system is **manifest-driven + declarative**. Every built-in plugin has both a `PLUGIN.md` (LLM-readable content) and a `manifest.json` (machine-readable metadata).
 
 ### 3.1 What is implemented
 
-- Discover/load/validate plugins from `plugins/*/PLUGIN.md`
-- Dependency ordering
-- Prompt template injection (Jinja2)
-- Plugin metadata/template process-local cache (`plugin_registry`) with file-signature hot reload
-- Block declarations (`blocks`)
-- Declarative block actions
-- Request-scoped event bus (`events.listen`)
-- Plugin storage via `PluginStorage`
-- Frontend block UI via:
-  - custom renderer registration
-  - schema-driven generic renderer
+- Discover / load / validate plugins from `plugins/*/manifest.json` (V2) with automatic fallback to `PLUGIN.md` frontmatter (V1)
+- Topological dependency ordering via Kahn's algorithm
+- Jinja2 prompt template injection at 6 fixed positions
+- File-signature-based process-local cache with hot reload
+- Block declarations from `manifest.json.blocks` (with optional external schema files)
+- Declarative block handler actions
+- Request-scoped in-memory event bus
+- Plugin storage via `PluginStorage` table `(project_id, plugin_name, key)`
+- `json:plugin_use` capability invocation via `CapabilityExecutor`
+- Python script execution via `ScriptRunner` (stdin/stdout JSON, configurable timeout)
+- Append-only audit log (`data/audit/audit_YYYY-MM-DD.jsonl`)
+- Plugin import/validate/install API
+- Per-plugin audit log query API
+- Frontend block UI via custom renderer registration or schema-driven generic renderer
+- Plugin i18n (name / description / runtime settings labels per language)
+- Runtime settings per plugin (scope: project or session)
 
-### 3.2 What is reserved (declared but not engine-executed as a framework)
+### 3.2 Reserved (declared, not yet engine-executed)
 
-- `hooks` script lifecycle execution
-- `llm` plugin-task execution framework
-- `exports.commands/queries` runtime invocation bus
-
-These fields may exist in plugin docs for forward compatibility but are not currently orchestrated as a standalone plugin runtime.
+- `hooks` lifecycle scripts (`on-load` / `on-turn-end`)
+- Plugin-level `llm` task executor (independent scheduling / concurrency)
+- `exports.commands/queries` unified call bus
+- Plugin export to zip/tarball (stub exists in `plugin_export.py`)
 
 ---
 
 ## 4. Plugin Enablement and Dependency Semantics
 
-### 4.1 Enablement sources
+### 4.1 Enablement sources (priority order)
 
-Effective enabled plugin set per project is computed from:
+1. `required: true` in `manifest.json` — always enabled
+2. `world_doc` frontmatter `plugins: [...]` — project defaults
+3. Explicit toggle records in `PluginStorage` (`key="_enabled"`)
+4. `default_enabled: true` in `manifest.json` — opt-in default
 
-1. `required: true` plugins (always enabled)
-2. `world_doc` frontmatter `plugins: [...]` defaults
-3. explicit toggle records in `PluginStorage` (`key="_enabled"`)
+### 4.2 `supersedes` field
 
-### 4.2 Dependency behavior
+A plugin can declare `supersedes: ["choices"]` in `manifest.json`. When enabled, the superseded plugin's prompt injections and block declarations are excluded even if it is also enabled. Used by `auto-guide` to replace `choices`.
 
-- Dependencies are used for topological ordering.
-- Dependencies are auto-enabled transitively when required by enabled plugins.
-- If dependency metadata points to missing plugin, validation fails.
-- Disabling a plugin is blocked if it is required by currently enabled plugins.
+### 4.3 Dependency behavior
+
+- Dependencies are topologically ordered.
+- Dependencies are auto-enabled transitively when required by an enabled plugin.
+- Missing dependency → validation failure at load time.
+- Disabling a plugin is blocked if another enabled plugin depends on it.
 
 ---
 
 ## 5. Prompt Assembly
 
-Prompt positions are fixed:
+Prompt positions are fixed (1–4 merge into one system message; 5 becomes role messages; 6 is final system message):
 
-1. `system`
-2. `character`
-3. `world-state`
-4. `memory`
-5. `chat-history`
-6. `pre-response`
+| # | Position | Typical content |
+|---|----------|----------------|
+| 1 | `system` | World doc + global plugin instructions |
+| 2 | `character` | Player / NPC state + scene context |
+| 3 | `world-state` | Current game state + plugin storage data |
+| 4 | `memory` | Long/short-term memory + archive summary |
+| 5 | `chat-history` | Recent user / assistant messages |
+| 6 | `pre-response` | Block format instructions + capability list |
 
-Build behavior:
+Template context keys available to plugins:
 
-- Positions 1-4 are merged into one system message.
-- Position 5 becomes role messages (`user`/`assistant`/`system`) in order.
-- Position 6 is appended as final system message before completion.
-
-Current template context keys provided by backend:
-
-- `project`
-- `characters`
-- `player`
-- `npcs`
-- `current_scene`
-- `scene_npcs`
-- `active_events`
-- `world_state`
-- `memories`
-- `archive`
+`project`, `characters`, `player`, `npcs`, `current_scene`, `scene_npcs`, `active_events`, `world_state`, `memories`, `archive`, `runtime_settings`
 
 ---
 
-## 6. Block Protocol and Processing
+## 6. Block Protocol
 
 ### 6.1 LLM output contract
-
-Structured data should be emitted as fenced blocks:
 
 ````text
 ```json:<type>
@@ -155,190 +157,205 @@ Structured data should be emitted as fenced blocks:
 ```
 ````
 
-Parser also supports a looser `json:<type>` marker fallback for weaker model output.
+Parser also accepts a looser `json:<type>` marker without fencing (for weaker model output).
 
-### 6.2 Backend dispatch order
+### 6.2 Block categories
 
-For each parsed block:
+**Direct Output Blocks** — LLM outputs these directly; dispatched via `dispatch_block()`:
 
-1. Built-in block handler registry (highest priority)
-2. Plugin-declared `handler.actions`
-3. Pass-through unchanged
+| Block type | Handler | Frontend |
+|-----------|---------|----------|
+| `state_update` | built-in (DB write) | silent |
+| `character_sheet` | built-in (DB write) | custom renderer |
+| `scene_update` | built-in (DB write) | custom renderer |
+| `event` | built-in (DB write) | silent |
+| `notification` | pass-through | custom renderer |
+| `choices` | pass-through | custom renderer |
+| `guide` | pass-through | custom renderer |
+| `dice_result` | declarative (storage_write + emit_event) | schema-driven card |
+| `story_image` | built-in (image gen + DB) | custom renderer |
 
-Built-in handlers currently cover:
+**Capability Invocation Blocks** — LLM outputs `json:plugin_use`; backend executes and produces result blocks:
 
-- `state_update`
-- `character_sheet`
-- `scene_update`
-- `event`
+```json
+{"plugin": "dice-roll", "capability": "dice.roll", "args": {"expr": "2d6+3"}}
+```
 
-### 6.3 Declarative actions currently supported
+### 6.3 Backend dispatch priority
 
-- `builtin`
-- `storage_write`
-- `emit_event`
-- `update_character`
-- `create_event`
+1. `type == "plugin_use"` → `CapabilityExecutor`
+2. Built-in handler registry (`state_update`, `character_sheet`, `scene_update`, `event`, `story_image`)
+3. Declarative handler actions from `manifest.json`
+4. Pass-through to frontend
+
+### 6.4 Declarative actions supported
+
+`builtin` · `storage_write` · `emit_event` · `update_character` · `create_event`
 
 Unknown action types are logged and skipped (non-fatal).
 
-### 6.4 Server-side block validation
+### 6.5 Server-side validation
 
-- Before dispatch, block data is validated against:
-  - plugin-declared schema (`blocks.<type>.schema`)
-  - built-in minimal constraints (`state_update`, `character_sheet`, `scene_update`, `event`)
-- Invalid blocks are skipped from state writes and converted into a player-visible error notification block.
+Block data is validated against plugin-declared schemas (`blocks.<type>.schema`) and built-in minimal constraints before dispatch. Invalid blocks are skipped from state writes and converted into a visible `notification` error block.
 
 ---
 
-## 7. Event Bus Semantics
+## 7. Capability Execution (plugin_use)
+
+```
+CapabilityExecutor.execute(data, context)
+  ├─ Validate plugin name + capability ID against manifest.capabilities
+  ├─ Resolve implementation type:
+  │     "builtin"  → call registered Python function
+  │     "script"   → ScriptRunner.run(script_path, args, timeout_ms)
+  │     "template" → render Jinja2 template
+  ├─ Collect result_blocks (wrapped in result_block_type)
+  └─ AuditLogger.log(invocation_id, plugin, capability, exit_code, duration_ms, …)
+```
+
+Script execution passes args as JSON on stdin, expects JSON output on stdout. Default timeout: 5000 ms (overridable per capability in `manifest.json`).
+
+Audit log location: `data/audit/audit_YYYY-MM-DD.jsonl` (append-only JSON-lines, rotated daily).
+
+---
+
+## 8. Event Bus Semantics
 
 The event bus is request-scoped and in-memory:
 
-- blocks can emit events via `emit_event`
-- plugins can register listeners via `events.listen`
-- queue is drained after all blocks are processed
-- events emitted during drain are also processed (breadth-first)
-- safety guard: max iterations to avoid infinite loop
-
-No cross-request persistence exists for event bus state.
+- Blocks emit events via `emit_event` declarative action.
+- Plugins register listeners via `events.listen`.
+- Queue is drained after all blocks are processed; events emitted during drain are also processed (breadth-first).
+- Safety guard: max iterations to prevent infinite loops.
+- No cross-request persistence.
 
 ---
 
-## 8. Frontend Runtime Model
+## 9. Frontend Runtime Model
 
-### 8.1 State stores
+### 9.1 State stores
 
-- `sessionStore`: active session, messages, streaming state, pending blocks
-- `gameStateStore`: characters, world state, events
-- `pluginStore`: plugin list + enabled flags
-- `blockSchemaStore`: block schemas from backend
-- `blockInteractionStore`: block-level interactive UI state keyed by `block_id`
+| Store | Responsibility |
+|-------|---------------|
+| `sessionStore` | Active session, messages, streaming state, pending blocks |
+| `gameStateStore` | Characters, world state, events |
+| `projectStore` | Project list + active project |
+| `pluginStore` | Plugin list, enabled flags, detail metadata |
+| `uiStore` | Language toggle, storage persistence flag |
 
-### 8.2 Renderer resolution
+### 9.2 Storage layer
+
+`StorageFactory` probes `/api/health` on startup and selects:
+
+- **`ApiSettingsStorage`** — delegates to backend REST API (local / self-hosted)
+- **`LocalSettingsStorage`** — persists to browser IndexedDB (Vercel / no backend)
+
+IndexedDB schema (`localDb.ts`) stores: `projects`, `sessions`, `messages`, `characters`, `scenes`, `events`, `plugin_state`, `runtime_settings`.
+
+### 9.3 Renderer resolution
 
 Block renderer lookup priority:
 
-1. explicit custom renderer
-2. schema-driven generic renderer
-3. fallback JSON viewer
+1. Custom renderer registered via `registerBlockRenderer(type, Component)`
+2. Schema-driven generic renderer
+3. Fallback collapsible JSON viewer
 
-For `requires_response=true` schema blocks:
-
-- frontend sends `block_response` payload with `block_type`
-- backend stores response as `system_event` message
-- backend triggers a continuation turn with the response summary
+For `requires_response: true` blocks: frontend sends `block_response` → backend stores as `system_event` message → triggers a continuation turn with the response.
 
 ---
 
-## 9. Data Model Ownership
+## 10. Data Model Ownership
 
-Main entities:
+| Entity | Key fields |
+|--------|-----------|
+| `Project` | `id`, `name`, `world_doc`, `init_prompt`, LLM config (model + key ref + base) |
+| `GameSession` | `id`, `project_id`, `status`, `phase`, `game_state_json`, `turn_count` |
+| `Message` | `id`, `session_id`, `role`, `content`, `raw_content` (with blocks), `metadata_json` |
+| `Character` | `id`, `session_id`, `name`, `role`, `attributes_json`, `inventory_json` |
+| `Scene` | `id`, `session_id`, `name`, `is_current`, `metadata_json` |
+| `SceneNPC` | `scene_id`, `character_id`, `role_in_scene` |
+| `GameEvent` | `id`, `session_id`, `type`, `status`, lifecycle fields |
+| `PluginStorage` | `(project_id, plugin_name, key)` → `value_json` |
 
-- `Project`
-- `GameSession`
-- `Message`
-- `Character`
-- `Scene`
-- `SceneNPC`
-- `GameEvent`
-- `PluginStorage`
-
-Ownership notes:
-
-- Session runtime state is split between relational entities and `game_state_json`.
-- Plugin private state is namespaced by `(project_id, plugin_name, key)`.
-- Assistant `raw_content` keeps original block-containing LLM response.
-
----
-
-## 10. Archive Subsystem (Implemented)
-
-Archive plugin is required and active by default.
-
-Implemented capabilities:
-
-- per-session archive initialization
-- periodic auto-summary (default every 8 turns)
-- manual summary API
-- restore to any archived snapshot
-- archive summary injection into prompt memory section
-
-Restore behavior:
-
-- supports two modes:
-  - `fork` (default): create a new session branch and restore there
-  - `hard`: clear current runtime state (messages/characters/scenes/events) and restore in place
-- appends a restore marker system message
+Notes:
+- `raw_content` preserves original LLM output including block fences.
+- Plugin state is namespaced by the three-column key `(project_id, plugin_name, key)`.
+- `game_state_json` on `GameSession` stores ephemeral world variables.
 
 ---
 
-## 11. API and Protocol Surfaces
+## 11. Archive Subsystem
 
-### 11.1 REST (selected)
+Archive plugin is `required: true` and always active.
 
-- `/api/plugins`
-- `/api/plugins/enabled/{project_id}`
-- `/api/plugins/block-schemas?project_id=...`
-- `/api/projects/*`
-- `/api/sessions/*`
-- `/api/events/*`
-- `/api/scenes/*`
-- `/api/sessions/{session_id}/archives*`
+- Per-session archive initialization on first turn.
+- Auto-summary every N turns (default: 8).
+- Manual summary via API.
+- Versioned snapshots; restore to any snapshot.
+- Archive summary injected into prompt `memory` position.
 
-### 11.2 WebSocket client message types
-
-- `message`
-- `init_game`
-- `form_submit`
-- `character_edit`
-- `scene_switch`
-- `confirm`
-- `block_response`
-
-### 11.3 WebSocket server message types
-
-- `chunk`
-- `done`
-- `turn_end`
-- `error`
-- block events (`state_update`, `scene_update`, `choices`, `event`, etc.)
-- `phase_change`
+Restore modes:
+- **`fork`** (default): new session branch, restore state there.
+- **`hard`**: clear current session state (messages / characters / scenes / events) and restore in place.
 
 ---
 
-## 12. Current Constraints and Non-Goals
+## 12. API Surface
 
-1. Plugin hooks/scripts are not executed by a generic plugin runner.
-2. Plugin-level `llm` config is not a separate scheduler/executor.
-3. `events.emit` is declarative metadata; actual emission comes from actions.
-4. Plugin metadata hot-reload uses file signature checks and process-local cache only (no distributed invalidation).
-5. Frontend block interaction persistence is in-memory store keyed by `block_id` (not persisted across full page reloads).
+### 12.1 REST endpoints (selected)
 
----
+| Router | Endpoints |
+|--------|-----------|
+| `chat.py` | `POST /api/chat/{id}/command`, `WS /ws/chat/{id}`, `GET /api/sessions/{id}/story-images`, `WS /api/sessions/{id}/debug-log` |
+| `projects.py` | `GET/POST /api/projects`, `GET/PUT/DELETE /api/projects/{id}` |
+| `sessions.py` | `POST /api/projects/{id}/sessions`, `GET /api/projects/{id}/sessions`, `DELETE /api/sessions/{id}`, `GET /api/sessions/{id}/messages`, `GET /api/sessions/{id}/state` |
+| `characters.py` | `GET /api/sessions/{id}/characters`, `PUT /api/characters/{id}` |
+| `scenes.py` | `GET /api/sessions/{id}/scenes`, `GET /api/sessions/{id}/scenes/current`, `GET /api/scenes/{id}/npcs` |
+| `plugins.py` | `GET /api/plugins`, `POST /api/plugins/{name}/toggle`, `GET /api/plugins/enabled/{project_id}`, `GET /api/plugins/block-schemas`, `GET /api/plugins/block-conflicts`, `POST /api/plugins/import/validate`, `POST /api/plugins/import/install`, `GET /api/plugins/{name}/audit`, `GET /api/plugins/{name}/detail` |
+| `templates.py` | `GET /api/templates/worlds`, `GET /api/templates/worlds/{slug}`, `POST /api/templates/worlds/generate` |
+| `runtime_settings.py` | `GET /api/runtime-settings/schema/{project_id}`, `GET /api/runtime-settings/{project_id}`, `PATCH /api/runtime-settings/{project_id}` |
+| `main.py` | `GET /api/health`, `GET /api/llm/info`, `GET /api/llm/preset-models` |
 
-## 13. Extension Direction
+### 12.2 WebSocket client message types
 
-Architecture is prepared to evolve by extending, not replacing:
+`message` · `init_game` · `form_submit` · `character_edit` · `scene_switch` · `confirm` · `block_response` · `force_trigger` · `generate_message_image`
 
-1. Add new declarative `handler.actions` types.
-2. Add stricter optional block schema validation pipeline.
-3. Introduce opt-in hook runner (`hooks`) under feature flag.
-4. Add plugin command/query bus mapped from `exports`.
-5. Keep compatibility via additive fields and graceful downgrade.
+### 12.3 WebSocket server event types
 
----
-
-## 14. 当前未实现保留位
-
-下列能力在文档/插件字段中可声明，但当前运行时不作为通用框架执行：
-
-1. `hooks` 生命周期脚本（如 `on-load` / `on-turn-end`）
-2. 插件级 `llm` 任务执行器（独立调度/重试/并发控制）
-3. `exports.commands/queries` 统一调用总线
-4. 通用 Python/JS 脚本沙箱执行入口（仅保留目录与依赖）
+`chunk` · `done` · `turn_end` · `error` · block events (any `json:xxx` type) · `phase_change` · `_message_saved`
 
 ---
 
-Document version: `v1.0-current`  
-Updated: `2026-02-16`
+## 13. Deployment Modes
+
+### Local development
+
+```
+Vite :5173  →  proxy /api/* /ws/*  →  FastAPI :8000
+```
+
+### Local production
+
+```
+FastAPI :8000
+  /api/*  →  REST routes
+  /ws/*   →  WebSocket
+  /*      →  frontend/dist/ (StaticFiles)
+```
+
+### Vercel (serverless)
+
+```
+app.py → FastAPI as Serverless Function (max 60s per request)
+frontend/dist/ → Vercel CDN (built via vercel.json buildCommand)
+```
+
+- WebSocket not supported on Vercel; HTTP chat transport used instead (`VITE_CHAT_TRANSPORT=http`).
+- Database: external PostgreSQL recommended; falls back to SQLite in `/tmp` (ephemeral).
+- `GET /api/health` returns `storage_persistent: false` when running on Vercel + SQLite.
+- Frontend detects this and falls back to IndexedDB; shows ephemeral storage banner.
+
+---
+
+Document version: `v2.0`
+Updated: `2026-02-19`

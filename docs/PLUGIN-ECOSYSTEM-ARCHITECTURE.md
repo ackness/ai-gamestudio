@@ -1,8 +1,10 @@
 # AI GameStudio 插件生态架构 V2
 
-> 本文是 V2 架构执行蓝图。V2 在 V1 基础上引入 `manifest.json` 事实源、`json:plugin_use` 统一调用协议和脚本执行能力，同时保留 V1 的 PromptBuilder 6 位置注入和 `json:xxx` Direct Block 体系不变。
+> 本文是 V2 架构实现说明。V2 在 V1 基础上引入 `manifest.json` 事实源、`json:plugin_use` 统一调用协议和脚本执行能力，同时保留 V1 的 PromptBuilder 6 位置注入和 `json:xxx` Direct Block 体系不变。
 >
-> 配套规范：`docs/PLUGIN-SPEC-v2.md`（实现级字段定义与完整示例）。
+> **当前状态：V2 完整实现，所有内置插件已完成 manifest.json 迁移。**
+>
+> 配套规范：`docs/PLUGIN-SPEC.md`（实现级字段定义与完整示例）。
 
 ---
 
@@ -97,14 +99,15 @@
 | chat_service | `backend/app/services/chat_service.py` | process_message 中处理 plugin_use block：执行 capability → 收集 result blocks → 注入后续流程 |
 | plugins API | `backend/app/api/plugins.py` | GET /api/plugins 返回 manifest 级元数据；新增导入/审计端点 |
 
-### 3.3 新增组件
+### 3.3 新增组件（已实现）
 
-| 组件 | 代码位置（规划） | 职责 |
-|------|----------------|------|
+| 组件 | 代码位置 | 职责 |
+|------|---------|------|
 | CapabilityExecutor | `backend/app/core/capability_executor.py` | 执行 plugin_use 请求：校验 capability 声明 → 分发到 implementation（builtin / script / template）→ 收集结果 |
 | ScriptRunner | `backend/app/core/script_runner.py` | Python 脚本执行：stdin JSON → subprocess → stdout JSON + exit code → 审计记录 |
 | ManifestLoader | `backend/app/core/manifest_loader.py` | 解析 manifest.json + schemas/ 目录，生成运行时 PluginManifest 对象 |
-| AuditLogger | `backend/app/core/audit_logger.py` | 脚本执行审计日志记录 |
+| AuditLogger | `backend/app/core/audit_logger.py` | 脚本执行审计日志记录（JSON-lines，按天轮转） |
+| PluginExporter | `backend/app/core/plugin_export.py` | 插件导出存根（zip/tarball，待实现） |
 
 ---
 
@@ -310,36 +313,42 @@ manifest.json 的 `permissions.network` 可显式覆盖默认值。
 
 ---
 
-## 9. 分阶段实施
+## 9. 实施状态
 
-### Phase A：manifest.json 基础 + V1 回退
+> 以下四个阶段均已完成实现。
 
-1. 实现 ManifestLoader（解析 manifest.json + schemas/ 目录）
-2. 增强 PluginEngine：优先读 manifest，无 manifest 回退 V1
-3. 迁移 9 个内置插件的 frontmatter → manifest.json
+### Phase A：manifest.json 基础 + V1 回退 ✅
+
+1. ManifestLoader 实现（解析 manifest.json + schemas/ 目录）
+2. PluginEngine 增强：优先读 manifest，无 manifest 回退 V1
+3. 9 个内置插件全部完成 manifest.json 迁移
 4. PLUGIN.md frontmatter 精简为 LLM 专有字段
-5. 增强 GET /api/plugins 返回 manifest 级元数据
+5. `GET /api/plugins` 返回 manifest 级元数据（含 i18n、default_enabled、supersedes）
 
-### Phase B：plugin_use 调用协议
+### Phase B：plugin_use 调用协议 ✅
 
-1. 实现 CapabilityExecutor + ScriptRunner + AuditLogger
-2. 增强 dispatch_block 支持 plugin_use 分支
-3. 增强 pre-response 指令：注入 capability 列表和 plugin_use 格式
-4. 实现 dice-roll 的 V2 capability（dice.roll → scripts/roll.py）作为首个端到端验证
+1. CapabilityExecutor + ScriptRunner + AuditLogger 全部实现
+2. dispatch_block 支持 plugin_use 分支
+3. pre-response 指令注入 capability 列表和 plugin_use 格式说明
+4. dice-roll 实现 V2 capability（dice.roll → scripts/roll.py）端到端验证通过
 
-### Phase C：导入与审计
+### Phase C：导入与审计 ✅
 
-1. 实现 import/validate + import/install 端点
-2. 实现 schemas/ 索引优先 / 扫描回退加载
-3. 实现审计日志查询端点
-4. 前端 PluginPanel 展示 manifest 元数据
+1. `POST /api/plugins/import/validate` 和 `POST /api/plugins/import/install` 端点实现
+2. schemas/ 索引优先 / 扫描回退加载
+3. `GET /api/plugins/{name}/audit` 审计日志查询端点实现
+4. 前端 PluginPanel 展示 manifest 元数据（含详情弹窗、i18n 名称）
 
-### Phase D：生态扩展（后续）
+### Phase D：生态扩展（部分）
 
-1. 插件导出功能
-2. 多语言脚本支持
-3. 项目级模板覆盖
-4. 插件市场基础设施
+- [x] 运行时设置（runtime_settings）：按插件配置 + project/session 范围 + 多语言标签
+- [x] 插件 i18n（名称、描述、设置项标签、枚举选项）
+- [x] `supersedes` 字段（auto-guide 替代 choices）
+- [x] `default_enabled` 字段
+- [ ] 插件导出（zip/tarball）— 存根已存在，待实现
+- [ ] 多语言脚本支持（JavaScript）
+- [ ] 项目级模板覆盖
+- [ ] 插件市场基础设施
 
 ---
 
@@ -386,5 +395,5 @@ manifest.json 的 `permissions.network` 可显式覆盖默认值。
 
 ---
 
-文档版本：v2.0
-更新日期：2026-02-17
+文档版本：v2.1
+更新日期：2026-02-19
