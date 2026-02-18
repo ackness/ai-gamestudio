@@ -42,11 +42,17 @@ export const usePluginStore = create<PluginStore>((set) => ({
         description: p.description,
         type: p.type,
         required: p.required,
+        default_enabled: p.default_enabled || false,
+        supersedes: p.supersedes || [],
         enabled: p.required ? true : enabledMap.has(p.name),
         auto_enabled: enabledMap.get(p.name)?.auto_enabled ?? false,
         explicitly_disabled: enabledMap.get(p.name)?.explicitly_disabled ?? false,
         dependencies: p.dependencies || enabledMap.get(p.name)?.dependencies || [],
         required_by: enabledMap.get(p.name)?.required_by || [],
+        version: p.version || '',
+        manifest_source: p.manifest_source || 'v1_fallback',
+        capabilities: p.capabilities || [],
+        i18n: p.i18n || {},
       }))
       set({ plugins, blockConflicts: conflicts, loading: false })
     } catch {

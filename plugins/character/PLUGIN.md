@@ -1,21 +1,10 @@
 ---
 name: character
-description: Character context injection plugin for player/NPC state and character-related output guidance.
-type: gameplay
-required: true
-version: "1.1"
-dependencies:
-  - database
-  - core-blocks
-prompt:
-  position: character
-  priority: 10
-  template: prompts/character-state.md
-storage:
-  keys:
-    - characters
-    - character-templates
-    - inventories
+version: 2.0.0
+description: 角色上下文注入插件，负责玩家/NPC 状态和角色相关输出指导。
+when_to_use:
+  - 需要角色/NPC/场景上下文时（始终启用）
+avoid_when: []
 ---
 
 ## Character Plugin

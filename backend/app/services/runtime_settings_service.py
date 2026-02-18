@@ -51,12 +51,14 @@ def _normalize_options(raw: Any) -> list[dict[str, Any]]:
             label = item.get("label")
             if value is None:
                 continue
-            options.append(
-                {
-                    "label": str(label if label is not None else value),
-                    "value": value,
-                }
-            )
+            opt: dict[str, Any] = {
+                "label": str(label if label is not None else value),
+                "value": value,
+            }
+            i18n = item.get("i18n")
+            if isinstance(i18n, dict) and i18n:
+                opt["i18n"] = i18n
+            options.append(opt)
     return options
 
 
@@ -115,6 +117,9 @@ def _normalize_runtime_settings_fields(
                 field[numeric_key] = cfg[numeric_key]
         if "default" in cfg:
             field["default"] = cfg.get("default")
+        i18n = cfg.get("i18n")
+        if isinstance(i18n, dict) and i18n:
+            field["i18n"] = i18n
         fields.append(field)
 
     fields.sort(key=lambda item: (int(item.get("order", 0)), str(item["key"])))

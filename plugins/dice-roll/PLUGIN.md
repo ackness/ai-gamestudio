@@ -1,66 +1,40 @@
 ---
 name: dice-roll
-description: Optional dice-result block plugin with storage write and event emission.
-type: gameplay
-required: false
-version: "1.1"
-
-blocks:
-  dice_result:
-    instruction: |
-      当需要随机判定时，在回复末尾输出：
-      ```json:dice_result
-      {"dice": "2d6+3", "result": 11, "success": true, "description": "命中！造成 11 点伤害"}
-      ```
-    schema:
-      type: object
-      properties:
-        dice:
-          type: string
-        result:
-          type: integer
-        success:
-          type: boolean
-        description:
-          type: string
-      required:
-        - dice
-        - result
-    handler:
-      actions:
-        - type: storage_write
-          key: last-roll
-        - type: emit_event
-          event: dice-rolled
-    ui:
-      component: card
-      title: "🎲 {{ dice }}"
-      sections:
-        - type: key-value
-          items:
-            - label: "结果"
-              value: "{{ result }}"
-            - label: "成功"
-              value: "{{ success }}"
-            - label: "描述"
-              value: "{{ description }}"
-      style:
-        variant: info
-    requires_response: false
-
-events:
-  emit:
-    - dice-rolled
-
-prompt:
-  position: pre-response
-  priority: 70
-  template: prompts/dice-instruction.md
+version: 2.0.0
+description: 处理骰子检定与概率判定。
+when_to_use:
+  - 需要随机判定（攻击/防御/技能检定）
+  - 需要命中/豁免计算
+  - 概率事件需要公正裁决
+avoid_when:
+  - 纯叙事无检定
+  - 已经有确定结果的行动
+capability_summary: |
+  提供骰子解析与执行能力。可直接输出 json:dice_result，
+  或通过 json:plugin_use 调用 dice.roll capability 让后端掷骰。
 ---
 
-## Dice Roll Plugin
+# Purpose
+对检定请求生成标准化随机结果。
 
-Current runtime behavior:
+# Capabilities
+- dice.roll: 解析骰子表达式（如 2d6+3, 1d20）并输出结构化掷骰结果
 
-- `dice_result` is rendered by generic schema UI.
-- Handler stores last roll in plugin storage and emits `dice-rolled` to request-scoped event bus.
+# Direct Blocks
+
+## json:dice_result
+当需要随机判定时（攻击/防御/技能检定/概率事件），输出此 block：
+
+```json:dice_result
+{"dice": "2d6+3", "result": 11, "success": true, "description": "掷出 2d6+3 = 4+4+3 = 11"}
+```
+
+必需字段：dice, result。可选字段：success, description。
+
+# Fallback
+脚本失败时输出 json:notification，提示玩家手动判定。
+
+# Rules
+- 每个检定独立输出一个 dice_result block
+- 不要在纯叙事中无故掷骰
+- 重大判定建议使用 plugin_use 调用 dice.roll 以确保公正

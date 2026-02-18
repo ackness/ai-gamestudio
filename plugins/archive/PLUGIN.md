@@ -1,20 +1,10 @@
 ---
 name: archive
-description: Required versioned-archive plugin. Summarizes long sessions and restores snapshots.
-type: global
-required: true
-version: "1.1"
-dependencies:
-  - database
-prompt:
-  position: memory
-  priority: 5
-  template: prompts/archive-context.md
-storage:
-  keys:
-    - config
-    - session-meta
-    - session-versions
+version: 2.0.0
+description: 必需版本存档插件。自动总结长会话并支持快照恢复。
+when_to_use:
+  - 长期会话需要自动总结（始终启用）
+avoid_when: []
 ---
 
 ## Archive Plugin

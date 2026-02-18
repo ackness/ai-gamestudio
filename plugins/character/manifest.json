@@ -1,0 +1,35 @@
+{
+  "schema_version": "2.0",
+  "name": "character",
+  "version": "2.0.0",
+  "type": "gameplay",
+  "required": true,
+  "description": "Character context injection plugin for player/NPC state and character-related output guidance.",
+  "dependencies": ["database", "core-blocks"],
+  "prompt": {
+    "position": "character",
+    "priority": 10,
+    "template": "prompts/character-state.md"
+  },
+  "capabilities": {},
+  "blocks": {},
+  "events": {
+    "emit": [],
+    "listen": []
+  },
+  "storage": {
+    "keys": ["characters", "character-templates", "inventories"]
+  },
+  "permissions": {},
+  "extensions": {},
+  "i18n": {
+    "en": {
+      "name": "Character",
+      "description": "Character context injection for player/NPC state and character-related output guidance."
+    },
+    "zh": {
+      "name": "角色管理",
+      "description": "注入玩家与 NPC 角色状态，引导角色相关输出。"
+    }
+  }
+}

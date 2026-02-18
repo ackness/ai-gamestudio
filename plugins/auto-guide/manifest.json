@@ -1,0 +1,91 @@
+{
+  "schema_version": "2.0",
+  "name": "auto-guide",
+  "version": "2.0.0",
+  "type": "gameplay",
+  "required": false,
+  "default_enabled": true,
+  "supersedes": ["choices"],
+  "description": "Optional action-suggestion block plugin rendered as quick actions after narration. When enabled, supersedes the choices plugin.",
+  "dependencies": [],
+  "prompt": {
+    "position": "pre-response",
+    "priority": 90,
+    "template": "prompts/guide-instruction.md"
+  },
+  "capabilities": {},
+  "blocks": {
+    "guide": {
+      "instruction": "在每次叙事回复的末尾，附加一个 json:guide 代码块为玩家提供行动建议。\n格式：\n```json:guide\n{\"categories\": [{\"style\": \"safe\", \"suggestions\": [\"行动描述\"]}, {\"style\": \"aggressive\", \"suggestions\": [\"行动描述\"]}]}\n```\n按场景选用 safe/aggressive/creative/wild，如包含 json:character_sheet 则不输出。",
+      "requires_response": false,
+      "ui": {
+        "component": "custom",
+        "renderer_name": "guide"
+      }
+    }
+  },
+  "events": {
+    "emit": [],
+    "listen": []
+  },
+  "storage": {
+    "keys": []
+  },
+  "permissions": {},
+  "i18n": {
+    "en": {
+      "name": "Auto Guide",
+      "description": "Action-suggestion block plugin rendered as quick actions after narration."
+    },
+    "zh": {
+      "name": "行动引导",
+      "description": "在叙事回复后提供快速行动建议的 block 插件。"
+    }
+  },
+  "extensions": {
+    "runtime_settings": {
+      "settings": [
+        {
+          "key": "category_count",
+          "type": "integer",
+          "label": "Guide Categories",
+          "description": "Preferred number of guide categories per response.",
+          "default": 3,
+          "min": 2,
+          "max": 4,
+          "affects": ["choices"],
+          "i18n": {
+            "zh": { "label": "引导分类数", "description": "每次回复中建议分类的数量。" }
+          }
+        },
+        {
+          "key": "suggestion_style",
+          "type": "enum",
+          "label": "Guide Suggestion Style",
+          "description": "Tone for suggested player actions.",
+          "default": "concise",
+          "options": [
+            {"value": "concise",     "label": "Concise",     "i18n": {"zh": {"label": "简洁"}}},
+            {"value": "descriptive", "label": "Descriptive", "i18n": {"zh": {"label": "描述性"}}},
+            {"value": "tactical",    "label": "Tactical",    "i18n": {"zh": {"label": "战术性"}}}
+          ],
+          "affects": ["choices"],
+          "i18n": {
+            "zh": { "label": "建议风格", "description": "玩家行动建议的语气风格。" }
+          }
+        },
+        {
+          "key": "include_wild_category",
+          "type": "boolean",
+          "label": "Include Wild Category",
+          "description": "Whether to encourage a wild option in most turns.",
+          "default": true,
+          "affects": ["choices"],
+          "i18n": {
+            "zh": { "label": "包含天马行空", "description": "是否在大多数回合中附加天马行空类建议。" }
+          }
+        }
+      ]
+    }
+  }
+}

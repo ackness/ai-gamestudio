@@ -1,0 +1,35 @@
+{
+  "schema_version": "2.0",
+  "name": "archive",
+  "version": "2.0.0",
+  "type": "global",
+  "required": true,
+  "description": "Required versioned-archive plugin. Summarizes long sessions and restores snapshots.",
+  "dependencies": ["database"],
+  "prompt": {
+    "position": "memory",
+    "priority": 5,
+    "template": "prompts/archive-context.md"
+  },
+  "capabilities": {},
+  "blocks": {},
+  "events": {
+    "emit": [],
+    "listen": []
+  },
+  "storage": {
+    "keys": ["config", "session-meta", "session-versions"]
+  },
+  "permissions": {},
+  "extensions": {},
+  "i18n": {
+    "en": {
+      "name": "Archive",
+      "description": "Versioned-archive plugin. Summarizes long sessions and restores snapshots."
+    },
+    "zh": {
+      "name": "存档归档",
+      "description": "版本化存档插件，对长会话进行摘要并支持快照恢复。"
+    }
+  }
+}

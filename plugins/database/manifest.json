@@ -1,0 +1,35 @@
+{
+  "schema_version": "2.0",
+  "name": "database",
+  "version": "2.0.0",
+  "type": "global",
+  "required": true,
+  "description": "Provides persistent state context for prompts and is required for all game sessions.",
+  "dependencies": [],
+  "prompt": {
+    "position": "world-state",
+    "priority": 100,
+    "template": "prompts/world-state.md"
+  },
+  "capabilities": {},
+  "blocks": {},
+  "events": {
+    "emit": [],
+    "listen": []
+  },
+  "storage": {
+    "keys": ["world-state", "event-log"]
+  },
+  "permissions": {},
+  "extensions": {},
+  "i18n": {
+    "en": {
+      "name": "Database",
+      "description": "Provides persistent state context for prompts and is required for all game sessions."
+    },
+    "zh": {
+      "name": "数据库",
+      "description": "为提示词提供持久化状态上下文，所有游戏会话必须依赖此插件。"
+    }
+  }
+}

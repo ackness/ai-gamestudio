@@ -1,0 +1,78 @@
+{
+  "schema_version": "2.0",
+  "name": "choices",
+  "version": "2.0.0",
+  "type": "gameplay",
+  "required": false,
+  "description": "Optional interactive choice block plugin for single/multi selection.",
+  "dependencies": [],
+  "prompt": {
+    "position": "pre-response",
+    "priority": 80,
+    "template": "prompts/choices-instruction.md"
+  },
+  "capabilities": {},
+  "blocks": {
+    "choices": {
+      "instruction": "When the player must choose:\n```json:choices\n{\"prompt\": \"你要做什么？\", \"type\": \"single\", \"options\": [\"选项A\", \"选项B\", \"选项C\"]}\n```\n`options` must be an array of strings.",
+      "requires_response": true,
+      "ui": {
+        "component": "custom",
+        "renderer_name": "choices"
+      }
+    }
+  },
+  "events": {
+    "emit": [],
+    "listen": []
+  },
+  "storage": {
+    "keys": []
+  },
+  "permissions": {},
+  "i18n": {
+    "en": {
+      "name": "Choices",
+      "description": "Interactive choice block plugin for single/multi selection."
+    },
+    "zh": {
+      "name": "交互选项",
+      "description": "为玩家提供单选或多选的交互式选项 block。"
+    }
+  },
+  "extensions": {
+    "runtime_settings": {
+      "settings": [
+        {
+          "key": "option_count",
+          "type": "integer",
+          "label": "Choice Count",
+          "description": "Preferred number of options in json:choices.",
+          "default": 3,
+          "min": 2,
+          "max": 5,
+          "affects": ["choices"],
+          "i18n": {
+            "zh": { "label": "选项数量", "description": "json:choices 中偏好的选项个数。" }
+          }
+        },
+        {
+          "key": "option_style",
+          "type": "enum",
+          "label": "Choice Style",
+          "description": "Bias style for presented choices.",
+          "default": "balanced",
+          "options": [
+            {"value": "conservative", "label": "Conservative", "i18n": {"zh": {"label": "保守"}}},
+            {"value": "balanced",     "label": "Balanced",     "i18n": {"zh": {"label": "均衡"}}},
+            {"value": "bold",         "label": "Bold",         "i18n": {"zh": {"label": "大胆"}}}
+          ],
+          "affects": ["choices"],
+          "i18n": {
+            "zh": { "label": "选项风格", "description": "呈现给玩家的选项倾向风格。" }
+          }
+        }
+      ]
+    }
+  }
+}
