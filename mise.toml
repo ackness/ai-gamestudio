@@ -76,6 +76,10 @@ run = "uv run ruff check backend/"
 description = "前端代码 lint"
 run = "cd frontend && npm run lint"
 
+[tasks."typecheck"]
+description = "运行前端 TypeScript 类型检查"
+run = "cd frontend && npx tsc --noEmit"
+
 [tasks."format"]
 description = "格式化所有代码"
 depends = ["format:backend", "format:frontend"]
