@@ -26,12 +26,14 @@ function getBaseUrl(): string {
 const BASE_URL = getBaseUrl()
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...buildBrowserLlmHeaders(),
+  }
+  const accessKey = String(import.meta.env.VITE_ACCESS_KEY || '').trim()
+  if (accessKey) headers['X-Access-Key'] = accessKey
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...buildBrowserLlmHeaders(),
-      ...options?.headers,
-    },
+    headers: { ...headers, ...options?.headers },
     ...options,
   })
   if (!res.ok) {
@@ -46,7 +48,7 @@ export function getProjects(): Promise<Project[]> {
   return request('/projects')
 }
 
-export function createProject(data: { name: string; description?: string; world_doc?: string }): Promise<Project> {
+export function createProject(data: { id?: string; name: string; description?: string; world_doc?: string }): Promise<Project> {
   return request('/projects', {
     method: 'POST',
     body: JSON.stringify(data),
@@ -73,8 +75,11 @@ export function getSessions(projectId: string): Promise<Session[]> {
   return request(`/projects/${projectId}/sessions`)
 }
 
-export function createSession(projectId: string): Promise<Session> {
-  return request(`/projects/${projectId}/sessions`, { method: 'POST' })
+export function createSession(projectId: string, sessionId?: string): Promise<Session> {
+  return request(`/projects/${projectId}/sessions`, {
+    method: 'POST',
+    body: JSON.stringify(sessionId ? { id: sessionId } : {}),
+  })
 }
 
 export function deleteSession(sessionId: string): Promise<void> {

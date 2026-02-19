@@ -4,8 +4,11 @@
   "version": "2.0.0",
   "type": "global",
   "required": false,
+  "default_enabled": true,
   "description": "Optional memory-context injection plugin that reads stored memories and injects them at prompt position memory.",
-  "dependencies": ["database"],
+  "dependencies": [
+    "database"
+  ],
   "prompt": {
     "position": "memory",
     "priority": 10,
@@ -18,7 +21,11 @@
     "listen": []
   },
   "storage": {
-    "keys": ["short-term-memory", "long-term-memory", "memory-index"]
+    "keys": [
+      "short-term-memory",
+      "long-term-memory",
+      "memory-index"
+    ]
   },
   "permissions": {},
   "extensions": {},

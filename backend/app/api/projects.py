@@ -15,6 +15,7 @@ router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 
 class ProjectCreate(BaseModel):
+    id: str | None = None  # optional: caller may supply a specific UUID (e.g. re-sync after cold start)
     name: str
     description: str | None = None
     world_doc: str = ""
@@ -126,7 +127,17 @@ async def create_project(
     payload = body.model_dump()
     raw_api_key = payload.pop("llm_api_key", None)
     raw_image_api_key = payload.pop("image_api_key", None)
-    project = Project(**payload)
+    specified_id = payload.pop("id", None)
+
+    # If a specific ID was supplied (e.g. frontend re-syncing after cold start), upsert it.
+    if specified_id:
+        existing = await session.get(Project, specified_id)
+        if existing:
+            return _serialize_project(existing)
+        project = Project(id=specified_id, **payload)
+    else:
+        project = Project(**payload)
+
     if raw_api_key is not None:
         _set_project_api_key(project, raw_api_key)
     if raw_image_api_key is not None:

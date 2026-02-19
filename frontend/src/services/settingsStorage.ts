@@ -99,22 +99,32 @@ let _cached: ISettingsStorage | null = null
 let _detectedBackend: StorageBackend | null = null
 let _storagePersistent: boolean | null = null
 
-async function detectBackend(): Promise<StorageBackend> {
-  if (_detectedBackend) return _detectedBackend
+async function probeHealth(): Promise<boolean | null> {
   try {
     const res = await fetch('/api/health', { method: 'GET', signal: AbortSignal.timeout(2000) })
     if (res.ok) {
       const data = await res.json()
-      _storagePersistent = data.storage_persistent !== false
-      _detectedBackend = 'api'
-    } else {
-      _storagePersistent = false
-      _detectedBackend = 'local'
+      return data.storage_persistent !== false
     }
+    return false
   } catch {
-    _storagePersistent = false
-    _detectedBackend = 'local'
+    return null // null = network error / connection refused / timeout
   }
+}
+
+async function detectBackend(): Promise<StorageBackend> {
+  if (_detectedBackend) return _detectedBackend
+
+  let persistent = await probeHealth()
+  if (persistent === null) {
+    // Network error — backend may still be starting up (local dev race condition).
+    // Retry once after a short delay before concluding storage is not persistent.
+    await new Promise<void>((r) => setTimeout(r, 2500))
+    persistent = await probeHealth() ?? false
+  }
+
+  _storagePersistent = persistent
+  _detectedBackend = persistent ? 'api' : 'local'
   return _detectedBackend
 }
 

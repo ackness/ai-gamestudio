@@ -4,8 +4,12 @@
   "version": "2.0.0",
   "type": "gameplay",
   "required": false,
+  "default_enabled": true,
   "description": "Optional story image plugin that converts structured prompts into generated images with continuity.",
-  "dependencies": ["core-blocks", "database"],
+  "dependencies": [
+    "core-blocks",
+    "database"
+  ],
   "prompt": {
     "position": "pre-response",
     "priority": 92,
@@ -18,25 +22,45 @@
       "schema": {
         "type": "object",
         "properties": {
-          "title": { "type": "string" },
-          "story_background": { "type": "string" },
-          "prompt": { "type": "string" },
-          "continuity_notes": { "type": "string" },
+          "title": {
+            "type": "string"
+          },
+          "story_background": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "continuity_notes": {
+            "type": "string"
+          },
           "reference_image_ids": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
-          "layout_preference": { "type": "string" },
+          "layout_preference": {
+            "type": "string"
+          },
           "scene_frames": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           }
         },
-        "required": ["story_background", "prompt"]
+        "required": [
+          "story_background",
+          "prompt"
+        ]
       },
       "handler": {
         "actions": [
-          { "type": "builtin", "handler_name": "story_image_builtin" }
+          {
+            "type": "builtin",
+            "handler_name": "story_image_builtin"
+          }
         ]
       },
       "requires_response": true,
@@ -74,14 +98,51 @@
           "description": "Visual style direction for generated images.",
           "default": "cinematic",
           "options": [
-            {"value": "cinematic",    "label": "Cinematic",    "i18n": {"zh": {"label": "电影感"}}},
-            {"value": "anime",        "label": "Anime",        "i18n": {"zh": {"label": "动漫"}}},
-            {"value": "oil-painting", "label": "Oil Painting", "i18n": {"zh": {"label": "油画"}}},
-            {"value": "photoreal",    "label": "Photoreal",    "i18n": {"zh": {"label": "写实摄影"}}}
+            {
+              "value": "cinematic",
+              "label": "Cinematic",
+              "i18n": {
+                "zh": {
+                  "label": "电影感"
+                }
+              }
+            },
+            {
+              "value": "anime",
+              "label": "Anime",
+              "i18n": {
+                "zh": {
+                  "label": "动漫"
+                }
+              }
+            },
+            {
+              "value": "oil-painting",
+              "label": "Oil Painting",
+              "i18n": {
+                "zh": {
+                  "label": "油画"
+                }
+              }
+            },
+            {
+              "value": "photoreal",
+              "label": "Photoreal",
+              "i18n": {
+                "zh": {
+                  "label": "写实摄影"
+                }
+              }
+            }
           ],
-          "affects": ["image"],
+          "affects": [
+            "image"
+          ],
           "i18n": {
-            "zh": { "label": "图像风格预设", "description": "生成图像的视觉风格方向。" }
+            "zh": {
+              "label": "图像风格预设",
+              "description": "生成图像的视觉风格方向。"
+            }
           }
         },
         {
@@ -91,13 +152,43 @@
           "description": "When to emit story_image blocks: manual (only via button), key_moments (auto at dramatic beats), every_turn (every response).",
           "default": "manual",
           "options": [
-            {"value": "manual",      "label": "Manual",      "i18n": {"zh": {"label": "手动"}}},
-            {"value": "key_moments", "label": "Key Moments", "i18n": {"zh": {"label": "关键时刻"}}},
-            {"value": "every_turn",  "label": "Every Turn",  "i18n": {"zh": {"label": "每回合"}}}
+            {
+              "value": "manual",
+              "label": "Manual",
+              "i18n": {
+                "zh": {
+                  "label": "手动"
+                }
+              }
+            },
+            {
+              "value": "key_moments",
+              "label": "Key Moments",
+              "i18n": {
+                "zh": {
+                  "label": "关键时刻"
+                }
+              }
+            },
+            {
+              "value": "every_turn",
+              "label": "Every Turn",
+              "i18n": {
+                "zh": {
+                  "label": "每回合"
+                }
+              }
+            }
           ],
-          "affects": ["image", "story"],
+          "affects": [
+            "image",
+            "story"
+          ],
           "i18n": {
-            "zh": { "label": "图像触发模式", "description": "何时生成图像：manual（手动触发）、key_moments（戏剧性节点自动）、every_turn（每回合）。" }
+            "zh": {
+              "label": "图像触发模式",
+              "description": "何时生成图像：manual（手动触发）、key_moments（戏剧性节点自动）、every_turn（每回合）。"
+            }
           }
         },
         {
@@ -107,13 +198,42 @@
           "description": "Layout preference when prompt involves multiple scenes.",
           "default": "comic",
           "options": [
-            {"value": "comic",  "label": "Comic",  "i18n": {"zh": {"label": "漫画格"}}},
-            {"value": "auto",   "label": "Auto",   "i18n": {"zh": {"label": "自动"}}},
-            {"value": "single", "label": "Single", "i18n": {"zh": {"label": "单图"}}}
+            {
+              "value": "comic",
+              "label": "Comic",
+              "i18n": {
+                "zh": {
+                  "label": "漫画格"
+                }
+              }
+            },
+            {
+              "value": "auto",
+              "label": "Auto",
+              "i18n": {
+                "zh": {
+                  "label": "自动"
+                }
+              }
+            },
+            {
+              "value": "single",
+              "label": "Single",
+              "i18n": {
+                "zh": {
+                  "label": "单图"
+                }
+              }
+            }
           ],
-          "affects": ["image"],
+          "affects": [
+            "image"
+          ],
           "i18n": {
-            "zh": { "label": "多场景布局策略", "description": "提示词涉及多个场景时的排版偏好。" }
+            "zh": {
+              "label": "多场景布局策略",
+              "description": "提示词涉及多个场景时的排版偏好。"
+            }
           }
         },
         {
@@ -124,7 +244,9 @@
           "component": "textarea",
           "scope": "both",
           "default": "Style preset: {{style_preset}}\nStory background: {{story_background}}\nCurrent frame: {{frame_prompt}}\nContinuity notes: {{continuity_notes}}\nReference summary:\n{{reference_summary}}",
-          "affects": ["image"],
+          "affects": [
+            "image"
+          ],
           "i18n": {
             "zh": {
               "label": "图像提示词模板",
@@ -140,7 +262,9 @@
           "description": "Things to avoid in generated images.",
           "component": "textarea",
           "default": "blurry, extra limbs, distorted face, low detail",
-          "affects": ["image"],
+          "affects": [
+            "image"
+          ],
           "i18n": {
             "zh": {
               "label": "负向提示词",
@@ -157,9 +281,14 @@
           "default": 2,
           "min": 0,
           "max": 6,
-          "affects": ["image"],
+          "affects": [
+            "image"
+          ],
           "i18n": {
-            "zh": { "label": "参考帧数量", "description": "用于风格连续性参考的历史帧最大数量。" }
+            "zh": {
+              "label": "参考帧数量",
+              "description": "用于风格连续性参考的历史帧最大数量。"
+            }
           }
         },
         {
@@ -168,9 +297,14 @@
           "label": "Strict Continuity",
           "description": "Keep stronger character/prop consistency.",
           "default": true,
-          "affects": ["image"],
+          "affects": [
+            "image"
+          ],
           "i18n": {
-            "zh": { "label": "严格连续性", "description": "强化角色与道具的视觉一致性。" }
+            "zh": {
+              "label": "严格连续性",
+              "description": "强化角色与道具的视觉一致性。"
+            }
           }
         }
       ]

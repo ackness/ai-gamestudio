@@ -1,7 +1,17 @@
 import { create } from 'zustand'
 import type { Session, Message, Scene, StoryImageData } from '../types'
 import * as api from '../services/api'
+import { StorageFactory } from '../services/settingsStorage'
+import {
+  idbGetSessions,
+  idbPutSession,
+  idbDeleteSession,
+  idbPutMessage,
+  idbPutScene,
+} from '../services/localDb'
 import { attachPendingBlocksForTurn, type TurnPendingBlock } from './sessionTurnUtils'
+import { useProjectStore } from './projectStore'
+import * as gameStorage from '../services/gameStorage'
 
 export type PendingBlock = TurnPendingBlock
 
@@ -63,8 +73,14 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   fetchSessions: async (projectId) => {
     try {
-      const sessions = await api.getSessions(projectId)
-      set({ sessions })
+      const persistent = await StorageFactory.isStoragePersistent()
+      if (!persistent) {
+        const rows = await idbGetSessions(projectId)
+        set({ sessions: rows as unknown as Session[] })
+      } else {
+        const sessions = await api.getSessions(projectId)
+        set({ sessions })
+      }
     } catch {
       // ignore
     }
@@ -72,7 +88,23 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   createSession: async (projectId) => {
     try {
+      const persistent = await StorageFactory.isStoragePersistent()
+
+      if (!persistent) {
+        // Ephemeral backend (Vercel + SQLite): ensure project exists in backend first,
+        // then create the session there so the chat endpoint can find it.
+        const project = useProjectStore.getState().currentProject
+        if (project) {
+          await useProjectStore.getState().syncProjectToBackend(project)
+        }
+      }
+
       const session = await api.createSession(projectId)
+
+      if (!persistent) {
+        await idbPutSession(session as unknown as Record<string, unknown>)
+      }
+
       set((state) => ({
         sessions: [...state.sessions, session],
         currentSession: session,
@@ -111,7 +143,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       imageLoadingMessages: new Set<string>(),
     })
     try {
-      const messages = await api.getMessages(session.id)
+      const messages = await gameStorage.fetchMessages(session.id)
       set({ messages })
     } catch {
       // ignore
@@ -120,7 +152,11 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   deleteSession: async (sessionId) => {
     try {
+      const persistent = await StorageFactory.isStoragePersistent()
       await api.deleteSession(sessionId)
+      if (!persistent) {
+        await idbDeleteSession(sessionId)
+      }
       set((state) => {
         const sessions = state.sessions.filter((s) => s.id !== sessionId)
         const isCurrent = state.currentSession?.id === sessionId
@@ -150,14 +186,24 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   fetchMessages: async (sessionId) => {
     try {
-      const messages = await api.getMessages(sessionId)
+      const messages = await gameStorage.fetchMessages(sessionId)
       set({ messages })
     } catch {
       // ignore
     }
   },
 
-  addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
+  addMessage: (message) => {
+    set((state) => ({ messages: [...state.messages, message] }))
+    // Fire-and-forget IDB write in non-persistent mode
+    StorageFactory.isStoragePersistent()
+      .then((persistent) => {
+        if (!persistent) {
+          idbPutMessage(message as unknown as Record<string, unknown>).catch(() => {})
+        }
+      })
+      .catch(() => {})
+  },
 
   setStreaming: (isStreaming) => set({ isStreaming }),
 
@@ -193,9 +239,32 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   setCurrentScene: (currentScene) => set({ currentScene }),
 
-  setScenes: (scenes) => set({ scenes }),
+  setScenes: (scenes) => {
+    set({ scenes })
+    // Fire-and-forget IDB write in non-persistent mode
+    if (scenes.length > 0) {
+      StorageFactory.isStoragePersistent()
+        .then((persistent) => {
+          if (!persistent) {
+            scenes.forEach((s) =>
+              idbPutScene(s as unknown as Record<string, unknown>).catch(() => {}),
+            )
+          }
+        })
+        .catch(() => {})
+    }
+  },
 
-  addScene: (scene) => set((state) => ({ scenes: [...state.scenes, scene] })),
+  addScene: (scene) => {
+    set((state) => ({ scenes: [...state.scenes, scene] }))
+    StorageFactory.isStoragePersistent()
+      .then((persistent) => {
+        if (!persistent) {
+          idbPutScene(scene as unknown as Record<string, unknown>).catch(() => {})
+        }
+      })
+      .catch(() => {})
+  },
 
   removeLastAssistantMessage: () =>
     set((state) => {

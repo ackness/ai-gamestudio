@@ -8,7 +8,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
 from backend.app.core.config import settings
 from backend.app.core.llm_config import get_effective_config_for_project
@@ -40,7 +43,7 @@ def _print_startup_banner(port: int) -> None:
 async def lifespan(app: FastAPI):
     # Logging first so every subsequent log goes through loguru
     pathlib.Path(settings.LOG_DIR).mkdir(parents=True, exist_ok=True)
-    setup_logging()
+    setup_logging(log_dir=settings.LOG_DIR)
 
     # Ensure data/ directory exists and init DB tables
     pathlib.Path(settings.DATA_DIR).mkdir(parents=True, exist_ok=True)
@@ -62,6 +65,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Access key protection (optional — only active when ACCESS_KEY env var is set)
+_EXEMPT_PATHS = {"/api/health"}
+
+class AccessKeyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if not settings.ACCESS_KEY:
+            return await call_next(request)
+        if request.url.path in _EXEMPT_PATHS:
+            return await call_next(request)
+        provided = request.headers.get("X-Access-Key", "")
+        if provided != settings.ACCESS_KEY:
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        return await call_next(request)
+
+app.add_middleware(AccessKeyMiddleware)
 
 # Routers
 from backend.app.api.characters import router as characters_router  # noqa: E402
@@ -93,10 +112,13 @@ app.include_router(runtime_settings_router)
 async def health_check():
     import os
     running_on_vercel = bool(os.getenv("VERCEL"))
-    # SQLite in /tmp is ephemeral (Vercel serverless); any external DB URL is persistent
     db_url = settings.DATABASE_URL or ""
     storage_persistent = not (running_on_vercel and "sqlite" in db_url)
-    return {"status": "ok", "storage_persistent": storage_persistent}
+    return {
+        "status": "ok",
+        "storage_persistent": storage_persistent,
+        "auth_required": bool(settings.ACCESS_KEY),
+    }
 
 
 @app.get("/api/llm/info")

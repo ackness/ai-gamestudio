@@ -1,6 +1,12 @@
 import { create } from 'zustand'
 import type { Project } from '../types'
 import * as api from '../services/api'
+import { StorageFactory } from '../services/settingsStorage'
+import {
+  idbGetProjects,
+  idbGetProject,
+  idbPutProject,
+} from '../services/localDb'
 
 interface ProjectStore {
   projects: Project[]
@@ -12,6 +18,8 @@ interface ProjectStore {
   updateWorldDoc: (worldDoc: string, projectId?: string) => Promise<void>
   updateProject: (data: Partial<Project>, projectId?: string) => Promise<void>
   setCurrentProject: (project: Project | null) => void
+  /** Ensure the given project exists in the backend SQLite with latest data (re-syncs after cold start). */
+  syncProjectToBackend: (project: Project) => Promise<void>
 }
 
 export const useProjectStore = create<ProjectStore>((set, get) => ({
@@ -22,15 +30,25 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   fetchProjects: async () => {
     set({ loading: true })
     try {
-      const projects = await api.getProjects()
-      set({ projects, loading: false })
+      const persistent = await StorageFactory.isStoragePersistent()
+      if (!persistent) {
+        const rows = await idbGetProjects()
+        set({ projects: rows as unknown as Project[], loading: false })
+      } else {
+        const projects = await api.getProjects()
+        set({ projects, loading: false })
+      }
     } catch {
       set({ loading: false })
     }
   },
 
   createProject: async (data) => {
+    const persistent = await StorageFactory.isStoragePersistent()
     const project = await api.createProject(data)
+    if (!persistent) {
+      await idbPutProject(project as unknown as Record<string, unknown>)
+    }
     set((state) => ({ projects: [...state.projects, project] }))
     return project
   },
@@ -38,6 +56,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   selectProject: async (id) => {
     set({ loading: true })
     try {
+      const persistent = await StorageFactory.isStoragePersistent()
+      if (!persistent) {
+        const row = await idbGetProject(id)
+        if (row) {
+          set({ currentProject: row as unknown as Project, loading: false })
+          return
+        }
+      }
       const project = await api.getProject(id)
       set({ currentProject: project, loading: false })
     } catch {
@@ -49,17 +75,67 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const currentProject = get().currentProject
     const targetProjectId = projectId ?? currentProject?.id
     if (!targetProjectId) return
-    const updated = await api.updateProject(targetProjectId, { world_doc: worldDoc })
-    set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))
+
+    const persistent = await StorageFactory.isStoragePersistent()
+
+    if (!persistent) {
+      // Local-first: merge into current state and persist to IndexedDB immediately
+      const base = (currentProject?.id === targetProjectId ? currentProject : null)
+        ?? (await idbGetProject(targetProjectId) as unknown as Project | undefined)
+      if (!base) return
+      const updated: Project = { ...base, world_doc: worldDoc, updated_at: new Date().toISOString() }
+      await idbPutProject(updated as unknown as Record<string, unknown>)
+      set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))
+      // Best-effort backend sync
+      try { await get().syncProjectToBackend(updated) } catch { /* ephemeral backend */ }
+    } else {
+      const updated = await api.updateProject(targetProjectId, { world_doc: worldDoc })
+      set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))
+    }
   },
 
   updateProject: async (data, projectId) => {
     const currentProject = get().currentProject
     const targetProjectId = projectId ?? currentProject?.id
     if (!targetProjectId) return
-    const updated = await api.updateProject(targetProjectId, data)
-    set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))
+
+    const persistent = await StorageFactory.isStoragePersistent()
+
+    if (!persistent) {
+      // Local-first: merge update into IndexedDB
+      const base = (currentProject?.id === targetProjectId ? currentProject : null)
+        ?? (await idbGetProject(targetProjectId) as unknown as Project | undefined)
+      if (!base) return
+      const updated: Project = { ...base, ...data, updated_at: new Date().toISOString() }
+      await idbPutProject(updated as unknown as Record<string, unknown>)
+      set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))
+      // Best-effort backend sync
+      try { await get().syncProjectToBackend(updated) } catch { /* ephemeral backend */ }
+    } else {
+      const updated = await api.updateProject(targetProjectId, data)
+      set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))
+    }
   },
 
   setCurrentProject: (project) => set({ currentProject: project }),
+
+  syncProjectToBackend: async (project) => {
+    try {
+      // Upsert: creates if missing, then updates to ensure latest data is applied
+      await api.createProject({
+        id: project.id,
+        name: project.name,
+        description: project.description ?? undefined,
+        world_doc: project.world_doc ?? '',
+      } as Parameters<typeof api.createProject>[0] & { id: string })
+      // Always push the latest fields (world_doc may have changed after initial upsert)
+      await api.updateProject(project.id, {
+        name: project.name,
+        description: project.description,
+        world_doc: project.world_doc ?? '',
+      })
+    } catch {
+      // best-effort
+    }
+  },
 }))

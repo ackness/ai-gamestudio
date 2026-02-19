@@ -30,7 +30,7 @@ class _InterceptHandler(logging.Handler):
         logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 
-def setup_logging() -> None:
+def setup_logging(log_dir: str = "data/logs") -> None:
     """Call once at application startup (in lifespan)."""
     # Remove loguru default handler
     logger.remove()
@@ -49,7 +49,7 @@ def setup_logging() -> None:
 
     # File sink — rotated daily, kept 30 days
     logger.add(
-        "data/logs/app_{time:YYYY-MM-DD}.log",
+        f"{log_dir}/app_{{time:YYYY-MM-DD}}.log",
         level="INFO",
         rotation="00:00",
         retention="30 days",

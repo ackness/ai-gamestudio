@@ -17,12 +17,13 @@ router = APIRouter(prefix="/api", tags=["sessions"])
 
 
 class SessionCreate(BaseModel):
-    pass
+    id: str | None = None  # optional: caller may supply existing UUID to upsert after cold start
 
 
 @router.post("/projects/{project_id}/sessions", response_model=GameSession)
 async def create_session(
     project_id: str,
+    body: SessionCreate = SessionCreate(),
     session: AsyncSession = Depends(get_session),
 ):
     # Verify project exists
@@ -30,7 +31,16 @@ async def create_session(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    game_session = GameSession(project_id=project_id)
+    # If a specific ID is provided, upsert: return existing session or create with that ID.
+    if body.id:
+        existing = await session.get(GameSession, body.id)
+        if existing:
+            return existing
+
+    game_session = GameSession(
+        **({"id": body.id} if body.id else {}),
+        project_id=project_id,
+    )
     session.add(game_session)
     await session.commit()
     await session.refresh(game_session)

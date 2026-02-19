@@ -2,6 +2,9 @@ import type {
   ImageOverridePayload,
   LlmOverridePayload,
 } from '../utils/browserLlmConfig'
+import { StorageFactory } from './settingsStorage'
+import { idbGetSession, idbGetProject } from './localDb'
+import * as api from './api'
 
 type ChunkCallback = (content: string) => void
 type DoneCallback = (fullContent: string, turnId: string, hasBlocks: boolean, messageId: string) => void
@@ -41,8 +44,11 @@ function normalizeBaseUrl(value: string | undefined, fallback: string): string {
 }
 
 function resolveTransportMode(): TransportMode {
-  const raw = String(import.meta.env.VITE_CHAT_TRANSPORT || 'websocket').trim().toLowerCase()
-  return raw === 'http' ? 'http' : 'websocket'
+  const raw = String(import.meta.env.VITE_CHAT_TRANSPORT || '').trim().toLowerCase()
+  if (raw === 'http') return 'http'
+  if (raw === 'websocket') return 'websocket'
+  // No explicit setting: will be auto-detected on first connect() via StorageFactory.
+  return 'websocket'
 }
 
 function getApiBaseUrl(): string {
@@ -82,10 +88,21 @@ export class GameWebSocket {
   onReconnecting: ReconnectingCallback = () => {}
   onDisconnected: DisconnectedCallback = () => {}
 
-  connect(sessionId: string) {
+  async connect(sessionId: string) {
     this.sessionId = sessionId
     this.shouldReconnect = true
     this.reconnectAttempts = 0
+
+    // Auto-detect HTTP mode when VITE_CHAT_TRANSPORT is not explicitly set:
+    // if backend storage is not persistent (Vercel + ephemeral SQLite), WebSockets
+    // are not available — fall back to HTTP polling.
+    if (this.transportMode === 'websocket' && !import.meta.env.VITE_CHAT_TRANSPORT) {
+      const persistent = await StorageFactory.isStoragePersistent()
+      if (!persistent) {
+        this.transportMode = 'http'
+      }
+    }
+
     if (this.transportMode === 'http') {
       return
     }
@@ -172,12 +189,39 @@ export class GameWebSocket {
     return nextPayload
   }
 
+  private async ensureSessionInBackend(): Promise<void> {
+    if (!this.sessionId) return
+    try {
+      const row = await idbGetSession(this.sessionId)
+      if (!row) return
+      const projectId = String(row.project_id ?? '')
+      if (!projectId) return
+
+      // Re-sync project (upsert with original ID)
+      const projectRow = await idbGetProject(projectId)
+      if (projectRow) {
+        try {
+          await api.createProject({
+            id: projectId,
+            name: String(projectRow.name ?? projectId),
+            description: projectRow.description ? String(projectRow.description) : undefined,
+            world_doc: projectRow.world_doc ? String(projectRow.world_doc) : '',
+          } as Parameters<typeof api.createProject>[0] & { id: string })
+        } catch { /* best-effort */ }
+      }
+
+      // Re-sync session (upsert with original ID)
+      await api.createSession(projectId, this.sessionId)
+    } catch { /* best-effort */ }
+  }
+
   private enqueueHttpCommand(payload: StructuredMessage) {
     if (!this.sessionId) {
       this.onError('Session not connected')
       return
     }
     this.httpQueue = this.httpQueue
+      .then(() => this.ensureSessionInBackend())
       .then(() => this.sendHttpCommand(payload))
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err)
@@ -187,11 +231,13 @@ export class GameWebSocket {
 
   private async sendHttpCommand(payload: StructuredMessage) {
     if (!this.sessionId) return
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    const accessKey = String(import.meta.env.VITE_ACCESS_KEY || '').trim()
+    if (accessKey) headers['X-Access-Key'] = accessKey
+
     const res = await fetch(`${getApiBaseUrl()}/chat/${this.sessionId}/command`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(payload),
     })
 

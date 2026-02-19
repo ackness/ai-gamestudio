@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     IMAGE_GEN_API_KEY: str | None = None
     IMAGE_GEN_API_BASE: str | None = None
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+    ACCESS_KEY: str | None = None  # if set, all API requests must include X-Access-Key header
     PLUGINS_DIR: str = "plugins"
     TEMPLATES_DIR: str = "templates/worlds"
     SECRET_STORE_DIR: str | None = None
