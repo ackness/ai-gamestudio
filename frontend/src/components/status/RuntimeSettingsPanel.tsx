@@ -8,6 +8,37 @@ import { StorageFactory, type ISettingsStorage } from '../../services/settingsSt
 
 type Scope = 'project' | 'session'
 
+const rspText: Record<string, Record<string, string>> = {
+  zh: {
+    selectProject: '请选择一个项目以配置运行时设置。',
+    loading: '加载运行时设置中...',
+    description: '运行时设置将在下一轮对话中影响叙事、图像生成和选项。',
+    editScope: '编辑范围',
+    project: '项目',
+    session: '存档',
+    noSettings: '当前启用的插件未声明任何运行时设置。',
+    overridden: '已覆盖',
+    saving: '保存中...',
+    enabled: '已启用',
+    reset: '重置',
+    localizedDefault: '用中文默认值',
+  },
+  en: {
+    selectProject: 'Select a project to configure runtime settings.',
+    loading: 'Loading runtime settings...',
+    description: 'Runtime settings affect narration, image generation, and choices from the next turn.',
+    editScope: 'Edit scope',
+    project: 'Project',
+    session: 'Session',
+    noSettings: 'No runtime settings declared by currently enabled plugins.',
+    overridden: 'overridden',
+    saving: 'saving...',
+    enabled: 'Enabled',
+    reset: 'Reset',
+    localizedDefault: 'Use localized default',
+  },
+}
+
 function normalizeValueForField(field: RuntimeSettingField, raw: unknown): unknown {
   if (raw === null || raw === undefined) return null
   if (field.type === 'boolean') return Boolean(raw)
@@ -46,6 +77,7 @@ export function RuntimeSettingsPanel() {
   const currentSession = useSessionStore((s) => s.currentSession)
   const plugins = usePluginStore((s) => s.plugins)
   const language = useUiStore((s) => s.language)
+  const t = rspText[language] ?? rspText.en
 
   const pluginDisplayName = useCallback(
     (name: string): string => {
@@ -173,23 +205,23 @@ export function RuntimeSettingsPanel() {
   if (!currentProject) {
     return (
       <div className="text-center text-slate-500 py-8 text-sm">
-        Select a project to configure runtime settings.
+        {t.selectProject}
       </div>
     )
   }
 
   if (loading && fields.length === 0) {
-    return <div className="text-center text-slate-500 py-8 text-sm">Loading runtime settings...</div>
+    return <div className="text-center text-slate-500 py-8 text-sm">{t.loading}</div>
   }
 
   return (
     <div className="space-y-3">
       <div className="bg-slate-800/70 border border-slate-700 rounded-lg px-3 py-2 space-y-2">
         <p className="text-xs text-slate-300">
-          Runtime settings affect narration, image generation, and choices from the next turn.
+          {t.description}
         </p>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400">Edit scope</span>
+          <span className="text-xs text-slate-400">{t.editScope}</span>
           <button
             onClick={() => setScope('project')}
             className={`text-xs px-2 py-1 rounded ${
@@ -198,7 +230,7 @@ export function RuntimeSettingsPanel() {
                 : 'bg-slate-700 text-slate-300'
             }`}
           >
-            Project
+            {t.project}
           </button>
           <button
             onClick={() => setScope('session')}
@@ -209,7 +241,7 @@ export function RuntimeSettingsPanel() {
                 : 'bg-slate-700 text-slate-300'
             }`}
           >
-            Session
+            {t.session}
           </button>
         </div>
       </div>
@@ -222,7 +254,7 @@ export function RuntimeSettingsPanel() {
 
       {Object.keys(fieldsByPlugin).length === 0 && (
         <div className="text-center text-slate-500 py-8 text-sm">
-          No runtime settings declared by currently enabled plugins.
+          {t.noSettings}
         </div>
       )}
 
@@ -261,11 +293,11 @@ export function RuntimeSettingsPanel() {
                     </span>
                     {isOverridden && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-900/40 text-cyan-300">
-                        overridden
+                        {t.overridden}
                       </span>
                     )}
                     {savingKey === field.key && (
-                      <span className="text-[10px] text-emerald-300">saving...</span>
+                      <span className="text-[10px] text-emerald-300">{t.saving}</span>
                     )}
                   </div>
                 </div>
@@ -282,7 +314,7 @@ export function RuntimeSettingsPanel() {
                       disabled={disabledByScope}
                       onChange={(e) => patchField(field, e.target.checked)}
                     />
-                    Enabled
+                    {t.enabled}
                   </label>
                 ) : field.type === 'enum' ? (
                   <select
@@ -328,7 +360,7 @@ export function RuntimeSettingsPanel() {
                         disabled={disabledByScope}
                         className="text-[10px] px-2 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 disabled:opacity-50"
                       >
-                        {language === 'zh' ? '用中文默认值' : 'Use localized default'}
+                        {t.localizedDefault}
                       </button>
                     )}
                     <button
@@ -336,7 +368,7 @@ export function RuntimeSettingsPanel() {
                       disabled={disabledByScope}
                       className="text-[10px] px-2 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 disabled:opacity-50"
                     >
-                      Reset
+                      {t.reset}
                     </button>
                   </div>
                 </div>

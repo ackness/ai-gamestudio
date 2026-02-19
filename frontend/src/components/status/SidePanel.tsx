@@ -7,8 +7,32 @@ import { NotificationPanel } from './NotificationPanel'
 import { RuntimeSettingsPanel } from './RuntimeSettingsPanel'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useSessionStore } from '../../stores/sessionStore'
+import { useUiStore } from '../../stores/uiStore'
 
 type Tab = 'characters' | 'plugins' | 'events' | 'alerts' | 'world' | 'settings'
+
+const tabDefs: Record<string, { label: string; hint: string }[]> = {
+  zh: [
+    { label: '角色', hint: '角色状态' },
+    { label: '插件', hint: '插件能力' },
+    { label: '设置', hint: '运行时配置' },
+    { label: '事件', hint: '事件时间线' },
+    { label: '通知', hint: '通知与告警' },
+    { label: '世界', hint: '世界状态' },
+  ],
+  en: [
+    { label: 'Characters', hint: 'Character status' },
+    { label: 'Plugins', hint: 'Plugin capabilities' },
+    { label: 'Settings', hint: 'Runtime config' },
+    { label: 'Events', hint: 'Event timeline' },
+    { label: 'Alerts', hint: 'Notifications' },
+    { label: 'World', hint: 'World state' },
+  ],
+}
+
+const tabKeys: Tab[] = ['characters', 'plugins', 'settings', 'events', 'alerts', 'world']
+
+const panelsLabel: Record<string, string> = { zh: '面板', en: 'Panels' }
 
 export function SidePanel() {
   const [activeTab, setActiveTab] = useState<Tab>('characters')
@@ -17,15 +41,10 @@ export function SidePanel() {
     (s) => s.notifications.reduce((count, item) => count + (item.unread ? 1 : 0), 0),
   )
   const markAllRead = useNotificationStore((s) => s.markAllRead)
+  const language = useUiStore((s) => s.language)
+  const defs = tabDefs[language] ?? tabDefs.en
 
-  const tabs: { key: Tab; label: string; hint: string }[] = [
-    { key: 'characters', label: 'Characters', hint: '角色状态' },
-    { key: 'plugins', label: 'Plugins', hint: '插件能力' },
-    { key: 'settings', label: 'Settings', hint: '运行时配置' },
-    { key: 'events', label: 'Events', hint: '事件时间线' },
-    { key: 'alerts', label: 'Alerts', hint: '通知与告警' },
-    { key: 'world', label: 'World', hint: '世界状态' },
-  ]
+  const tabs = tabKeys.map((key, i) => ({ key, ...defs[i] }))
   const currentTab = tabs.find((tab) => tab.key === activeTab) || tabs[0]
 
   const handleTabClick = (tab: Tab) => {
@@ -38,7 +57,7 @@ export function SidePanel() {
   return (
     <div className="flex-1 flex overflow-hidden min-h-0">
       <div className="w-28 shrink-0 border-r border-slate-700 bg-slate-900/40 p-2 space-y-1 overflow-y-auto">
-        <p className="px-1 pb-1 text-[10px] uppercase tracking-wide text-slate-500">Panels</p>
+        <p className="px-1 pb-1 text-[10px] uppercase tracking-wide text-slate-500">{panelsLabel[language] ?? panelsLabel.en}</p>
         {tabs.map((tab) => (
           <button
             key={tab.key}

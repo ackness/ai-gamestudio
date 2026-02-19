@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import type { Session } from '../../types'
+import { useUiStore } from '../../stores/uiStore'
 
 interface Props {
   sessions: Session[]
@@ -20,17 +21,37 @@ function formatTime(iso: string): string {
     ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-const phaseLabels: Record<string, string> = {
-  init: '未开始',
-  character_creation: '创建角色',
-  playing: '进行中',
-  ended: '已结束',
+const phaseLabels: Record<string, Record<string, string>> = {
+  zh: { init: '未开始', character_creation: '创建角色', playing: '进行中', ended: '已结束' },
+  en: { init: 'Not Started', character_creation: 'Creating', playing: 'Playing', ended: 'Ended' },
+}
+
+const uiText: Record<string, Record<string, string>> = {
+  zh: {
+    sessions: '存档',
+    noSessions: '暂无存档',
+    newSession: '+ 新存档',
+    confirm: '确认?',
+    deleteTitle: '删除存档',
+    confirmTitle: '再次点击确认',
+  },
+  en: {
+    sessions: 'Sessions',
+    noSessions: 'No sessions yet',
+    newSession: '+ New Session',
+    confirm: 'Confirm?',
+    deleteTitle: 'Delete session',
+    confirmTitle: 'Click again to confirm',
+  },
 }
 
 export function SessionSelector({ sessions, currentSession, onSwitch, onNew, onDelete }: Props) {
   const [open, setOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const language = useUiStore((s) => s.language)
+  const t = uiText[language] ?? uiText.en
+  const phases = phaseLabels[language] ?? phaseLabels.en
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -59,7 +80,7 @@ export function SessionSelector({ sessions, currentSession, onSwitch, onNew, onD
         onClick={() => setOpen(!open)}
         className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors flex items-center gap-1"
       >
-        Sessions
+        {t.sessions}
         <span className="text-slate-500">({sessions.length})</span>
         <span className="text-[10px] text-slate-500">{open ? '\u25B2' : '\u25BC'}</span>
       </button>
@@ -69,7 +90,7 @@ export function SessionSelector({ sessions, currentSession, onSwitch, onNew, onD
           <div className="max-h-64 overflow-y-auto">
             {sessions.length === 0 && (
               <div className="px-3 py-4 text-center text-slate-500 text-xs">
-                No sessions yet
+                {t.noSessions}
               </div>
             )}
             {sessions.map((s) => {
@@ -104,7 +125,7 @@ export function SessionSelector({ sessions, currentSession, onSwitch, onNew, onD
                             ? 'bg-slate-700 text-slate-400'
                             : 'bg-slate-700 text-slate-400'
                       }`}>
-                        {phaseLabels[s.phase] || s.phase}
+                        {phases[s.phase] || s.phase}
                       </span>
                     </div>
                     <span className="text-[10px] text-slate-500 pl-0.5">
@@ -118,9 +139,9 @@ export function SessionSelector({ sessions, currentSession, onSwitch, onNew, onD
                         ? 'bg-red-700 text-white'
                         : 'text-slate-500 hover:text-red-400 hover:bg-red-900/30'
                     }`}
-                    title={confirmDelete === s.id ? 'Click again to confirm' : 'Delete session'}
+                    title={confirmDelete === s.id ? t.confirmTitle : t.deleteTitle}
                   >
-                    {confirmDelete === s.id ? 'Confirm?' : '\u2715'}
+                    {confirmDelete === s.id ? t.confirm : '\u2715'}
                   </button>
                 </div>
               )
@@ -134,7 +155,7 @@ export function SessionSelector({ sessions, currentSession, onSwitch, onNew, onD
               }}
               className="w-full text-xs py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded transition-colors"
             >
-              + New Session
+              {t.newSession}
             </button>
           </div>
         </div>

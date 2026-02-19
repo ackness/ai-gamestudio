@@ -5,7 +5,7 @@ import { useUiStore } from '../stores/uiStore'
 export function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation()
   const isEditor = location.pathname.startsWith('/projects/')
-  const checkStoragePersistence = useUiStore((s) => s.checkStoragePersistence)
+  const { checkStoragePersistence, language } = useUiStore()
 
   useEffect(() => {
     checkStoragePersistence()
@@ -68,7 +68,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path d="M8 2L4 6l4 4" />
               </svg>
-              <span className="text-xs transition-colors group-hover:text-[#7fa8c4]">Projects</span>
+              <span className="text-xs transition-colors group-hover:text-[#7fa8c4]">{language === 'zh' ? '项目' : 'Projects'}</span>
             </Link>
           )}
         </div>

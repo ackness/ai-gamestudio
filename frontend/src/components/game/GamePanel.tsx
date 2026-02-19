@@ -13,19 +13,46 @@ import { SceneBar } from './SceneBar'
 import { QuickActions } from './QuickActions'
 import { ArchiveRestoreModal } from './ArchiveRestoreModal'
 import { WelcomeScreen } from './WelcomeScreen'
-import { ModelConfigPanel } from './ModelConfigPanel'
 import { DebugLogPanel } from './DebugLogPanel'
 import { SessionSelector } from './SessionSelector'
 import * as api from '../../services/api'
+import * as gameStorage from '../../services/gameStorage'
 import type { LlmInfo } from '../../services/api'
 import {
   buildBrowserImageOverrides,
   buildBrowserLlmOverrides,
 } from '../../utils/browserLlmConfig'
+import { useUiStore } from '../../stores/uiStore'
+
+const gamePanelText: Record<string, Record<string, string>> = {
+  zh: {
+    noSession: '无活跃存档',
+    selectSession: '选择或创建存档以开始',
+    gameSession: '游戏存档',
+    save: '存档',
+    restore: '恢复',
+    debug: '调试',
+    saveTip: '手动生成一个存档版本',
+    restoreTip: '恢复到任意历史版本',
+    debugTip: '切换调试日志',
+  },
+  en: {
+    noSession: 'No Active Session',
+    selectSession: 'Select or create a session to begin',
+    gameSession: 'Game Session',
+    save: 'Save',
+    restore: 'Restore',
+    debug: 'Debug',
+    saveTip: 'Manually create an archive version',
+    restoreTip: 'Restore to any previous version',
+    debugTip: 'Toggle debug log',
+  },
+}
 
 interface Props {
   currentSession: Session | null
   onNewSession: () => void
+  llmInfo?: LlmInfo | null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -46,11 +73,9 @@ function isGameEvent(value: unknown): value is GameEvent {
   )
 }
 
-export function GamePanel({ currentSession, onNewSession }: Props) {
+export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
   const wsRef = useRef<GameWebSocket | null>(null)
   const lastActionRef = useRef<{ type: string; content?: string; data?: unknown } | null>(null)
-  const [llmInfo, setLlmInfo] = useState<LlmInfo | null>(null)
-  const [showModelConfig, setShowModelConfig] = useState(false)
   const [showDebugLog, setShowDebugLog] = useState(false)
   const [archiveVersions, setArchiveVersions] = useState<ArchiveVersion[]>([])
   const [archiveBusy, setArchiveBusy] = useState(false)
@@ -58,6 +83,8 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
   const [initError, setInitError] = useState<string | null>(null)
   const [wsStatus, setWsStatus] = useState<'connected' | 'reconnecting' | 'disconnected'>('connected')
   const { currentProject } = useProjectStore()
+  const language = useUiStore((s) => s.language)
+  const gpt = gamePanelText[language] ?? gamePanelText.en
   const {
     sessions,
     messages,
@@ -86,12 +113,6 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
   } = useSessionStore()
   const { setCharacters, mergeCharacters, setWorldState, addEvent, setEvents } = useGameStateStore()
 
-  const refreshLlmInfo = useCallback(() => {
-    // Use currentProject.id directly from store to ensure fresh value
-    const pid = useProjectStore.getState().currentProject?.id
-    api.getLlmInfo(pid).then(setLlmInfo).catch(() => {})
-  }, [])
-
   const refreshArchiveVersions = useCallback(() => {
     if (!currentSession) {
       setArchiveVersions([])
@@ -99,10 +120,6 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
     }
     api.getArchiveVersions(currentSession.id).then(setArchiveVersions).catch(() => setArchiveVersions([]))
   }, [currentSession])
-
-  useEffect(() => {
-    refreshLlmInfo()
-  }, [refreshLlmInfo])
 
   useEffect(() => {
     refreshArchiveVersions()
@@ -117,11 +134,6 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
       clearSchemas()
     }
   }, [currentProject?.id, fetchSchemas, clearSchemas])
-
-  // Compute effective model: use API returned values directly
-  const effectiveModel = llmInfo?.model || ''
-  const effectiveProvider = llmInfo?.provider || 'openai'
-  const effectiveModelName = llmInfo?.model_name || ''
 
   useEffect(() => {
     if (!currentSession) return
@@ -202,9 +214,9 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
     ws.onPhaseChange = (newPhase) => {
       setPhase(newPhase)
       if ((newPhase === 'playing' || newPhase === 'character_creation') && currentSession) {
-        api.getScenes(currentSession.id).then(setScenes).catch(() => {})
-        api.getEvents(currentSession.id).then(setEvents).catch(() => {})
-        api.getCharacters(currentSession.id).then(setCharacters).catch(() => {})
+        gameStorage.fetchScenes(currentSession.id).then(setScenes).catch(() => {})
+        gameStorage.fetchEvents(currentSession.id).then(setEvents).catch(() => {})
+        gameStorage.fetchCharacters(currentSession.id).then(setCharacters).catch(() => {})
         api.getSessionState(currentSession.id).then((state) => setWorldState(state.world || {})).catch(() => {})
       } else if (newPhase === 'init') {
         setScenes([])
@@ -324,7 +336,7 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
     }, 100)
 
     // Load persisted game state for this session
-    api.getCharacters(currentSession.id).then(setCharacters).catch(() => {})
+    gameStorage.fetchCharacters(currentSession.id).then(setCharacters).catch(() => {})
     api.getSessionState(currentSession.id).then((state) => setWorldState(state.world || {})).catch(() => {})
 
     // Hydrate message images from API
@@ -332,12 +344,12 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
 
     // Load scenes and events if session is already in a progressed phase
     if (currentSession.phase === 'playing' || currentSession.phase === 'character_creation') {
-      api.getScenes(currentSession.id).then((loaded) => {
+      gameStorage.fetchScenes(currentSession.id).then((loaded) => {
         setScenes(loaded)
         const current = loaded.find((s) => s.is_current)
         if (current) setCurrentScene(current)
       }).catch(() => {})
-      api.getEvents(currentSession.id).then(setEvents).catch(() => {})
+      gameStorage.fetchEvents(currentSession.id).then(setEvents).catch(() => {})
     }
 
     // Set initial phase from session
@@ -567,10 +579,10 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
 
       await fetchMessages(targetSessionId)
       const [loadedScenes, loadedEvents, loadedVersions, loadedCharacters, loadedState] = await Promise.all([
-        api.getScenes(targetSessionId),
-        api.getEvents(targetSessionId),
+        gameStorage.fetchScenes(targetSessionId),
+        gameStorage.fetchEvents(targetSessionId),
         api.getArchiveVersions(targetSessionId),
-        api.getCharacters(targetSessionId),
+        gameStorage.fetchCharacters(targetSessionId),
         api.getSessionState(targetSessionId),
       ])
       setScenes(loadedScenes)
@@ -608,26 +620,16 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
   ])
 
   // Phase-aware rendering
+  const effectiveModel = llmInfo?.model || ''
+  const effectiveProvider = llmInfo?.provider || 'openai'
+  const effectiveModelName = llmInfo?.model_name || ''
   const modelBadge = effectiveModel ? (
-    <div className="relative">
-      <button
-        onClick={() => setShowModelConfig((v) => !v)}
-        className="text-xs text-slate-500 hover:text-slate-300 font-mono truncate max-w-[200px] cursor-pointer transition-colors"
-        title="Click to configure model"
-      >
-        {effectiveProvider}/{effectiveModelName}
-      </button>
-      {showModelConfig && (
-        <ModelConfigPanel
-          llmInfo={llmInfo}
-          onClose={() => setShowModelConfig(false)}
-          onSaved={() => {
-            setShowModelConfig(false)
-            refreshLlmInfo()
-          }}
-        />
-      )}
-    </div>
+    <span
+      className="text-xs text-slate-500 font-mono truncate max-w-[200px]"
+      title={effectiveModel}
+    >
+      {effectiveProvider}/{effectiveModelName}
+    </span>
   ) : null
 
   if (!currentSession) {
@@ -635,7 +637,7 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2 bg-slate-900 border-b border-slate-700">
           <div className="flex items-center gap-3 min-w-0">
-            <span className="text-sm font-medium text-slate-300 shrink-0">No Active Session</span>
+            <span className="text-sm font-medium text-slate-300 shrink-0">{gpt.noSession}</span>
             {modelBadge}
           </div>
           <SessionSelector
@@ -647,7 +649,7 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
           />
         </div>
         <div className="flex-1 flex items-center justify-center text-slate-500">
-          Select or create a session to begin
+          {gpt.selectSession}
         </div>
       </div>
     )
@@ -657,7 +659,7 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2 bg-slate-900 border-b border-slate-700">
         <div className="flex items-center gap-3 min-w-0">
-          <span className="text-sm font-medium text-slate-300 shrink-0">Game Session</span>
+          <span className="text-sm font-medium text-slate-300 shrink-0">{gpt.gameSession}</span>
           {modelBadge}
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -665,17 +667,17 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
             onClick={handleArchiveNow}
             disabled={archiveBusy || !currentSession}
             className="text-xs px-2 py-1 rounded transition-colors bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-300"
-            title="手动生成一个存档版本"
+            title={gpt.saveTip}
           >
-            Save
+            {gpt.save}
           </button>
           <button
             onClick={handleRestoreArchive}
             disabled={archiveBusy || !currentSession}
             className="text-xs px-2 py-1 rounded transition-colors bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-300"
-            title="恢复到任意历史版本"
+            title={gpt.restoreTip}
           >
-            Restore
+            {gpt.restore}
           </button>
           <button
             onClick={() => setShowDebugLog((v) => !v)}
@@ -684,9 +686,9 @@ export function GamePanel({ currentSession, onNewSession }: Props) {
                 ? 'bg-amber-700 text-amber-100'
                 : 'bg-slate-700 hover:bg-slate-600 text-slate-400'
             }`}
-            title="Toggle debug log"
+            title={gpt.debugTip}
           >
-            Debug
+            {gpt.debug}
           </button>
           <SessionSelector
             sessions={sessions}

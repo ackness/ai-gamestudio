@@ -1,15 +1,17 @@
 import { useGameStateStore } from '../../stores/gameStateStore'
+import { useUiStore } from '../../stores/uiStore'
 
 export function WorldStatePanel() {
   const { worldState } = useGameStateStore()
+  const language = useUiStore((s) => s.language)
 
   const entries = Object.entries(worldState)
 
   if (entries.length === 0) {
     return (
       <div className="text-center text-slate-500 py-8 text-sm">
-        <p>No world state data</p>
-        <p className="text-xs mt-1">State updates will appear during gameplay</p>
+        <p>{language === 'zh' ? '暂无世界状态数据' : 'No world state data'}</p>
+        <p className="text-xs mt-1">{language === 'zh' ? '游戏进行中将显示状态更新' : 'State updates will appear during gameplay'}</p>
       </div>
     )
   }
