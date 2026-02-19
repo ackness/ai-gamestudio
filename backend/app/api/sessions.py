@@ -12,6 +12,7 @@ from backend.app.models.message import Message
 from backend.app.models.project import Project
 from backend.app.models.session import GameSession
 from backend.app.services.archive_service import ensure_archive_initialized
+from backend.app.services.data_cleanup import delete_session_data
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 
@@ -57,6 +58,10 @@ async def list_sessions(
     project_id: str,
     session: AsyncSession = Depends(get_session),
 ):
+    project = await session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
     stmt = (
         select(GameSession)
         .where(GameSession.project_id == project_id)
@@ -75,14 +80,12 @@ async def delete_session(
     if not game_session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Delete associated messages
-    stmt = select(Message).where(Message.session_id == session_id)
-    result = await session.exec(stmt)
-    for msg in result.all():
-        await session.delete(msg)
-
-    await session.delete(game_session)
-    await session.commit()
+    await delete_session_data(
+        session,
+        session_id=session_id,
+        project_id=game_session.project_id,
+        autocommit=True,
+    )
     return {"ok": True}
 
 

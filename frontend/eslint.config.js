@@ -19,5 +19,10 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // This project intentionally mirrors external async state into local UI state.
+      // The default rule is too strict for these editor/store synchronization flows.
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ])

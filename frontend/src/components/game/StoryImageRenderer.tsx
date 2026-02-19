@@ -105,11 +105,12 @@ function DebugModal({
 }
 
 export function StoryImageRenderer({ data, blockId, onAction, locked }: BlockRendererProps) {
-  if (!data || typeof data !== 'object') return null
-  const payload = data as StoryImageData
+  const payload = data && typeof data === 'object' ? (data as StoryImageData) : null
   const [expanded, setExpanded] = useState(false)
   const [reason, setReason] = useState('')
   const [previewOpen, setPreviewOpen] = useState(false)
+
+  if (!payload) return null
 
   const status = payload.status || (payload.image_url ? 'ok' : 'error')
   const canRegenerate = Boolean(payload.can_regenerate) && !locked && (

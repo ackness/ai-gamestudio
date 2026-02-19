@@ -62,6 +62,12 @@ function getWsBasePrefix(): string {
   return `${protocol}//${window.location.host}/ws`
 }
 
+function getAccessKeyQueryParam(): string {
+  const accessKey = String(import.meta.env.VITE_ACCESS_KEY || '').trim()
+  if (!accessKey) return ''
+  return `access_key=${encodeURIComponent(accessKey)}`
+}
+
 export class GameWebSocket {
   private ws: WebSocket | null = null
   private reconnectAttempts = 0
@@ -122,7 +128,10 @@ export class GameWebSocket {
   private createConnection() {
     if (!this.sessionId) return
 
-    const wsUrl = `${getWsBasePrefix()}/chat/${this.sessionId}`
+    const accessKeyParam = getAccessKeyQueryParam()
+    const wsUrl = accessKeyParam
+      ? `${getWsBasePrefix()}/chat/${this.sessionId}?${accessKeyParam}`
+      : `${getWsBasePrefix()}/chat/${this.sessionId}`
 
     this.ws = new WebSocket(wsUrl)
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.core.plugin_engine import BlockDeclaration, PluginEngine
+from backend.app.core.plugin_engine import PluginEngine
 
 PLUGINS_DIR = "plugins"
 

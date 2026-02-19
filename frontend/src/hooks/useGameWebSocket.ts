@@ -130,17 +130,19 @@ export function useGameWebSocket(currentSession: Session | null) {
     }
 
     ws.onSceneUpdate = (data) => {
-      const sceneId = (data as any)?.scene_id
-      const sceneName = (data as any)?.name
+      const sceneId = typeof data.scene_id === 'string' ? data.scene_id : ''
+      const sceneName = typeof data.name === 'string' ? data.name : ''
       if (!sceneId || !sceneName) return
 
+      const description = typeof data.description === 'string' ? data.description : undefined
+      const npcs = Array.isArray(data.npcs) ? data.npcs : undefined
       const scene: Scene = {
         id: sceneId,
         session_id: currentSession.id,
         name: sceneName,
-        description: (data as any)?.description || undefined,
+        description,
         is_current: true,
-        metadata: (data as any)?.npcs ? { npcs: (data as any).npcs } : undefined,
+        metadata: npcs ? { npcs } : undefined,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }

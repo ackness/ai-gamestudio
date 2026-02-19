@@ -26,9 +26,16 @@ interface FormData {
 }
 
 export function FormRenderer({ data, blockId, onAction, locked }: BlockRendererProps) {
-  if (!data || typeof data !== 'object') return null
+  const payload = data && typeof data === 'object' ? (data as FormData) : null
 
-  const { id, title, description, fields = [], submit_label = '提交', submit_mode = 'message' } = data as FormData
+  const { id, title, description, fields = [], submit_label = '提交', submit_mode = 'message' } = payload ?? {
+    id: '',
+    title: '',
+    description: undefined,
+    fields: [],
+    submit_label: '提交',
+    submit_mode: 'message',
+  }
   const interaction = useBlockInteractionStore(
     (s) => s.interactions[blockId] ?? EMPTY_BLOCK_INTERACTION,
   )
@@ -38,6 +45,8 @@ export function FormRenderer({ data, blockId, onAction, locked }: BlockRendererP
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const submitted = !!interaction.submitted
+
+  if (!payload) return null
 
   const getTextualValue = (name: string): string | number => {
     const value = values[name]

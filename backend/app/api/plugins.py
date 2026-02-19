@@ -142,19 +142,36 @@ class ImportValidationResult(BaseModel):
     warnings: list[str]
 
 
+class ImportValidateBody(BaseModel):
+    plugin_dir: str
+
+
 @router.post("/import/validate")
 async def validate_plugin_import(
-    plugin_dir: str,
+    plugin_dir: str | None = None,
+    body: ImportValidateBody | None = None,
 ) -> ImportValidationResult:
     """Validate a plugin directory for import readiness.
 
     Runs full validation: manifest + PLUGIN.md consistency, dependencies exist,
     scripts exist, schemas parseable.
     """
-    path = pathlib.Path(plugin_dir)
+    target_dir = (
+        body.plugin_dir
+        if body and isinstance(body.plugin_dir, str) and body.plugin_dir.strip()
+        else str(plugin_dir or "").strip()
+    )
+    if not target_dir:
+        return ImportValidationResult(
+            valid=False,
+            errors=["plugin_dir is required"],
+            warnings=[],
+        )
+
+    path = pathlib.Path(target_dir)
     if not path.is_dir():
         return ImportValidationResult(
-            valid=False, errors=[f"Directory not found: {plugin_dir}"], warnings=[]
+            valid=False, errors=[f"Directory not found: {target_dir}"], warnings=[]
         )
 
     errors: list[str] = []

@@ -1,8 +1,6 @@
 """Tests for PluginEventBus."""
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 from backend.app.core.event_bus import PluginEventBus

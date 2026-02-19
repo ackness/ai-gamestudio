@@ -12,7 +12,7 @@ interface Props {
 }
 
 /** Fallback for block types with no registered renderer. */
-function FallbackBlock({ type, data }: { type: string; data: any }) {
+function FallbackBlock({ type, data }: { type: string; data: unknown }) {
   return (
     <details className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-2 max-w-[80%] text-xs">
       <summary className="text-slate-400 cursor-pointer">

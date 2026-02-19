@@ -66,13 +66,25 @@ export function DebugLogPanel({ sessionId, onClose }: Props) {
 
   // Fetch existing logs + connect to live stream
   useEffect(() => {
-    fetch(`/api/sessions/${sessionId}/debug-log`)
+    const accessKey = String(import.meta.env.VITE_ACCESS_KEY || '').trim()
+    const authHeaders = accessKey ? { 'X-Access-Key': accessKey } : undefined
+
+    fetch(`/api/sessions/${sessionId}/debug-log`, {
+      headers: authHeaders,
+    })
+      .then((r) => {
+        if (!r.ok) {
+          throw new Error(`HTTP ${r.status}`)
+        }
+        return r
+      })
       .then((r) => r.json())
       .then((data: LogEntry[]) => setLogs(data))
       .catch(() => {})
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/debug-log/${sessionId}`)
+    const query = accessKey ? `?access_key=${encodeURIComponent(accessKey)}` : ''
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/debug-log/${sessionId}${query}`)
     wsRef.current = ws
 
     ws.onopen = () => setConnected(true)

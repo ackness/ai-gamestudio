@@ -4,7 +4,7 @@ import { useBlockSchemaStore } from '../stores/blockSchemaStore'
 import { GenericBlockRenderer } from '../components/game/GenericBlockRenderer'
 
 export interface BlockRendererProps {
-  data: any
+  data: unknown
   blockId: string
   onAction: (msg: string) => void
   locked?: boolean
@@ -43,13 +43,18 @@ export function getBlockRenderer(type: string): BlockRenderer | undefined {
       return () => null
     }
     // Return a component that wraps GenericBlockRenderer with the resolved schema
-    const SchemaRenderer: BlockRenderer = (props) =>
-      createElement(GenericBlockRenderer, {
-        data: props.data,
+    const SchemaRenderer: BlockRenderer = (props) => {
+      const safeData =
+        props.data && typeof props.data === 'object' && !Array.isArray(props.data)
+          ? (props.data as Record<string, unknown>)
+          : {}
+      return createElement(GenericBlockRenderer, {
+        data: safeData,
         blockId: props.blockId,
         schema,
         onAction: props.onAction,
       })
+    }
     SchemaRenderer.displayName = `SchemaRenderer(${type})`
     return SchemaRenderer
   }

@@ -66,7 +66,6 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
     deleteSession,
     setScenes,
     setCurrentScene,
-    setPhase,
   } = useSessionStore()
   const { setCharacters, setWorldState, setEvents } = useGameStateStore()
 

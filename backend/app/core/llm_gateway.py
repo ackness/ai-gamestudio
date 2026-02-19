@@ -8,7 +8,6 @@ from typing import Any
 import litellm
 from loguru import logger
 
-from backend.app.core.config import settings
 from backend.app.core.llm_config import ResolvedLlmConfig, resolve_llm_config
 
 # Suppress litellm's built-in verbose logging

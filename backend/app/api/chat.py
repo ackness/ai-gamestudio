@@ -8,6 +8,7 @@ from loguru import logger
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from backend.app.core.access_key import is_request_authorized
 from backend.app.core.block_parser import strip_blocks
 from backend.app.db.engine import engine
 from backend.app.models.session import GameSession
@@ -201,6 +202,10 @@ async def chat_command(session_id: str, data: dict[str, Any]):
 
 @router.websocket("/ws/chat/{session_id}")
 async def websocket_chat(websocket: WebSocket, session_id: str):
+    if not is_request_authorized(websocket.headers, websocket.query_params):
+        await websocket.close(code=4401, reason="Unauthorized")
+        return
+
     if not await _session_exists(session_id):
         await websocket.close(code=4004, reason="Session not found")
         return

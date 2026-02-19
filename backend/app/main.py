@@ -14,6 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from backend.app.core.config import settings
+from backend.app.core.access_key import access_key_required, is_request_authorized
 from backend.app.core.llm_config import get_effective_config_for_project
 from backend.app.core.logging import setup_logging
 from backend.app.db.engine import init_db
@@ -71,12 +72,11 @@ _EXEMPT_PATHS = {"/api/health"}
 
 class AccessKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if not settings.ACCESS_KEY:
+        if not access_key_required():
             return await call_next(request)
         if request.url.path in _EXEMPT_PATHS:
             return await call_next(request)
-        provided = request.headers.get("X-Access-Key", "")
-        if provided != settings.ACCESS_KEY:
+        if not is_request_authorized(request.headers, request.query_params):
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
         return await call_next(request)
 

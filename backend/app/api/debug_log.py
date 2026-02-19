@@ -4,10 +4,10 @@ import asyncio
 import copy
 from collections import deque
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from backend.app.core.access_key import is_request_authorized
 from backend.app.core.config import settings
 from backend.app.db.engine import engine
 from backend.app.models.session import GameSession
@@ -131,6 +131,10 @@ async def get_session_story_images_endpoint(session_id: str):
 @router.websocket("/ws/debug-log/{session_id}")
 async def websocket_debug_log(websocket: WebSocket, session_id: str):
     """Stream debug log entries in real time."""
+    if not is_request_authorized(websocket.headers, websocket.query_params):
+        await websocket.close(code=4401, reason="Unauthorized")
+        return
+
     await websocket.accept()
     queue: asyncio.Queue = asyncio.Queue(maxsize=500)
     _touch_log_session(session_id)

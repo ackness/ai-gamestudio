@@ -23,7 +23,7 @@ function normalizeInventory(items: CharacterSheetData['inventory']): string[] {
 }
 
 export function CharacterSheetRenderer({ data, blockId, onAction, locked }: BlockRendererProps) {
-  if (!data || typeof data !== 'object') return null
+  const payload = data && typeof data === 'object' ? (data as CharacterSheetData) : null
 
   const {
     character_id,
@@ -33,7 +33,15 @@ export function CharacterSheetRenderer({ data, blockId, onAction, locked }: Bloc
     inventory: rawInventory = [],
     description,
     role,
-  } = data as CharacterSheetData
+  } = payload ?? {
+    character_id: '',
+    name: '',
+    editable_fields: [],
+    attributes: {},
+    inventory: [],
+    description: undefined,
+    role: undefined,
+  }
 
   const inventory = normalizeInventory(rawInventory)
   const interaction = useBlockInteractionStore(
@@ -51,6 +59,8 @@ export function CharacterSheetRenderer({ data, blockId, onAction, locked }: Bloc
     interactionState.editedAttrs,
   )
   const confirmed = interactionState.confirmed
+
+  if (!payload) return null
 
   const isEditable = (field: string) => !locked && !confirmed && editable_fields.includes(field)
 

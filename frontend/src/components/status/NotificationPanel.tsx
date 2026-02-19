@@ -1,4 +1,3 @@
-import { useMemo } from 'react'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useSessionStore } from '../../stores/sessionStore'
 
@@ -28,14 +27,9 @@ const levelStyles: Record<string, { border: string; title: string; chip: string 
 export function NotificationPanel() {
   const currentSession = useSessionStore((s) => s.currentSession)
   const allNotifications = useNotificationStore((s) => s.notifications)
-  const notifications = useMemo(
-    () => (
-      currentSession
-        ? allNotifications.filter((item) => item.sessionId === currentSession.id)
-        : []
-    ),
-    [allNotifications, currentSession?.id],
-  )
+  const notifications = currentSession
+    ? allNotifications.filter((item) => item.sessionId === currentSession.id)
+    : []
 
   if (currentSession?.phase === 'init') {
     return (

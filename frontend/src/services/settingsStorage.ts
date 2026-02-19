@@ -52,7 +52,8 @@ class ApiSettingsStorage implements ISettingsStorage {
 // ─── LocalStorage implementation (no backend / Vercel static) ─────────────────
 
 class LocalSettingsStorage implements ISettingsStorage {
-  async getSchema(_projectId: string): Promise<RuntimeSettingsSchemaResponse> {
+  async getSchema(projectId: string): Promise<RuntimeSettingsSchemaResponse> {
+    void projectId
     return { fields: [], by_plugin: {}, enabled_plugins: [] }
   }
 

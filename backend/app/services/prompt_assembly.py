@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from backend.app.core.config import settings
 from backend.app.core.plugin_engine import BlockDeclaration
 from backend.app.core.prompt_builder import PromptBuilder
 from backend.app.services.turn_context import TurnContext

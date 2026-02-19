@@ -10,6 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from backend.app.core.secret_store import get_secret_store
 from backend.app.db.engine import get_session
 from backend.app.models.project import Project
+from backend.app.services.data_cleanup import delete_project_data
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -201,6 +202,7 @@ async def delete_project(
         raise HTTPException(status_code=404, detail="Project not found")
     get_secret_store().delete_secret(project.llm_api_key_ref)
     get_secret_store().delete_secret(project.image_api_key_ref)
+    await delete_project_data(session, project_id=project_id, autocommit=False)
     await session.delete(project)
     await session.commit()
     return {"ok": True}

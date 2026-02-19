@@ -13,9 +13,13 @@ interface ChoicesData {
 }
 
 export function ChoicesRenderer({ data, blockId, onAction, locked }: BlockRendererProps) {
-  if (!data || typeof data !== 'object') return null
+  const payload = data && typeof data === 'object' ? (data as ChoicesData) : null
 
-  const { prompt, type = 'single', options = [] } = data as ChoicesData
+  const { prompt, type = 'single', options = [] } = payload ?? {
+    prompt: '',
+    type: 'single',
+    options: [],
+  }
   const interaction = useBlockInteractionStore(
     (s) => s.interactions[blockId] ?? EMPTY_BLOCK_INTERACTION,
   )
@@ -26,6 +30,8 @@ export function ChoicesRenderer({ data, blockId, onAction, locked }: BlockRender
     () => new Set(interactionState.selectedIndexes)
   )
   const submitted = interactionState.submitted
+
+  if (!payload) return null
 
   // If locked (attached to old message) or already submitted, show read-only view
   if (locked || submitted) {

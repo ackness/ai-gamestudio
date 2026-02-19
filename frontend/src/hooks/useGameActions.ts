@@ -58,7 +58,7 @@ export function useGameActions(
       clearStreamContent()
       wsRef.current.sendMessage(message)
     },
-    [currentSession, addMessage, setStreaming, setStreamStatus, clearStreamContent, clearPendingBlocks],
+    [currentSession, wsRef, addMessage, setStreaming, setStreamStatus, clearStreamContent, clearPendingBlocks],
   )
 
   const handleInitGame = useCallback(() => {
@@ -69,7 +69,7 @@ export function useGameActions(
     setStreamStatus('waiting')
     clearStreamContent()
     wsRef.current.sendInitGame()
-  }, [setStreaming, setStreamStatus, clearStreamContent, clearInitError])
+  }, [wsRef, setStreaming, setStreamStatus, clearStreamContent, clearInitError])
 
   const handleRetry = useCallback(() => {
     const last = lastActionRef.current
@@ -91,7 +91,7 @@ export function useGameActions(
       clearStreamContent()
       wsRef.current.send(last.data as StructuredMessage)
     }
-  }, [handleInitGame, setStreaming, setStreamStatus, clearStreamContent])
+  }, [wsRef, handleInitGame, setStreaming, setStreamStatus, clearStreamContent])
 
   const handleForceTrigger = useCallback(
     (blockType: string) => {
@@ -101,7 +101,7 @@ export function useGameActions(
       clearStreamContent()
       wsRef.current.sendForceTrigger(blockType)
     },
-    [isStreaming, setStreaming, setStreamStatus, clearStreamContent],
+    [wsRef, isStreaming, setStreaming, setStreamStatus, clearStreamContent],
   )
 
   const handleGenerateImage = useCallback(
@@ -109,7 +109,7 @@ export function useGameActions(
       if (!wsRef.current || isStreaming) return
       wsRef.current.sendGenerateMessageImage(messageId)
     },
-    [isStreaming],
+    [wsRef, isStreaming],
   )
 
   const handleSceneSwitch = useCallback(
@@ -117,7 +117,7 @@ export function useGameActions(
       if (!wsRef.current) return
       wsRef.current.sendSceneSwitch(sceneId)
     },
-    [],
+    [wsRef],
   )
 
   return {

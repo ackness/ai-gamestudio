@@ -10,6 +10,16 @@ interface PluginStore {
   togglePlugin: (name: string, projectId: string, enabled: boolean) => Promise<void>
 }
 
+interface EnabledPluginState {
+  plugin_name: string
+  enabled: boolean
+  required: boolean
+  auto_enabled: boolean
+  explicitly_disabled: boolean
+  dependencies: string[]
+  required_by: string[]
+}
+
 export const usePluginStore = create<PluginStore>((set) => ({
   plugins: [],
   blockConflicts: [],
@@ -21,12 +31,12 @@ export const usePluginStore = create<PluginStore>((set) => ({
       const raw = await api.getPlugins()
 
       // Fetch project-specific plugin state if a projectId is given
-      let enabledMap: Map<string, any> = new Map()
+      let enabledMap = new Map<string, EnabledPluginState>()
       let conflicts: { block_type: string; overridden_plugin: string; winner_plugin: string }[] = []
       if (projectId) {
         try {
           const enabled = await api.getEnabledPlugins(projectId)
-          enabledMap = new Map(enabled.map((e) => [e.plugin_name, e]))
+          enabledMap = new Map(enabled.map((e) => [e.plugin_name, e] as const))
         } catch {
           // ignore — fall back to defaults
         }
@@ -37,7 +47,7 @@ export const usePluginStore = create<PluginStore>((set) => ({
         }
       }
 
-      const plugins: Plugin[] = raw.map((p: any) => ({
+      const plugins: Plugin[] = raw.map((p) => ({
         name: p.name,
         description: p.description,
         type: p.type,
