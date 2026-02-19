@@ -1,0 +1,93 @@
+{
+  "schema_version": "2.0",
+  "name": "relationship",
+  "version": "2.0.0",
+  "type": "gameplay",
+  "required": false,
+  "description": "NPC relationship tracking plugin with relationship change blocks and context injection.",
+  "dependencies": ["character", "database", "core-blocks"],
+  "prompt": {
+    "position": "character",
+    "priority": 48,
+    "template": "prompts/relationship-context.md"
+  },
+  "capabilities": {},
+  "blocks": {
+    "relationship_change": {
+      "instruction": "当 NPC 与玩家的关系发生显著变化时（好感提升/降低、关系类型转变），在回复末尾附加：\n```json:relationship_change\n{\"npc_name\": \"NPC名\", \"change\": 10, \"reason\": \"变化原因\", \"new_level\": 60, \"rank\": \"友好\", \"relationship_type\": \"friend\"}\n```\n规则：\n- change 为正数表示好感提升，负数表示下降\n- new_level 为变化后的总好感值（0-100）\n- rank 必须为以下之一：亲密/友好/中立/冷淡/敌对\n- relationship_type 必须为以下之一：friend/rival/romantic/mentor/enemy\n- 仅在关系确实发生变化时输出，不要每回合都输出",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "npc_name": { "type": "string" },
+          "change": { "type": "number" },
+          "reason": { "type": "string" },
+          "new_level": { "type": "number" },
+          "rank": { "type": "string" },
+          "relationship_type": { "type": "string" }
+        },
+        "required": ["npc_name", "change", "reason", "new_level", "rank", "relationship_type"]
+      },
+      "handler": {
+        "actions": [
+          { "type": "storage_write", "key": "npc-relationships" },
+          { "type": "emit_event", "event": "relationship-changed" }
+        ]
+      },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "relationship_change"
+      },
+      "requires_response": false
+    }
+  },
+  "events": {
+    "emit": ["relationship-changed"],
+    "listen": []
+  },
+  "storage": {
+    "keys": ["npc-relationships"]
+  },
+  "permissions": {},
+  "extensions": {
+    "runtime_settings": {
+      "settings": [
+        {
+          "key": "relationship_depth",
+          "type": "enum",
+          "label": "Relationship Depth",
+          "description": "Level of detail in relationship tracking.",
+          "default": "rich",
+          "options": [
+            {
+              "value": "simple",
+              "label": "Simple",
+              "i18n": { "zh": { "label": "简洁" } }
+            },
+            {
+              "value": "rich",
+              "label": "Rich",
+              "i18n": { "zh": { "label": "丰富" } }
+            }
+          ],
+          "affects": ["story"],
+          "i18n": {
+            "zh": {
+              "label": "关系深度",
+              "description": "关系追踪的详细程度。"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "i18n": {
+    "en": {
+      "name": "Relationship",
+      "description": "Track NPC relationships with the player, including affinity levels and relationship types."
+    },
+    "zh": {
+      "name": "NPC 关系",
+      "description": "追踪 NPC 与玩家的关系变化，包括好感度与关系类型。"
+    }
+  }
+}

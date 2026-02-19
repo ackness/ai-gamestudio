@@ -10,6 +10,16 @@ import { SceneUpdateRenderer } from './components/game/SceneUpdateRenderer'
 import { AutoGuideRenderer } from './components/game/AutoGuideRenderer'
 import { StoryImageRenderer } from './components/game/StoryImageRenderer'
 
+// RPG gameplay plugin renderers
+import { SkillCheckResultRenderer } from './blockRenderers/SkillCheckResultRenderer'
+import { CombatStartRenderer, CombatRoundRenderer, CombatEndRenderer } from './blockRenderers/CombatRenderer'
+import { LootRenderer } from './blockRenderers/LootRenderer'
+import { QuestRenderer } from './blockRenderers/QuestRenderer'
+import { ReputationRenderer } from './blockRenderers/ReputationRenderer'
+import { StatusEffectRenderer } from './blockRenderers/StatusEffectRenderer'
+import { RelationshipRenderer } from './blockRenderers/RelationshipRenderer'
+import { CodexRenderer } from './blockRenderers/CodexRenderer'
+
 /**
  * Adapter: converts json:choices data into json:guide format
  * so that even when the LLM outputs choices, the richer guide UI is used.
@@ -33,3 +43,15 @@ registerBlockRenderer('notification', NotificationRenderer)
 registerBlockRenderer('scene_update', SceneUpdateRenderer)
 registerBlockRenderer('guide', AutoGuideRenderer)
 registerBlockRenderer('story_image', StoryImageRenderer)
+
+// RPG gameplay plugin block renderers
+registerBlockRenderer('skill_check_result', SkillCheckResultRenderer)
+registerBlockRenderer('combat_start', CombatStartRenderer)
+registerBlockRenderer('combat_round', CombatRoundRenderer)
+registerBlockRenderer('combat_end', CombatEndRenderer)
+registerBlockRenderer('loot', LootRenderer)
+registerBlockRenderer('quest_update', QuestRenderer)
+registerBlockRenderer('reputation_change', ReputationRenderer)
+registerBlockRenderer('status_effect', StatusEffectRenderer)
+registerBlockRenderer('relationship_change', RelationshipRenderer)
+registerBlockRenderer('codex_entry', CodexRenderer)

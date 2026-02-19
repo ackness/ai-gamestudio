@@ -1,0 +1,88 @@
+{
+  "schema_version": "2.0",
+  "name": "faction",
+  "version": "2.0.0",
+  "type": "gameplay",
+  "required": false,
+  "description": "Faction reputation tracking system with rank progression.",
+  "dependencies": ["database", "core-blocks"],
+  "prompt": {
+    "position": "world-state",
+    "priority": 55,
+    "template": "prompts/faction-context.md"
+  },
+  "capabilities": {},
+  "blocks": {
+    "reputation_change": {
+      "instruction": "当玩家的行为影响了某个阵营的声望时（完成任务、帮助/伤害NPC、做出阵营相关选择），输出 json:reputation_change block。\n```json:reputation_change\n{\"faction\": \"精灵议会\", \"change\": 10, \"reason\": \"帮助精灵使者传递密信\", \"new_standing\": 35, \"rank\": \"友好\"}\n```\n必需字段：faction, change, reason, new_standing, rank。change 为正数表示声望提升，负数表示声望下降。",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "faction": { "type": "string" },
+          "change": { "type": "number" },
+          "reason": { "type": "string" },
+          "new_standing": { "type": "number" },
+          "rank": { "type": "string" }
+        },
+        "required": ["faction", "change", "reason", "new_standing", "rank"]
+      },
+      "handler": {
+        "actions": [
+          { "type": "storage_write", "key": "faction-standings" },
+          { "type": "emit_event", "event": "reputation-changed" }
+        ]
+      },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "reputation_change"
+      },
+      "requires_response": false
+    }
+  },
+  "events": {
+    "emit": ["reputation-changed"],
+    "listen": []
+  },
+  "storage": {
+    "keys": ["faction-standings"]
+  },
+  "runtime_settings": {
+    "settings": [
+      {
+        "key": "reputation_visibility",
+        "type": "enum",
+        "label": "Reputation Visibility",
+        "description": "How faction reputation is displayed to the player.",
+        "default": "fuzzy",
+        "options": ["hidden", "fuzzy", "precise"],
+        "affects": ["reputation_change"],
+        "i18n": {
+          "zh": {
+            "label": "声望可见性",
+            "description": "阵营声望对玩家的显示方式。",
+            "options": {
+              "hidden": "隐藏",
+              "fuzzy": "模糊（仅显示等级）",
+              "precise": "精确（显示数值）"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "permissions": {
+    "network": false,
+    "filesystem_scope": ["plugin", "data"]
+  },
+  "extensions": {},
+  "i18n": {
+    "en": {
+      "name": "Faction Reputation",
+      "description": "Track faction standings and reputation changes."
+    },
+    "zh": {
+      "name": "阵营声望",
+      "description": "追踪阵营声望变化与等级。"
+    }
+  }
+}

@@ -1,0 +1,199 @@
+{
+  "schema_version": "2.0",
+  "name": "combat",
+  "version": "2.0.0",
+  "type": "gameplay",
+  "required": false,
+  "description": "Combat system: manages turn-based combat encounters with attack, defend, skill, and flee actions.",
+  "dependencies": ["skill-check", "character", "core-blocks"],
+  "prompt": {
+    "position": "pre-response",
+    "priority": 74,
+    "template": "prompts/combat-instruction.md"
+  },
+  "capabilities": {
+    "combat.resolve_action": {
+      "description": "解析战斗行动：掷攻击骰、计算伤害、返回回合结果",
+      "implementation": {
+        "type": "script",
+        "script": "scripts/resolve_action.py",
+        "timeout_ms": 5000
+      },
+      "result_block_type": "combat_round"
+    }
+  },
+  "blocks": {
+    "combat_start": {
+      "instruction": "当战斗开始时，输出 json:combat_start block 声明参战者。格式：\n```json:combat_start\n{\"combatants\": [{\"name\": \"勇者\", \"hp\": 30, \"initiative\": 18}, {\"name\": \"哥布林\", \"hp\": 12, \"initiative\": 8}], \"description\": \"哥布林从灌木丛中跳出！\"}\n```\n必需字段：combatants（数组，每项含 name, hp, initiative）。可选字段：description。",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "combatants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "hp": { "type": "integer" },
+                "initiative": { "type": "integer" }
+              },
+              "required": ["name", "hp", "initiative"]
+            }
+          },
+          "description": { "type": "string" }
+        },
+        "required": ["combatants"]
+      },
+      "handler": {
+        "actions": [
+          { "type": "storage_write", "key": "active-combat" },
+          { "type": "emit_event", "event": "combat-started" }
+        ]
+      },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "combat_start"
+      },
+      "requires_response": false
+    },
+    "combat_action": {
+      "instruction": "此 block 为战斗行动请求，由 LLM 输出以触发 combat.resolve_action。格式：\n```json:combat_action\n{\"actor\": \"勇者\", \"action_type\": \"attack\", \"target\": \"哥布林\", \"weapon\": \"长剑\", \"attack_bonus\": 5, \"defense\": 12, \"damage_dice\": \"1d8+3\", \"description\": \"挥剑斩向哥布林\"}\n```\n必需字段：actor, action_type, target。可选字段：weapon, skill, attack_bonus, defense, damage_dice, description。",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "actor": { "type": "string" },
+          "action_type": { "type": "string", "enum": ["attack", "defend", "skill", "flee"] },
+          "target": { "type": "string" },
+          "weapon": { "type": "string" },
+          "skill": { "type": "string" },
+          "attack_bonus": { "type": "integer" },
+          "defense": { "type": "integer" },
+          "damage_dice": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "required": ["actor", "action_type", "target"]
+      },
+      "handler": {
+        "actions": []
+      },
+      "ui": {
+        "component": "none"
+      },
+      "requires_response": false
+    },
+    "combat_round": {
+      "instruction": "此 block 由系统自动生成，不要手动输出。包含战斗行动的解析结果。",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "actor": { "type": "string" },
+          "action_type": { "type": "string" },
+          "target": { "type": "string" },
+          "hit": { "type": "boolean" },
+          "attack_roll": { "type": "integer" },
+          "damage": { "type": "integer" },
+          "damage_roll": { "type": "string" },
+          "effects": { "type": "array", "items": { "type": "string" } },
+          "hp_changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "current_hp": { "type": "integer" },
+                "max_hp": { "type": "integer" },
+                "change": { "type": "integer" }
+              },
+              "required": ["name", "current_hp", "change"]
+            }
+          },
+          "description": { "type": "string" }
+        },
+        "required": ["actor", "action_type", "target"]
+      },
+      "handler": {
+        "actions": [
+          { "type": "storage_write", "key": "combat-log" }
+        ]
+      },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "combat_round"
+      },
+      "requires_response": false
+    },
+    "combat_end": {
+      "instruction": "当战斗结束时（一方全灭、逃跑成功、达成休战等），输出 json:combat_end block。格式：\n```json:combat_end\n{\"outcome\": \"victory\", \"survivors\": [\"勇者\"], \"rewards\": {\"xp\": 50, \"items\": [\"哥布林短刀\"]}, \"description\": \"战斗胜利！\"}\n```\n必需字段：outcome。可选字段：survivors, rewards, description。",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "outcome": { "type": "string", "enum": ["victory", "defeat", "flee", "truce"] },
+          "survivors": { "type": "array", "items": { "type": "string" } },
+          "rewards": {
+            "type": "object",
+            "properties": {
+              "xp": { "type": "integer" },
+              "items": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "description": { "type": "string" }
+        },
+        "required": ["outcome"]
+      },
+      "handler": {
+        "actions": [
+          { "type": "storage_write", "key": "combat-log" },
+          { "type": "emit_event", "event": "combat-ended" }
+        ]
+      },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "combat_end"
+      },
+      "requires_response": false
+    }
+  },
+  "events": {
+    "emit": ["combat-started", "combat-ended"],
+    "listen": []
+  },
+  "storage": {
+    "keys": ["active-combat", "combat-log"]
+  },
+  "permissions": {
+    "network": false,
+    "filesystem_scope": ["plugin", "data"],
+    "script_languages": ["python"]
+  },
+  "extensions": {},
+  "runtime_settings": {
+    "combat_style": {
+      "type": "enum",
+      "options": ["narrative", "tactical"],
+      "default": "narrative",
+      "i18n": {
+        "en": { "label": "Combat Style", "description": "Narrative: story-driven combat. Tactical: detailed mechanics." },
+        "zh": { "label": "战斗风格", "description": "叙事：以故事推进为主。战术：注重机制细节。" }
+      }
+    },
+    "auto_resolve_minor": {
+      "type": "enum",
+      "options": ["yes", "no"],
+      "default": "no",
+      "i18n": {
+        "en": { "label": "Auto-resolve Minor Combats", "description": "Automatically resolve trivial encounters." },
+        "zh": { "label": "自动解决小型战斗", "description": "自动解决无关紧要的遭遇战。" }
+      }
+    }
+  },
+  "i18n": {
+    "en": {
+      "name": "Combat",
+      "description": "Turn-based combat system with attack, defend, skill, and flee actions."
+    },
+    "zh": {
+      "name": "战斗系统",
+      "description": "回合制战斗系统，支持攻击、防御、技能和逃跑行动。"
+    }
+  }
+}

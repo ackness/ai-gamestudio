@@ -1,0 +1,79 @@
+{
+  "schema_version": "2.0",
+  "name": "status-effect",
+  "version": "2.0.0",
+  "type": "gameplay",
+  "required": false,
+  "description": "Status effect system for buffs, debuffs, DoT, and HoT.",
+  "dependencies": ["character", "core-blocks"],
+  "prompt": {
+    "position": "character",
+    "priority": 45,
+    "template": "prompts/status-context.md"
+  },
+  "capabilities": {
+    "status_effect.tick": {
+      "description": "处理回合结束时所有活跃状态效果的持续时间递减、伤害/治疗计算",
+      "implementation": {
+        "type": "script",
+        "script": "scripts/tick.py",
+        "timeout_ms": 5000
+      },
+      "result_block_type": "status_effect"
+    }
+  },
+  "blocks": {
+    "status_effect": {
+      "instruction": "当需要施加、移除或触发状态效果时，输出 json:status_effect block。\n```json:status_effect\n{\"action\": \"apply\", \"effect_name\": \"中毒\", \"effect_type\": \"dot\", \"duration\": 3, \"target\": \"玩家\", \"damage_per_turn\": 5, \"description\": \"被毒蛇咬伤，每回合受到毒素伤害\"}\n```\naction 可选值：apply（施加）、remove（移除）、tick（回合触发）。\neffect_type 可选值：buff（增益）、debuff（减益）、dot（持续伤害）、hot（持续治疗）。",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "enum": ["apply", "remove", "tick"] },
+          "effect_name": { "type": "string" },
+          "effect_type": { "type": "string", "enum": ["buff", "debuff", "dot", "hot"] },
+          "duration": { "type": "number" },
+          "target": { "type": "string" },
+          "stats": { "type": "object" },
+          "damage_per_turn": { "type": "number" },
+          "heal_per_turn": { "type": "number" },
+          "description": { "type": "string" }
+        },
+        "required": ["action", "effect_name", "effect_type", "target", "description"]
+      },
+      "handler": {
+        "actions": [
+          { "type": "storage_write", "key": "active-effects" },
+          { "type": "emit_event", "event": "effect-applied" }
+        ]
+      },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "status_effect"
+      },
+      "requires_response": false
+    }
+  },
+  "events": {
+    "emit": ["effect-applied", "effect-expired"],
+    "listen": []
+  },
+  "storage": {
+    "keys": ["active-effects"]
+  },
+  "permissions": {
+    "network": false,
+    "filesystem_scope": ["plugin", "data"],
+    "script_languages": ["python"]
+  },
+  "extensions": {},
+  "i18n": {
+    "en": {
+      "name": "Status Effects",
+      "description": "Manage buffs, debuffs, DoT, and HoT effects on characters."
+    },
+    "zh": {
+      "name": "状态效果",
+      "description": "管理角色的增益、减益、持续伤害与持续治疗效果。"
+    }
+  }
+}
