@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import type { Character, GameEvent } from '../types'
-import { StorageFactory } from '../services/settingsStorage'
-import { idbPutCharacter, idbPutEvent } from '../services/localDb'
+import { syncToIdbFireAndForget } from '../services/idbSync'
 import { useSessionStore } from './sessionStore'
 
 interface GameStateStore {
@@ -19,34 +18,20 @@ interface GameStateStore {
 
 function writeCharsToIdb(characters: Character[]) {
   if (characters.length === 0) return
-  StorageFactory.isStoragePersistent()
-    .then((persistent) => {
-      if (!persistent) {
-        const sessionId = useSessionStore.getState().currentSession?.id
-        characters.forEach((c) => {
-          const record = c as unknown as Record<string, unknown>
-          const withSession =
-            record.session_id || !sessionId
-              ? record
-              : { ...record, session_id: sessionId }
-          idbPutCharacter(withSession).catch(() => {})
-        })
-      }
-    })
-    .catch(() => {})
+  const sessionId = useSessionStore.getState().currentSession?.id
+  characters.forEach((c) => {
+    const record = c as unknown as Record<string, unknown>
+    const withSession =
+      record.session_id || !sessionId
+        ? record
+        : { ...record, session_id: sessionId }
+    syncToIdbFireAndForget('character', withSession)
+  })
 }
 
 function writeEventsToIdb(events: GameEvent[]) {
   if (events.length === 0) return
-  StorageFactory.isStoragePersistent()
-    .then((persistent) => {
-      if (!persistent) {
-        events.forEach((e) =>
-          idbPutEvent(e as unknown as Record<string, unknown>).catch(() => {}),
-        )
-      }
-    })
-    .catch(() => {})
+  events.forEach((e) => syncToIdbFireAndForget('event', e))
 }
 
 export const useGameStateStore = create<GameStateStore>((set) => ({

@@ -18,16 +18,21 @@ Frontend (React + Zustand)
             | REST (/api/*)
             v
 Backend (FastAPI + SQLModel + SQLite / PostgreSQL)
-  - chat.py          — WebSocket & HTTP chat router
-  - chat_service     — turn orchestration (async generator)
-  - plugin_engine    — discovery / loading / manifest / dependency resolution
-  - prompt_builder   — 6-position prompt assembly
-  - block_parser     — json:xxx block extraction
-  - block_handlers   — dispatch + built-in handlers
+  - chat.py            — WebSocket & HTTP chat router (transport layer)
+  - debug_log.py       — Debug log ring buffer + debug WS/HTTP + story-images
+  - command_handlers   — Message type dispatch (init_game, scene_switch, etc.)
+  - chat_service       — Turn orchestration (async generator)
+  - turn_context       — TurnContext dataclass + async data loading
+  - prompt_assembly    — Pure-function prompt assembly from TurnContext
+  - block_processing   — Block extraction, validation, dispatch, event drain
+  - plugin_engine      — Discovery / loading / manifest / dependency resolution
+  - prompt_builder     — 6-position prompt template engine
+  - block_parser       — json:xxx block extraction
+  - block_handlers     — Dispatch + built-in handlers
   - capability_executor — plugin_use capability invocation
-  - script_runner    — Python subprocess execution
-  - audit_logger     — append-only invocation audit trail
-  - game_state       — DB operations (messages / characters / world)
+  - script_runner      — Python subprocess execution
+  - audit_logger       — Append-only invocation audit trail
+  - game_state         — DB operations (messages / characters / world)
             |
             v
 LLM Gateway (litellm — supports 100+ providers)
@@ -40,22 +45,13 @@ LLM Gateway (litellm — supports 100+ providers)
 ### 2.1 Player Turn (message)
 
 1. Frontend sends `{type:"message", content:"..."}` over WebSocket (or HTTP).
-2. Backend stores the user message (`Message`).
-3. Backend resolves enabled plugins for the project (topological sort).
-4. Backend builds the prompt:
-   - world doc system instruction
-   - character / scene / event context (from manifest `prompt` configs)
-   - plugin Jinja2 template injections
-   - chat history
-   - pre-response block instructions + capability list
-5. Backend calls LLM in streaming mode; emits `chunk` events as tokens arrive.
-6. After stream ends:
-   - extract all `json:xxx` blocks from the full response
-   - validate block data against plugin-declared schemas
-   - dispatch each block: `plugin_use` → CapabilityExecutor; others → dispatch_block()
-   - emit block events to frontend
-7. Backend strips blocks from narration and stores assistant message.
-8. Backend increments `turn_count`; optionally triggers archive summary.
+2. `chat.py` dispatches to `command_handlers._handle_message()`.
+3. `chat_service.process_message()` orchestrates the turn:
+   a. `turn_context.build_turn_context()` — loads session, project, plugins, characters, scenes, events, archive, memories, story images, runtime settings.
+   b. `prompt_assembly.assemble_prompt()` — pure function, builds the multi-section prompt from TurnContext.
+   c. Streams LLM response; emits `chunk` events as tokens arrive.
+   d. `block_processing.process_blocks()` — extracts blocks, validates schemas, dispatches handlers, drains event bus, persists assistant message.
+4. Backend increments `turn_count`; optionally triggers archive summary.
 
 ### 2.2 WebSocket event ordering
 
@@ -243,7 +239,15 @@ The event bus is request-scoped and in-memory:
 | `pluginStore` | Plugin list, enabled flags, detail metadata |
 | `uiStore` | Language toggle, storage persistence flag |
 
-### 9.2 Storage layer
+### 9.2 Custom hooks
+
+| Hook | Responsibility |
+|------|---------------|
+| `useGameWebSocket` | WebSocket lifecycle, all `ws.on*` callbacks, initial state hydration, connection status |
+| `useGameActions` | `handleSend`, `handleInitGame`, `handleRetry`, `handleForceTrigger`, `handleGenerateImage`, `handleSceneSwitch` |
+| `useArchive` | Archive version state, save/restore logic |
+
+### 9.3 Storage layer
 
 `StorageFactory` probes `/api/health` on startup and selects:
 
@@ -252,7 +256,9 @@ The event bus is request-scoped and in-memory:
 
 IndexedDB schema (`localDb.ts`) stores: `projects`, `sessions`, `messages`, `characters`, `scenes`, `events`, `plugin_state`, `runtime_settings`.
 
-### 9.3 Renderer resolution
+IDB writes are unified via `idbSync.ts`: `syncToIdb(type, record)` and `syncToIdbFireAndForget()` cache the persistence check and route writes to `localDb.ts`.
+
+### 9.4 Renderer resolution
 
 Block renderer lookup priority:
 
@@ -306,7 +312,8 @@ Restore modes:
 
 | Router | Endpoints |
 |--------|-----------|
-| `chat.py` | `POST /api/chat/{id}/command`, `WS /ws/chat/{id}`, `GET /api/sessions/{id}/story-images`, `WS /api/sessions/{id}/debug-log` |
+| `chat.py` | `POST /api/chat/{id}/command`, `WS /ws/chat/{id}` |
+| `debug_log.py` | `GET /api/sessions/{id}/story-images`, `WS /api/sessions/{id}/debug-log`, `GET /api/sessions/{id}/debug-log` |
 | `projects.py` | `GET/POST /api/projects`, `GET/PUT/DELETE /api/projects/{id}` |
 | `sessions.py` | `POST /api/projects/{id}/sessions`, `GET /api/projects/{id}/sessions`, `DELETE /api/sessions/{id}`, `GET /api/sessions/{id}/messages`, `GET /api/sessions/{id}/state` |
 | `characters.py` | `GET /api/sessions/{id}/characters`, `PUT /api/characters/{id}` |
@@ -357,5 +364,5 @@ frontend/dist/ → Vercel CDN (built via vercel.json buildCommand)
 
 ---
 
-Document version: `v2.0`
+Document version: `v2.1`
 Updated: `2026-02-19`

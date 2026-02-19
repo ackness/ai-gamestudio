@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from backend.app.api import chat
+from backend.app.api import debug_log as chat
 
 
 @pytest.fixture(autouse=True)

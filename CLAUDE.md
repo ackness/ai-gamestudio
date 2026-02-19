@@ -38,8 +38,9 @@ Run a single test by name: `uv run pytest backend/tests/test_chat_service.py -k 
 
 ```
 backend/app/
-├── api/           # FastAPI routers (projects, sessions, chat, plugins, templates,
-│                  #   characters, scenes, events, archive, llm_profiles, runtime_settings)
+├── api/           # FastAPI routers (projects, sessions, chat, debug_log, plugins,
+│                  #   templates, characters, scenes, events, archive, llm_profiles,
+│                  #   runtime_settings)
 ├── core/          # Framework internals
 │   ├── block_parser.py        # Extracts ```json:xxx``` blocks from LLM output
 │   ├── block_handlers.py      # Dispatches blocks to built-in or declarative handlers
@@ -57,7 +58,11 @@ backend/app/
 ├── models/        # SQLModel ORM (Project, GameSession, Message, Character, Scene,
 │                  #   SceneNPC, GameEvent, PluginStorage)
 ├── services/      # Business logic
-│   ├── chat_service.py              # process_message() — main turn orchestration
+│   ├── chat_service.py              # process_message() — turn orchestration (slim entry point)
+│   ├── turn_context.py              # TurnContext dataclass + build_turn_context() data loading
+│   ├── prompt_assembly.py           # assemble_prompt() — pure PromptBuilder assembly
+│   ├── block_processing.py          # process_blocks() — block extract/validate/dispatch
+│   ├── command_handlers.py          # WebSocket command handlers (init_game, form_submit, etc.)
 │   ├── plugin_service.py            # Plugin enablement state management
 │   ├── runtime_settings_service.py  # Per-plugin runtime settings CRUD
 │   ├── image_service.py             # Story image generation
@@ -65,7 +70,7 @@ backend/app/
 └── db/            # Database engine and initialization
 ```
 
-**Request flow for chat:** WebSocket at `/ws/chat/{session_id}` (or HTTP POST `/api/chat/{session_id}/command` for Vercel) → `chat.py` router → `chat_service.process_message()` (async generator yielding `chunk`/block/`error` events) → streamed back over WebSocket.
+**Request flow for chat:** WebSocket at `/ws/chat/{session_id}` (or HTTP POST `/api/chat/{session_id}/command` for Vercel) → `chat.py` router → `_dispatch_incoming_message()` → `command_handlers._handle_*()` → `chat_service.process_message()` (async generator: `build_turn_context` → `assemble_prompt` → stream LLM → `process_blocks`) → streamed back over WebSocket.
 
 **PromptBuilder injection positions** (positions 1–4 merge into one system message, 5 becomes role-specific messages, 6 appends as final system message):
 1. `system` — world doc, global plugins
@@ -84,11 +89,15 @@ frontend/src/
 │                  # editor/ (MarkdownEditor, CreateProjectWizard),
 │                  # plugins/ (PluginPanel, PluginDetailPanel),
 │                  # status/ (RuntimeSettingsPanel, game state panels)
+├── hooks/         # useGameWebSocket (WS lifecycle + callbacks),
+│                  # useGameActions (send/init/retry handlers),
+│                  # useArchive (save/restore logic)
 ├── stores/        # Zustand stores: sessionStore, gameStateStore, projectStore,
 │                  #   pluginStore, uiStore
 ├── services/      # api.ts (REST), websocket.ts (GameWebSocket — WebSocket + HTTP fallback),
 │                  # settingsStorage.ts (ISettingsStorage interface),
-│                  # localDb.ts (IndexedDB wrapper for offline/Vercel mode)
+│                  # localDb.ts (IndexedDB wrapper for offline/Vercel mode),
+│                  # idbSync.ts (unified IDB write with cached persistence check)
 └── blockRenderers.ts  # Central renderer registration (imported in main.tsx)
 ```
 

@@ -168,12 +168,17 @@ ai-gamestudio/
 │       │   ├── game/            # ChatMessages, GamePanel, QuickActions
 │       │   ├── plugins/         # PluginPanel, PluginDetailPanel
 │       │   └── status/          # RuntimeSettingsPanel, game state panels
+│       ├── hooks/               # 自定义 React Hooks
+│       │   ├── useGameWebSocket.ts  # WebSocket 生命周期 + 回调绑定 + 状态水合
+│       │   ├── useGameActions.ts    # 游戏操作（发送/初始化/重试/触发等）
+│       │   └── useArchive.ts        # 存档版本管理、保存/恢复
 │       ├── stores/              # sessionStore, gameStateStore, projectStore, pluginStore, uiStore
 │       ├── services/
 │       │   ├── api.ts           # REST API client
 │       │   ├── websocket.ts     # GameWebSocket (WebSocket + HTTP fallback)
 │       │   ├── settingsStorage.ts  # ISettingsStorage 统一存储接口
-│       │   └── localDb.ts       # IndexedDB wrapper（离线模式）
+│       │   ├── localDb.ts       # IndexedDB wrapper（离线模式）
+│       │   └── idbSync.ts      # 统一 IDB 写入（缓存持久化状态）
 │       ├── types/               # TypeScript 类型定义
 │       └── blockRenderers.ts    # Block renderer 注册入口
 │
@@ -181,7 +186,8 @@ ai-gamestudio/
 │   └── app/
 │       ├── main.py              # FastAPI 入口，静态文件托管，/api/health
 │       ├── api/                 # FastAPI 路由
-│       │   ├── chat.py          # WebSocket + HTTP chat
+│       │   ├── chat.py          # WebSocket + HTTP chat（传输层）
+│       │   ├── debug_log.py     # 调试日志环形缓冲 + story-images 端点
 │       │   ├── projects.py
 │       │   ├── sessions.py
 │       │   ├── characters.py
@@ -207,7 +213,11 @@ ai-gamestudio/
 │       │   ├── game_state.py         # GameStateManager DB 操作
 │       │   └── event_bus.py          # 请求级事件总线
 │       ├── services/
-│       │   ├── chat_service.py       # process_message 主流程
+│       │   ├── chat_service.py       # process_message 回合编排
+│       │   ├── turn_context.py       # TurnContext 数据类 + 异步加载
+│       │   ├── prompt_assembly.py    # 纯函数 Prompt 组装
+│       │   ├── block_processing.py   # Block 提取/校验/分发/事件排空
+│       │   ├── command_handlers.py   # WebSocket 消息类型处理器
 │       │   ├── plugin_service.py     # 插件启用状态管理
 │       │   ├── runtime_settings_service.py  # 运行时设置 CRUD
 │       │   ├── image_service.py      # 图片生成

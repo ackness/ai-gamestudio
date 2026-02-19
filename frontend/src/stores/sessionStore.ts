@@ -2,13 +2,8 @@ import { create } from 'zustand'
 import type { Session, Message, Scene, StoryImageData } from '../types'
 import * as api from '../services/api'
 import { StorageFactory } from '../services/settingsStorage'
-import {
-  idbGetSessions,
-  idbPutSession,
-  idbDeleteSession,
-  idbPutMessage,
-  idbPutScene,
-} from '../services/localDb'
+import { idbGetSessions } from '../services/localDb'
+import { syncToIdb, syncToIdbFireAndForget } from '../services/idbSync'
 import { attachPendingBlocksForTurn, type TurnPendingBlock } from './sessionTurnUtils'
 import { useProjectStore } from './projectStore'
 import * as gameStorage from '../services/gameStorage'
@@ -102,7 +97,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       const session = await api.createSession(projectId)
 
       if (!persistent) {
-        await idbPutSession(session as unknown as Record<string, unknown>)
+        await syncToIdb('session', session)
       }
 
       set((state) => ({
@@ -155,7 +150,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       const persistent = await StorageFactory.isStoragePersistent()
       await api.deleteSession(sessionId)
       if (!persistent) {
-        await idbDeleteSession(sessionId)
+        await syncToIdb('deleteSession', { id: sessionId })
       }
       set((state) => {
         const sessions = state.sessions.filter((s) => s.id !== sessionId)
@@ -195,14 +190,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   addMessage: (message) => {
     set((state) => ({ messages: [...state.messages, message] }))
-    // Fire-and-forget IDB write in non-persistent mode
-    StorageFactory.isStoragePersistent()
-      .then((persistent) => {
-        if (!persistent) {
-          idbPutMessage(message as unknown as Record<string, unknown>).catch(() => {})
-        }
-      })
-      .catch(() => {})
+    syncToIdbFireAndForget('message', message)
   },
 
   setStreaming: (isStreaming) => set({ isStreaming }),
@@ -241,29 +229,14 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   setScenes: (scenes) => {
     set({ scenes })
-    // Fire-and-forget IDB write in non-persistent mode
     if (scenes.length > 0) {
-      StorageFactory.isStoragePersistent()
-        .then((persistent) => {
-          if (!persistent) {
-            scenes.forEach((s) =>
-              idbPutScene(s as unknown as Record<string, unknown>).catch(() => {}),
-            )
-          }
-        })
-        .catch(() => {})
+      scenes.forEach((s) => syncToIdbFireAndForget('scene', s))
     }
   },
 
   addScene: (scene) => {
     set((state) => ({ scenes: [...state.scenes, scene] }))
-    StorageFactory.isStoragePersistent()
-      .then((persistent) => {
-        if (!persistent) {
-          idbPutScene(scene as unknown as Record<string, unknown>).catch(() => {})
-        }
-      })
-      .catch(() => {})
+    syncToIdbFireAndForget('scene', scene)
   },
 
   removeLastAssistantMessage: () =>
