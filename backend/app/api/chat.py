@@ -114,6 +114,7 @@ async def _stream_process_message(
     clean_content = strip_blocks(full_response)
     done_event: dict[str, Any] = {
         "type": "done", "content": clean_content,
+        "raw_content": full_response,
         "turn_id": turn_id, "has_blocks": bool(pending_blocks),
     }
     if saved_message_id:
