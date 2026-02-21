@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
+import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { useParams } from 'react-router-dom'
 import { FileText, MessageSquare, Settings, BookOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Terminal } from 'lucide-react'
 import { useProjectStore } from '../stores/projectStore'
@@ -35,6 +36,8 @@ export function ProjectEditorPage() {
   // Panel states
   const [leftCollapsed, setLeftCollapsed] = useState(false)
   const [rightCollapsed, setRightCollapsed] = useState(false)
+  const leftPanelRef = useRef<PanelImperativeHandle | null>(null)
+  const rightPanelRef = useRef<PanelImperativeHandle | null>(null)
   
   const [sessionsFetched, setSessionsFetched] = useState(false)
   const [llmInfo, setLlmInfo] = useState<LlmInfo | null>(null)
@@ -115,7 +118,15 @@ export function ProjectEditorPage() {
             variant="ghost" 
             size="icon" 
             className="h-8 w-8"
-            onClick={() => setLeftCollapsed(!leftCollapsed)}
+            onClick={() => {
+              if (leftCollapsed) {
+                leftPanelRef.current?.expand()
+                setLeftCollapsed(false)
+              } else {
+                leftPanelRef.current?.collapse()
+                setLeftCollapsed(true)
+              }
+            }}
             title={leftCollapsed ? "Expand editor" : "Collapse editor"}
           >
             {leftCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
@@ -147,7 +158,15 @@ export function ProjectEditorPage() {
             variant="ghost" 
             size="icon" 
             className="h-8 w-8"
-            onClick={() => setRightCollapsed(!rightCollapsed)}
+            onClick={() => {
+              if (rightCollapsed) {
+                rightPanelRef.current?.expand()
+                setRightCollapsed(false)
+              } else {
+                rightPanelRef.current?.collapse()
+                setRightCollapsed(true)
+              }
+            }}
             title={rightCollapsed ? "Expand status" : "Collapse status"}
           >
             {rightCollapsed ? <PanelRightOpen className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
@@ -155,43 +174,49 @@ export function ProjectEditorPage() {
         </div>
       </div>
 
-      <ResizablePanelGroup direction="horizontal" key={`${leftCollapsed}-${rightCollapsed}`} style={{ flex: '1 1 0', minHeight: 0, height: 'auto' }}>
+      <ResizablePanelGroup direction="horizontal" style={{ flex: '1 1 0', minHeight: 0, height: 'auto' }}>
         {/* Left Panel - Editor */}
-        {!leftCollapsed && (
-          <>
-            <ResizablePanel id="editor" defaultSize="32%" minSize="22%" maxSize="50%">
-              <div className="h-full flex flex-col overflow-hidden">
-                <Tabs defaultValue="world" className="flex-1 flex flex-col min-h-0">
-                  <div className="px-4 py-2 border-b bg-muted/10 shrink-0">
-                    <TabsList className="w-full justify-start h-9 p-1">
-                      <TabsTrigger value="world" className="text-xs flex-1"><FileText className="w-3 h-3 mr-1.5 hidden sm:inline" />{et.worldDoc}</TabsTrigger>
-                      <TabsTrigger value="prompt" className="text-xs flex-1"><Terminal className="w-3 h-3 mr-1.5 hidden sm:inline" />{et.initPrompt}</TabsTrigger>
-                      <TabsTrigger value="model" className="text-xs flex-1 relative">
-                        <Settings className="w-3 h-3 mr-1.5 hidden sm:inline" />{et.model}
-                        {llmInfo && <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-primary" title={llmInfo.model_name} />}
-                      </TabsTrigger>
-                      <TabsTrigger value="novel" className="text-xs flex-1"><BookOpen className="w-3 h-3 mr-1.5 hidden sm:inline" />{et.novel}</TabsTrigger>
-                    </TabsList>
-                  </div>
-                  <div className="flex-1 overflow-hidden relative">
-                    <TabsContent value="world" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden"><MarkdownEditor /></TabsContent>
-                    <TabsContent value="prompt" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden"><InitPromptEditor /></TabsContent>
-                    <TabsContent value="model" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto">
-                      <ModelSettings onLlmInfoChange={handleLlmInfoChange} />
-                    </TabsContent>
-                    <TabsContent value="novel" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden"><NovelPanel /></TabsContent>
-                  </div>
-                </Tabs>
+        <ResizablePanel
+          id="editor"
+          defaultSize="32%"
+          minSize="22%"
+          maxSize="50%"
+          collapsible
+          collapsedSize="0%"
+          panelRef={leftPanelRef}
+          onResize={(size) => setLeftCollapsed(size.asPercentage < 1)}
+        >
+          <div className="h-full flex flex-col overflow-hidden">
+            <Tabs defaultValue="world" className="flex-1 flex flex-col min-h-0">
+              <div className="px-4 py-2 border-b bg-muted/10 shrink-0">
+                <TabsList className="w-full justify-start h-9 p-1">
+                  <TabsTrigger value="world" className="text-xs flex-1"><FileText className="w-3 h-3 mr-1.5 hidden sm:inline" />{et.worldDoc}</TabsTrigger>
+                  <TabsTrigger value="prompt" className="text-xs flex-1"><Terminal className="w-3 h-3 mr-1.5 hidden sm:inline" />{et.initPrompt}</TabsTrigger>
+                  <TabsTrigger value="model" className="text-xs flex-1 relative">
+                    <Settings className="w-3 h-3 mr-1.5 hidden sm:inline" />{et.model}
+                    {llmInfo && <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-primary" title={llmInfo.model_name} />}
+                  </TabsTrigger>
+                  <TabsTrigger value="novel" className="text-xs flex-1"><BookOpen className="w-3 h-3 mr-1.5 hidden sm:inline" />{et.novel}</TabsTrigger>
+                </TabsList>
               </div>
-            </ResizablePanel>
-            <ResizableHandle withHandle />
-          </>
-        )}
+              <div className="flex-1 overflow-hidden relative">
+                <TabsContent value="world" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden"><MarkdownEditor /></TabsContent>
+                <TabsContent value="prompt" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden"><InitPromptEditor /></TabsContent>
+                <TabsContent value="model" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto">
+                  <ModelSettings onLlmInfoChange={handleLlmInfoChange} />
+                </TabsContent>
+                <TabsContent value="novel" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden"><NovelPanel /></TabsContent>
+              </div>
+            </Tabs>
+          </div>
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
 
         {/* Center Panel - Game Chat */}
         <ResizablePanel
           id="game"
-          defaultSize={leftCollapsed && rightCollapsed ? '100%' : leftCollapsed || rightCollapsed ? '72%' : '40%'}
+          defaultSize="40%"
           minSize="25%"
         >
           <div className="h-full flex flex-col overflow-hidden">
@@ -203,23 +228,29 @@ export function ProjectEditorPage() {
           </div>
         </ResizablePanel>
 
+        <ResizableHandle withHandle />
+
         {/* Right Panel - Status */}
-        {!rightCollapsed && (
-          <>
-            <ResizableHandle withHandle />
-            <ResizablePanel id="status" defaultSize="28%" minSize="22%" maxSize="45%">
-              <div className="h-full flex flex-col overflow-hidden">
-                <div className="h-12 border-b flex items-center px-4 shrink-0 bg-muted/20">
-                  <span className="text-sm font-semibold flex items-center text-muted-foreground">
-                    <MessageSquare className="w-4 h-4 mr-2" />
-                    {et.status}
-                  </span>
-                </div>
-                <SidePanel />
-              </div>
-            </ResizablePanel>
-          </>
-        )}
+        <ResizablePanel
+          id="status"
+          defaultSize="28%"
+          minSize="22%"
+          maxSize="45%"
+          collapsible
+          collapsedSize="0%"
+          panelRef={rightPanelRef}
+          onResize={(size) => setRightCollapsed(size.asPercentage < 1)}
+        >
+          <div className="h-full flex flex-col overflow-hidden">
+            <div className="h-12 border-b flex items-center px-4 shrink-0 bg-muted/20">
+              <span className="text-sm font-semibold flex items-center text-muted-foreground">
+                <MessageSquare className="w-4 h-4 mr-2" />
+                {et.status}
+              </span>
+            </div>
+            <SidePanel />
+          </div>
+        </ResizablePanel>
       </ResizablePanelGroup>
     </div>
   )
