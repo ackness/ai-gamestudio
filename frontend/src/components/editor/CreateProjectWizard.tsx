@@ -33,6 +33,7 @@ export function CreateProjectWizard({ open, onClose }: Props) {
   const [aiGenre, setAiGenre] = useState('')
   const [aiSetting, setAiSetting] = useState('')
   const [aiTone, setAiTone] = useState('')
+  const [aiLang, setAiLang] = useState('zh')
   const [aiExtra, setAiExtra] = useState('')
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState('')
@@ -53,6 +54,7 @@ export function CreateProjectWizard({ open, onClose }: Props) {
       setAiGenre('')
       setAiSetting('')
       setAiTone('')
+      setAiLang('zh')
       setAiExtra('')
       setGenerateError('')
       setGeneratedDoc('')
@@ -87,7 +89,7 @@ export function CreateProjectWizard({ open, onClose }: Props) {
         genre: aiGenre.trim(),
         setting: aiSetting.trim() || undefined,
         tone: aiTone.trim() || undefined,
-        language: 'zh',
+        language: aiLang,
         extra_notes: aiExtra.trim() || undefined,
       })
       setGeneratedDoc(result.world_doc)
@@ -301,6 +303,19 @@ export function CreateProjectWizard({ open, onClose }: Props) {
                       <option value="轻松">轻松</option>
                       <option value="史诗">史诗</option>
                       <option value="写实">写实</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-300 mb-1">生成语言</label>
+                    <select
+                      value={aiLang}
+                      onChange={(e) => setAiLang(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="zh">中文</option>
+                      <option value="en">English</option>
+                      <option value="ja">日本語</option>
+                      <option value="ko">한국어</option>
                     </select>
                   </div>
                   <div>

@@ -116,7 +116,12 @@ async def generate_world(
     system_prompt = (
         "You are a world-building expert for tabletop RPG games. "
         "Generate a complete world document following the specification below.\n\n"
-        "Output ONLY the Markdown world document, no explanations or wrapping.\n\n"
+        "IMPORTANT RULES:\n"
+        "- Output ONLY the Markdown world document, no explanations or wrapping.\n"
+        "- Do NOT include any json:xxx block format details (e.g. json:state_update, json:event). "
+        "Block formats are defined by the plugin system, not the world document.\n"
+        "- The '玩法触发指引' section is REQUIRED — describe WHEN each game mechanic triggers in the world's narrative language.\n"
+        "- The frontmatter MUST include a 'plugins' field listing recommended gameplay plugins.\n\n"
         f"--- WORLD-SPEC ---\n{world_spec}"
     )
 
