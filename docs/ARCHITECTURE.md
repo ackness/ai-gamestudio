@@ -1,6 +1,6 @@
 # AI GameStudio Architecture (Current Runtime)
 
-> Describes the architecture implemented in code as of 2026-02-19.
+> Describes the architecture implemented in code as of 2026-02-22.
 
 ---
 
@@ -9,8 +9,9 @@
 ```text
 Frontend (React + Zustand)
   - Chat UI (streaming, block renderers)
-  - Side panels: characters / events / plugins / runtime settings
-  - World editor (Markdown)
+  - Side panels: game (characters/events/alerts/world) + config (plugins/settings)
+  - Editor area: world / init-prompt / model / novel tabs
+  - 3-pane resizable layout (editor / game / status)
   - Storage: IndexedDB (offline) or backend API
             |
             | WebSocket (/ws/chat/{session_id})
@@ -21,7 +22,9 @@ Backend (FastAPI + SQLModel + SQLite / PostgreSQL)
   - chat.py            — WebSocket & HTTP chat router (transport layer)
   - debug_log.py       — Debug log ring buffer + debug WS/HTTP + story-images
   - command_handlers   — Message type dispatch (init_game, scene_switch, etc.)
+  - novel.py           — NDJSON novel generation endpoint (outline + chapter stream)
   - chat_service       — Turn orchestration (async generator)
+  - novel_service      — Session material extraction + outline/chapter generation
   - turn_context       — TurnContext dataclass + async data loading
   - prompt_assembly    — Pure-function prompt assembly from TurnContext
   - block_processing   — Block extraction, validation, dispatch, event drain
@@ -45,7 +48,7 @@ LLM Gateway (litellm — supports 100+ providers)
 ### 2.1 Player Turn (message)
 
 1. Frontend sends `{type:"message", content:"..."}` over WebSocket (or HTTP).
-2. `chat.py` dispatches to `command_handlers._handle_message()`.
+2. `chat.py` dispatches via `_dispatch_incoming_message()`; `type:"message"` goes to `_stream_process_message()`.
 3. `chat_service.process_message()` orchestrates the turn:
    a. `turn_context.build_turn_context()` — loads session, project, plugins, characters, scenes, events, archive, memories, story images, runtime settings.
    b. `prompt_assembly.assemble_prompt()` — pure function, builds the multi-section prompt from TurnContext.
@@ -58,15 +61,25 @@ LLM Gateway (litellm — supports 100+ providers)
 For one turn the backend sends (all carry `turn_id`):
 
 1. `chunk` (0…n)
-2. `done`
+2. `done` (`content`, `raw_content`, `has_blocks`, optional `message_id`)
 3. Parsed block events (`scene_update`, `choices`, `story_image`, `guide`, etc.)
 4. `turn_end`
 
 Frontend attaches pending blocks to the matching assistant message via `turn_id + turn_end`.
+Frontend stores both `content` (block-stripped) and `raw_content` (full model output with block fences) on assistant messages.
 
 ### 2.3 HTTP chat fallback
 
 `POST /api/chat/{session_id}/command` runs the same `process_message` pipeline and returns all events as a JSON array. Used on Vercel (no persistent WebSocket).
+
+### 2.4 Novel generation flow
+
+`POST /api/sessions/{session_id}/novel/generate` streams NDJSON events:
+
+1. `novel_service.collect_novel_material()` gathers `world_doc`, session messages, characters, events.
+2. `novel_service.generate_outline()` returns chapter outline JSON (`title`, `summary`).
+3. For each chapter, `novel_service.generate_chapter()` streams text chunks.
+4. API emits event sequence: `outline` → `chapter_chunk`* → `chapter` (per chapter) → `done`.
 
 ---
 
@@ -171,6 +184,8 @@ Parser also accepts a looser `json:<type>` marker without fencing (for weaker mo
 | `dice_result` | declarative (storage_write + emit_event) | schema-driven card |
 | `story_image` | built-in (image gen + DB) | custom renderer |
 
+`auto-guide` suppresses `json:guide` for opening narration and character-creation responses.
+
 **Capability Invocation Blocks** — LLM outputs `json:plugin_use`; backend executes and produces result blocks:
 
 ```json
@@ -238,6 +253,8 @@ The event bus is request-scoped and in-memory:
 | `projectStore` | Project list + active project |
 | `pluginStore` | Plugin list, enabled flags, detail metadata |
 | `uiStore` | Language toggle, storage persistence flag |
+
+Project editor runtime uses `ResizablePanelGroup` (left editor + center game + right status) and left-side Tabs (`world`, `prompt`, `model`, `novel`).
 
 ### 9.2 Custom hooks
 
@@ -319,9 +336,10 @@ Restore modes:
 | `characters.py` | `GET /api/sessions/{id}/characters`, `PUT /api/characters/{id}` |
 | `scenes.py` | `GET /api/sessions/{id}/scenes`, `GET /api/sessions/{id}/scenes/current`, `GET /api/scenes/{id}/npcs` |
 | `plugins.py` | `GET /api/plugins`, `POST /api/plugins/{name}/toggle`, `GET /api/plugins/enabled/{project_id}`, `GET /api/plugins/block-schemas`, `GET /api/plugins/block-conflicts`, `POST /api/plugins/import/validate`, `POST /api/plugins/import/install`, `GET /api/plugins/{name}/audit`, `GET /api/plugins/{name}/detail` |
-| `templates.py` | `GET /api/templates/worlds`, `GET /api/templates/worlds/{slug}`, `POST /api/templates/worlds/generate` |
-| `runtime_settings.py` | `GET /api/runtime-settings/schema/{project_id}`, `GET /api/runtime-settings/{project_id}`, `PATCH /api/runtime-settings/{project_id}` |
-| `main.py` | `GET /api/health`, `GET /api/llm/info`, `GET /api/llm/preset-models` |
+| `novel.py` | `POST /api/sessions/{session_id}/novel/generate` (NDJSON streaming: outline/chapter events) |
+| `templates.py` | `GET /api/templates/worlds`, `GET /api/templates/worlds/{slug}`, `POST /api/templates/worlds/generate` (streaming), `POST /api/templates/worlds/revise` (search/replace patching) |
+| `runtime_settings.py` | `GET /api/runtime-settings/schema?project_id=...`, `GET /api/runtime-settings?project_id=...(&session_id=...)`, `PATCH /api/runtime-settings` |
+| `main.py` | `GET /api/health`, `GET /api/llm/info`, `GET /api/llm/preset-models`, `POST /api/llm/test` |
 
 ### 12.2 WebSocket client message types
 
@@ -329,7 +347,7 @@ Restore modes:
 
 ### 12.3 WebSocket server event types
 
-`chunk` · `done` · `turn_end` · `error` · block events (any `json:xxx` type) · `phase_change` · `_message_saved`
+`chunk` · `done` (`content` + `raw_content`) · `turn_end` · `error` · block events (any `json:xxx` type) · `phase_change` · `_message_saved`
 
 ---
 
@@ -364,5 +382,5 @@ frontend/dist/ → Vercel CDN (built via vercel.json buildCommand)
 
 ---
 
-Document version: `v2.1`
-Updated: `2026-02-19`
+Document version: `v2.3`
+Updated: `2026-02-22`

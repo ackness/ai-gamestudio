@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import Markdown from 'react-markdown'
+import { Copy, Image as ImageIcon, RotateCcw, Pencil, Trash2, X, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { StreamStatus } from '../../stores/sessionStore'
 import { getBlockRenderer } from '../../services/blockRenderers'
 import type { Message, StoryImageData } from '../../types'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 interface Props {
   onAction: (msg: string) => void
@@ -14,11 +20,11 @@ interface Props {
 /** Fallback for block types with no registered renderer. */
 function FallbackBlock({ type, data }: { type: string; data: unknown }) {
   return (
-    <details className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-2 max-w-[80%] text-xs">
-      <summary className="text-slate-400 cursor-pointer">
-        Block: <code>{type}</code>
+    <details className="bg-muted/50 border rounded-xl px-4 py-2 max-w-[80%] text-xs">
+      <summary className="text-muted-foreground cursor-pointer font-medium hover:text-foreground">
+        Block: <code className="bg-muted px-1 py-0.5 rounded">{type}</code>
       </summary>
-      <pre className="mt-1 text-slate-500 overflow-x-auto">
+      <pre className="mt-2 text-muted-foreground overflow-x-auto bg-background/50 p-2 rounded-md border border-border/50">
         {JSON.stringify(data, null, 2)}
       </pre>
     </details>
@@ -85,48 +91,62 @@ function MessageActions({
 }) {
   return (
     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-      <button onClick={onCopy} className="p-1 text-slate-500 hover:text-slate-300 rounded transition-colors" title="复制">
-        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" strokeWidth="2" />
-          <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" strokeWidth="2" />
-        </svg>
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={onCopy}>
+            <Copy className="w-3.5 h-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent><p>复制</p></TooltipContent>
+      </Tooltip>
+
       {msg.role === 'assistant' && onGenerateImage && (
-        <button
-          onClick={onGenerateImage}
-          disabled={imageLoading}
-          className="p-1 text-slate-500 hover:text-purple-400 rounded transition-colors disabled:animate-pulse"
-          title={hasImage ? "重新生成配图" : "生成配图"}
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-            <circle cx="8.5" cy="8.5" r="1.5" />
-            <polyline points="21 15 16 10 5 21" />
-          </svg>
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-6 w-6 text-muted-foreground hover:text-purple-400 disabled:opacity-50" 
+              onClick={onGenerateImage}
+              disabled={imageLoading}
+            >
+              <ImageIcon className={`w-3.5 h-3.5 ${imageLoading ? 'animate-pulse' : ''}`} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent><p>{hasImage ? "重新生成配图" : "生成配图"}</p></TooltipContent>
+        </Tooltip>
       )}
+
       {msg.role === 'assistant' && isLast && onRegenerate && (
-        <button onClick={onRegenerate} className="p-1 text-slate-500 hover:text-slate-300 rounded transition-colors" title="重新生成">
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-            <path d="M1 4v6h6M23 20v-6h-6" />
-            <path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15" />
-          </svg>
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={onRegenerate}>
+              <RotateCcw className="w-3.5 h-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent><p>重新生成</p></TooltipContent>
+        </Tooltip>
       )}
+
       {msg.role === 'user' && onEdit && (
-        <button onClick={onEdit} className="p-1 text-slate-500 hover:text-slate-300 rounded transition-colors" title="编辑并重新发送">
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-          </svg>
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={onEdit}>
+              <Pencil className="w-3.5 h-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent><p>编辑并重新发送</p></TooltipContent>
+        </Tooltip>
       )}
-      <button onClick={onDelete} className="p-1 text-slate-500 hover:text-red-400 rounded transition-colors" title="删除">
-        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-          <polyline points="3 6 5 6 21 6" />
-          <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-        </svg>
-      </button>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={onDelete}>
+            <Trash2 className="w-3.5 h-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent><p>删除</p></TooltipContent>
+      </Tooltip>
     </div>
   )
 }
@@ -134,66 +154,76 @@ function MessageActions({
 /** Raw message inspector overlay. */
 function RawMessageViewer({ msg, onClose }: { msg: Message; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
-      <div
-        className="bg-slate-800 border border-slate-600 rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-4 py-2 border-b border-slate-700">
-          <span className="text-sm text-slate-300 font-medium">消息原始数据</span>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-lg leading-none">&times;</button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 text-xs font-mono">
-          <div>
-            <span className="text-slate-500">ID: </span>
-            <span className="text-slate-400">{msg.id}</span>
+    <Dialog open={true} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col p-0 gap-0">
+        <DialogHeader className="px-4 py-3 border-b shrink-0">
+          <DialogTitle className="text-sm font-medium">消息原始数据</DialogTitle>
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs font-mono">
+          <div className="grid grid-cols-[100px_1fr] gap-2">
+            <span className="text-muted-foreground">ID:</span>
+            <span className="text-foreground">{msg.id}</span>
+            
+            <span className="text-muted-foreground">Role:</span>
+            <span className="text-foreground">{msg.role}</span>
+            
+            <span className="text-muted-foreground">Type:</span>
+            <span className="text-foreground">{msg.message_type}</span>
+            
+            {msg.scene_id && (
+              <>
+                <span className="text-muted-foreground">Scene:</span>
+                <span className="text-foreground">{msg.scene_id}</span>
+              </>
+            )}
           </div>
-          <div>
-            <span className="text-slate-500">Role: </span>
-            <span className="text-slate-400">{msg.role}</span>
+          
+          <div className="space-y-1.5">
+            <span className="text-muted-foreground block font-medium">Content:</span>
+            <pre className="text-foreground whitespace-pre-wrap bg-muted/50 border rounded-md p-3 overflow-x-auto">
+              {msg.content}
+            </pre>
           </div>
-          <div>
-            <span className="text-slate-500">Type: </span>
-            <span className="text-slate-400">{msg.message_type}</span>
-          </div>
-          {msg.scene_id && (
-            <div>
-              <span className="text-slate-500">Scene: </span>
-              <span className="text-slate-400">{msg.scene_id}</span>
-            </div>
-          )}
-          <div>
-            <span className="text-slate-500 block mb-1">Content:</span>
-            <pre className="text-slate-300 whitespace-pre-wrap bg-slate-900 rounded p-2 overflow-x-auto">{msg.content}</pre>
-          </div>
+          
           {msg.raw_content && msg.raw_content !== msg.content && (
-            <div>
-              <span className="text-slate-500 block mb-1">Raw Content (with json blocks):</span>
-              <pre className="text-slate-300 whitespace-pre-wrap bg-slate-900 rounded p-2 overflow-x-auto">{msg.raw_content}</pre>
+            <div className="space-y-1.5">
+              <span className="text-muted-foreground block font-medium">Raw Content:</span>
+              <pre className="text-foreground whitespace-pre-wrap bg-muted/50 border rounded-md p-3 overflow-x-auto">
+                {msg.raw_content}
+              </pre>
             </div>
           )}
+          
           {msg.blocks && msg.blocks.length > 0 && (
-            <div>
-              <span className="text-slate-500 block mb-1">Blocks ({msg.blocks.length}):</span>
-              <pre className="text-slate-300 whitespace-pre-wrap bg-slate-900 rounded p-2 overflow-x-auto">
+            <div className="space-y-1.5">
+              <span className="text-muted-foreground block font-medium">Blocks ({msg.blocks.length}):</span>
+              <pre className="text-foreground whitespace-pre-wrap bg-muted/50 border rounded-md p-3 overflow-x-auto">
                 {JSON.stringify(msg.blocks, null, 2)}
               </pre>
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
 /** Fullscreen image preview modal. */
 function ImagePreviewModal({ image, onClose }: { image: StoryImageData; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8" onClick={onClose}>
+      <Button 
+        variant="ghost" 
+        size="icon" 
+        className="absolute top-4 right-4 rounded-full bg-background/20 hover:bg-background/40 text-foreground backdrop-blur-md"
+        onClick={onClose}
+      >
+        <X className="w-5 h-5" />
+      </Button>
       <img
         src={image.image_url}
         alt={image.title || 'Story image'}
-        className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+        className="max-w-full max-h-full object-contain rounded-lg shadow-2xl ring-1 ring-border/50"
         onClick={(e) => e.stopPropagation()}
       />
     </div>
@@ -209,22 +239,20 @@ function MessageImageStrip({
   onPreview: (image: StoryImageData) => void
 }) {
   return (
-    <div className="flex justify-start pl-1">
-      <div className="max-w-[80%] space-y-1.5">
+    <div className="flex justify-start pl-1 pt-1">
+      <div className="max-w-[80%] space-y-2">
         {images.map((img, i) => (
-          <div key={img.image_id || i} className="relative group/img">
+          <div key={img.image_id || i} className="relative group/img overflow-hidden rounded-xl border bg-muted shadow-sm">
             <img
               src={img.image_url}
               alt={img.title || 'Story image'}
-              className="w-full max-h-[400px] object-contain rounded-xl border border-slate-700/50
-                         bg-slate-900 shadow-lg cursor-zoom-in"
+              className="w-full max-h-[400px] object-cover cursor-zoom-in transition-transform duration-300 group-hover/img:scale-[1.02]"
               loading="lazy"
               onClick={() => onPreview(img)}
             />
             {img.title && (
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent
-                              rounded-b-xl px-3 py-1.5 opacity-0 group-hover/img:opacity-100 transition-opacity">
-                <span className="text-xs text-white/80">{img.title}</span>
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-4 py-3 opacity-0 group-hover/img:opacity-100 transition-opacity duration-300">
+                <span className="text-xs text-white font-medium drop-shadow-md">{img.title}</span>
               </div>
             )}
           </div>
@@ -255,7 +283,6 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
   }, [deleteMessage])
 
   const handleDeleteFrom = useCallback((msgId: string) => {
-    // Delete this message and all subsequent ones (used when deleting user msg to also remove assistant response)
     deleteMessagesFrom(msgId)
   }, [deleteMessagesFrom])
 
@@ -267,7 +294,6 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
   const handleEditSubmit = useCallback((msgId: string) => {
     const text = editText.trim()
     if (!text) return
-    // Delete from this message onward, then send the edited text
     deleteMessagesFrom(msgId)
     setEditingId(null)
     setEditText('')
@@ -289,213 +315,176 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
     }
   }, [handleEditSubmit, handleEditCancel])
 
-  // Determine if a message's blocks should be locked:
-  // Blocks are unlocked only on the very last assistant message (and only if there's no newer user message after it)
   const lastMsgIndex = messages.length - 1
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+    <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 scroll-smooth bg-background">
       {messages.length === 0 && !isStreaming && (
-        <div className="text-center py-16 space-y-2">
-          <p className="text-base font-medium" style={{ color: 'rgba(127,168,196,0.4)' }}>Begin your adventure</p>
-          <p className="text-xs" style={{ color: 'rgba(127,168,196,0.25)' }}>Send a message to start the game</p>
+        <div className="flex flex-col items-center justify-center h-full text-muted-foreground opacity-50">
+          <p className="text-lg font-medium mb-2">Begin your adventure</p>
+          <p className="text-sm">Send a message to start the game</p>
         </div>
       )}
 
-      {messages.map((msg, idx) => {
-        const isLast = idx === lastMsgIndex
-        // Blocks are locked unless this is the last message in the list
-        const blocksLocked = !isLast
+      <div className="max-w-4xl mx-auto space-y-6">
+        {messages.map((msg, idx) => {
+          const isLast = idx === lastMsgIndex
+          const blocksLocked = !isLast
 
-        if (msg.role === 'system') {
-          return (
-            <div key={msg.id} className="flex justify-center group">
-              <div className="text-xs px-3 py-1.5 rounded-full max-w-md text-center"
-                style={{
-                  background: 'rgba(139, 92, 246, 0.08)',
-                  border: '1px solid rgba(139, 92, 246, 0.15)',
-                  color: 'rgba(167, 139, 250, 0.6)',
-                }}
-              >
-                {msg.content}
-              </div>
-            </div>
-          )
-        }
-
-        if (msg.role === 'user') {
-          // Editing mode
-          if (editingId === msg.id) {
+          if (msg.role === 'system') {
             return (
-              <div key={msg.id} className="flex justify-end">
-                <div className="bg-emerald-900/60 border border-emerald-500/50 rounded-2xl rounded-br-sm max-w-[75%] p-2 space-y-2">
-                  <textarea
-                    value={editText}
-                    onChange={(e) => setEditText(e.target.value)}
-                    onKeyDown={(e) => handleEditKeyDown(e, msg.id)}
-                    className="w-full bg-slate-900/60 text-slate-100 text-sm rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-emerald-500/50 min-h-[60px]"
-                    rows={2}
-                    autoFocus
-                  />
-                  <div className="flex justify-end gap-2">
-                    <button onClick={handleEditCancel} className="text-xs px-2 py-1 text-slate-400 hover:text-slate-200 transition-colors">
-                      取消
-                    </button>
-                    <button
-                      onClick={() => handleEditSubmit(msg.id)}
-                      disabled={!editText.trim()}
-                      className="text-xs px-3 py-1 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white rounded transition-colors"
-                    >
-                      发送
-                    </button>
+              <div key={msg.id} className="flex justify-center group py-2">
+                <Badge variant="secondary" className="px-4 py-1.5 text-xs font-normal bg-muted text-muted-foreground shadow-sm whitespace-normal text-center max-w-lg break-words">
+                  {msg.content}
+                </Badge>
+              </div>
+            )
+          }
+
+          if (msg.role === 'user') {
+            if (editingId === msg.id) {
+              return (
+                <div key={msg.id} className="flex justify-end">
+                  <div className="bg-muted border rounded-2xl rounded-tr-sm max-w-[85%] p-3 space-y-3 shadow-sm w-full sm:w-[400px]">
+                    <textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      onKeyDown={(e) => handleEditKeyDown(e, msg.id)}
+                      className="w-full bg-background text-foreground text-sm rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-primary min-h-[80px] border"
+                      rows={3}
+                      autoFocus
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" size="sm" onClick={handleEditCancel}>
+                        取消
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => handleEditSubmit(msg.id)}
+                        disabled={!editText.trim()}
+                      >
+                        发送
+                      </Button>
+                    </div>
                   </div>
+                </div>
+              )
+            }
+
+            return (
+              <div key={msg.id} className="flex justify-end group">
+                <div className="flex items-end gap-2 flex-row-reverse">
+                  <div
+                    className="px-5 py-3 rounded-2xl rounded-tr-sm max-w-[85%] text-sm shadow-sm cursor-pointer transition-all bg-primary text-primary-foreground hover:bg-primary/90"
+                    onClick={() => setInspectMsg(msg)}
+                    title="点击查看原始数据"
+                  >
+                    {msg.content}
+                  </div>
+                  <MessageActions
+                    msg={msg}
+                    isLast={isLast}
+                    onCopy={() => handleCopy(msg.content)}
+                    onDelete={() => handleDeleteFrom(msg.id)}
+                    onEdit={() => handleEdit(msg)}
+                  />
                 </div>
               </div>
             )
           }
 
+          // assistant
           return (
-            <div key={msg.id} className="flex justify-end group">
-              <div className="flex items-end gap-1">
-                <MessageActions
-                  msg={msg}
-                  isLast={isLast}
-                  onCopy={() => handleCopy(msg.content)}
-                  onDelete={() => handleDeleteFrom(msg.id)}
-                  onEdit={() => handleEdit(msg)}
-                />
-                <div
-                  className="px-4 py-2.5 rounded-2xl rounded-br-sm max-w-[75%] text-sm cursor-pointer transition-all duration-200"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(16,185,129,0.18) 0%, rgba(6,182,212,0.12) 100%)',
-                    border: '1px solid rgba(16, 185, 129, 0.25)',
-                    color: '#dff0f7',
-                  }}
-                  onClick={() => setInspectMsg(msg)}
-                  title="点击查看原始数据"
-                >
-                  {msg.content}
+            <div key={msg.id} className="space-y-3 group">
+              <div className="flex justify-start">
+                <div className="flex items-end gap-2">
+                  <div
+                    className="px-5 py-3 rounded-2xl rounded-tl-sm max-w-[85%] text-sm markdown-content cursor-pointer transition-all bg-muted/50 border text-foreground shadow-sm hover:bg-muted/70"
+                    onClick={() => setInspectMsg(msg)}
+                    title="点击查看原始数据"
+                  >
+                    <Markdown>{msg.content}</Markdown>
+                  </div>
+                  <MessageActions
+                    msg={msg}
+                    isLast={isLast}
+                    onCopy={() => handleCopy(msg.content)}
+                    onDelete={() => handleDelete(msg.id)}
+                    onRegenerate={isLast && !isStreaming ? onRetry : undefined}
+                    onGenerateImage={onGenerateImage ? () => onGenerateImage(msg.id) : undefined}
+                    imageLoading={imageLoadingMessages.has(msg.id)}
+                    hasImage={!!messageImages[msg.id]?.length}
+                  />
                 </div>
               </div>
+              
+              {messageImages[msg.id]?.length > 0 && (
+                <MessageImageStrip
+                  images={messageImages[msg.id]}
+                  onPreview={setPreviewImage}
+                />
+              )}
+              
+              {imageLoadingMessages.has(msg.id) && (
+                <div className="flex justify-start pl-1">
+                  <div className="bg-muted/50 border rounded-xl px-4 py-3 max-w-[80%] flex items-center gap-3">
+                    <span className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    <span className="text-xs text-muted-foreground font-medium">生成配图中...</span>
+                  </div>
+                </div>
+              )}
+              
+              {msg.blocks && msg.blocks.length > 0 && (
+                <BlockList
+                  blocks={msg.blocks}
+                  onAction={onAction}
+                  locked={blocksLocked}
+                  idPrefix={msg.id}
+                />
+              )}
             </div>
           )
-        }
+        })}
 
-        // assistant — render content + attached blocks
-        return (
-          <div key={msg.id} className="space-y-2 group">
-            <div className="flex justify-start">
-              <div className="flex items-end gap-1">
-                <div
-                  className="px-4 py-2.5 rounded-2xl rounded-bl-sm max-w-[80%] text-sm markdown-content cursor-pointer transition-all duration-200"
-                  style={{
-                    background: 'rgba(16, 28, 46, 0.75)',
-                    border: '1px solid rgba(148, 163, 184, 0.1)',
-                    color: '#dff0f7',
-                    backdropFilter: 'blur(8px)',
-                  }}
-                  onClick={() => setInspectMsg(msg)}
-                  title="点击查看原始数据"
-                >
-                  <Markdown>{msg.content}</Markdown>
-                </div>
-                <MessageActions
-                  msg={msg}
-                  isLast={isLast}
-                  onCopy={() => handleCopy(msg.content)}
-                  onDelete={() => handleDelete(msg.id)}
-                  onRegenerate={isLast && !isStreaming ? onRetry : undefined}
-                  onGenerateImage={onGenerateImage ? () => onGenerateImage(msg.id) : undefined}
-                  imageLoading={imageLoadingMessages.has(msg.id)}
-                  hasImage={!!messageImages[msg.id]?.length}
-                />
+        {isStreaming && streamingContent && (
+          <div className="flex justify-start">
+            <div className="px-5 py-3 rounded-2xl rounded-tl-sm max-w-[85%] text-sm markdown-content bg-muted/30 border border-primary/20 text-foreground shadow-sm ring-1 ring-primary/10">
+              <Markdown>{streamingContent}</Markdown>
+              <span className="inline-block w-1.5 h-4 ml-1 bg-primary/70 animate-pulse align-middle" />
+            </div>
+          </div>
+        )}
+
+        {isStreaming && !streamingContent && (
+          <div className="flex justify-start">
+            <div className="px-5 py-4 rounded-2xl rounded-tl-sm bg-muted/30 border shadow-sm">
+              <div className="flex gap-1.5">
+                <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             </div>
-            {/* Inline story images for this message */}
-            {messageImages[msg.id]?.length > 0 && (
-              <MessageImageStrip
-                images={messageImages[msg.id]}
-                onPreview={setPreviewImage}
-              />
-            )}
-            {imageLoadingMessages.has(msg.id) && (
-              <div className="flex justify-start pl-1">
-                <div className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 max-w-[80%] flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
-                  <span className="text-xs text-slate-400">生成配图中...</span>
-                </div>
-              </div>
-            )}
-            {/* Render blocks attached to this message */}
-            {msg.blocks && msg.blocks.length > 0 && (
-              <BlockList
-                blocks={msg.blocks}
-                onAction={onAction}
-                locked={blocksLocked}
-                idPrefix={msg.id}
-              />
-            )}
           </div>
-        )
-      })}
+        )}
 
-      {isStreaming && streamingContent && (
-        <div className="flex justify-start">
-          <div className="px-4 py-2.5 rounded-2xl rounded-bl-sm max-w-[80%] text-sm markdown-content"
-            style={{
-              background: 'rgba(16, 28, 46, 0.75)',
-              border: '1px solid rgba(16, 185, 129, 0.15)',
-              color: '#dff0f7',
-              backdropFilter: 'blur(8px)',
-              boxShadow: '0 0 20px rgba(16, 185, 129, 0.05)',
-            }}
-          >
-            <Markdown>{streamingContent}</Markdown>
-            <span className="streaming-cursor" />
-          </div>
-        </div>
-      )}
+        {pendingBlocks.length > 0 && (
+          <BlockList
+            blocks={pendingBlocks.map((b) => ({
+              type: b.type,
+              data: b.data,
+              block_id: b.blockId,
+            }))}
+            onAction={onAction}
+            idPrefix="pending"
+          />
+        )}
+      </div>
 
-      {isStreaming && !streamingContent && (
-        <div className="flex justify-start">
-          <div className="px-4 py-2.5 rounded-2xl rounded-bl-sm text-sm"
-            style={{
-              background: 'rgba(16, 28, 46, 0.75)',
-              border: '1px solid rgba(148, 163, 184, 0.08)',
-              color: 'rgba(127, 168, 196, 0.6)',
-            }}
-          >
-            <span className="flex gap-1">
-              <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Render pending interactive blocks (not yet attached to a message) */}
-      {pendingBlocks.length > 0 && (
-        <BlockList
-          blocks={pendingBlocks.map((b) => ({
-            type: b.type,
-            data: b.data,
-            block_id: b.blockId,
-          }))}
-          onAction={onAction}
-          idPrefix="pending"
-        />
-      )}
-
-      {/* Status indicator */}
       <StatusBar status={streamStatus} onRetry={onRetry} />
 
-      <div ref={bottomRef} />
+      <div ref={bottomRef} className="h-4" />
 
-      {/* Raw message inspector */}
       {inspectMsg && <RawMessageViewer msg={inspectMsg} onClose={() => setInspectMsg(null)} />}
-
-      {/* Image preview modal */}
       {previewImage && <ImagePreviewModal image={previewImage} onClose={() => setPreviewImage(null)} />}
     </div>
   )
@@ -504,49 +493,33 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
 function StatusBar({ status, onRetry }: { status: StreamStatus; onRetry?: () => void }) {
   if (status === 'idle') return null
 
-  const config: Record<StreamStatus, { label: string; color: string; icon: React.ReactNode }> = {
-    idle: { label: '', color: '', icon: null },
-    waiting: {
-      label: '等待响应...',
-      color: 'text-amber-400',
-      icon: (
-        <span className="flex gap-0.5">
-          <span className="w-1 h-1 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-          <span className="w-1 h-1 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-          <span className="w-1 h-1 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-        </span>
-      ),
-    },
-    streaming: {
-      label: '生成中...',
-      color: 'text-cyan-400',
-      icon: <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-pulse" />,
-    },
-    done: {
-      label: '生成完成',
-      color: 'text-emerald-400',
-      icon: <span className="text-emerald-400">&#10003;</span>,
-    },
-    error: {
-      label: '生成失败',
-      color: 'text-red-400',
-      icon: <span className="text-red-400">&#10007;</span>,
-    },
+  if (status === 'error') {
+    return (
+      <div className="flex justify-center my-4">
+        <Alert variant="destructive" className="max-w-md py-2 px-4 inline-flex items-center w-auto shadow-sm">
+          <AlertCircle className="h-4 w-4 mr-2" />
+          <AlertDescription className="text-xs flex items-center gap-3 mt-0">
+            生成失败
+            {onRetry && (
+              <Button variant="outline" size="sm" className="h-6 px-2 text-xs border-destructive/30 hover:bg-destructive/10" onClick={onRetry}>
+                重试
+              </Button>
+            )}
+          </AlertDescription>
+        </Alert>
+      </div>
+    )
   }
 
-  const c = config[status]
-  return (
-    <div className={`flex items-center gap-2 px-2 py-1 text-xs ${c.color}`}>
-      {c.icon}
-      <span>{c.label}</span>
-      {status === 'error' && onRetry && (
-        <button
-          onClick={onRetry}
-          className="ml-2 px-2 py-0.5 bg-red-900/50 hover:bg-red-800/60 border border-red-700/50 text-red-300 rounded text-xs transition-colors"
-        >
-          重试
-        </button>
-      )}
-    </div>
-  )
+  if (status === 'done') {
+    return (
+      <div className="flex justify-center my-4">
+        <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-900 font-normal px-3 py-1 shadow-sm gap-1.5">
+          <CheckCircle2 className="w-3.5 h-3.5" /> 生成完成
+        </Badge>
+      </div>
+    )
+  }
+
+  return null
 }

@@ -63,21 +63,21 @@ export function InitPromptEditor() {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-1 bg-slate-900/50">
-        <span className="text-xs text-slate-500">
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-1 bg-muted/30 border-b">
+        <span className="text-xs text-muted-foreground">
           {content ? t.custom : t.usingDefault}
         </span>
         <div className="flex items-center gap-2">
           {content && (
             <button
               onClick={handleReset}
-              className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               {t.reset}
             </button>
           )}
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-muted-foreground">
             {saveStatus === 'saving' && t.saving}
             {saveStatus === 'saved' && t.saved}
           </span>
@@ -86,7 +86,7 @@ export function InitPromptEditor() {
       <textarea
         value={content}
         onChange={handleChange}
-        className="flex-1 w-full p-4 bg-slate-950 text-slate-200 text-sm font-mono resize-none focus:outline-none leading-relaxed"
+        className="flex-1 w-full p-4 bg-background text-foreground text-sm font-mono resize-none focus:outline-none leading-relaxed"
         placeholder={DEFAULT_INIT_PROMPT[language] ?? DEFAULT_INIT_PROMPT.en}
         spellCheck={false}
       />

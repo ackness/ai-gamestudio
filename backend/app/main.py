@@ -94,6 +94,7 @@ from backend.app.api.projects import router as projects_router  # noqa: E402
 from backend.app.api.runtime_settings import router as runtime_settings_router  # noqa: E402
 from backend.app.api.scenes import router as scenes_router  # noqa: E402
 from backend.app.api.sessions import router as sessions_router  # noqa: E402
+from backend.app.api.novel import router as novel_router  # noqa: E402
 from backend.app.api.templates import router as templates_router  # noqa: E402
 
 app.include_router(projects_router)
@@ -107,6 +108,7 @@ app.include_router(scenes_router)
 app.include_router(events_router)
 app.include_router(llm_profiles_router)
 app.include_router(templates_router)
+app.include_router(novel_router)
 app.include_router(runtime_settings_router)
 
 
@@ -175,6 +177,33 @@ _PRESET_MODELS = _load_presets()
 async def get_preset_models():
     """Return preset LLM models for quick selection."""
     return _PRESET_MODELS
+
+
+@app.post("/api/llm/test")
+async def test_llm(
+    x_llm_model: str | None = __import__("fastapi").Header(default=None),
+    x_llm_api_key: str | None = __import__("fastapi").Header(default=None),
+    x_llm_api_base: str | None = __import__("fastapi").Header(default=None),
+):
+    """Send a short test message to verify LLM connectivity."""
+    import time
+    from backend.app.core.llm_gateway import completion
+
+    messages = [{"role": "user", "content": "Hi, I am testing. Please reply with just 'ok'."}]
+    start = time.monotonic()
+    try:
+        reply = await completion(
+            messages, stream=False,
+            model=x_llm_model, api_key=x_llm_api_key, api_base=x_llm_api_base,
+        )
+        latency_ms = round((time.monotonic() - start) * 1000)
+        return {"ok": True, "reply": reply, "latency_ms": latency_ms}
+    except Exception as e:
+        latency_ms = round((time.monotonic() - start) * 1000)
+        return JSONResponse(
+            status_code=502,
+            content={"ok": False, "error": str(e), "latency_ms": latency_ms},
+        )
 
 
 # Mount frontend static files (production build) if available

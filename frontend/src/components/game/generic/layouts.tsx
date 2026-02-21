@@ -4,7 +4,7 @@
 import type { ReactNode } from 'react'
 
 const variantStyles: Record<string, string> = {
-  default: 'border-slate-700 bg-slate-800/60',
+  default: 'border bg-card',
   info: 'border-cyan-700/50 bg-cyan-900/20',
   success: 'border-emerald-700/50 bg-emerald-900/20',
   warning: 'border-amber-700/50 bg-amber-900/20',
@@ -23,7 +23,7 @@ export function CardLayout({
   const style = variantStyles[variant] || variantStyles.default
   return (
     <div className={`border rounded-xl px-4 py-3 max-w-[80%] space-y-2 ${style}`}>
-      {title && <p className="text-sm font-medium text-slate-200">{title}</p>}
+      {title && <p className="text-sm font-medium">{title}</p>}
       {children}
     </div>
   )
@@ -43,12 +43,12 @@ export function BannerLayout({
     success: 'border-emerald-600',
     warning: 'border-amber-600',
     error: 'border-red-600',
-    default: 'border-slate-600',
+    default: 'border-border',
   }
   const border = borderColor[variant] || borderColor.default
   return (
-    <div className={`bg-slate-800/60 border-l-4 ${border} rounded-r-xl px-4 py-3 max-w-[80%] space-y-2`}>
-      {title && <p className="text-sm font-medium text-slate-200">{title}</p>}
+    <div className={`bg-card border-l-4 ${border} rounded-r-xl px-4 py-3 max-w-[80%] space-y-2`}>
+      {title && <p className="text-sm font-medium">{title}</p>}
       {children}
     </div>
   )
@@ -66,15 +66,15 @@ export function ButtonsLayout({
   onAction: (msg: string) => void
 }) {
   return (
-    <div className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 space-y-2 max-w-[80%]">
-      {title && <p className="text-sm font-medium text-slate-200">{title}</p>}
-      {text && <p className="text-sm text-slate-400">{text}</p>}
+    <div className="bg-card border rounded-xl px-4 py-3 space-y-2 max-w-[80%]">
+      {title && <p className="text-sm font-medium">{title}</p>}
+      {text && <p className="text-sm text-muted-foreground">{text}</p>}
       <div className="flex flex-wrap gap-2">
         {buttons.map((btn, i) => (
           <button
             key={i}
             onClick={() => onAction(btn.actionTemplate)}
-            className="text-sm px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg transition-colors"
+            className="text-sm px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-lg transition-colors"
           >
             {btn.label}
           </button>

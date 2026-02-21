@@ -37,15 +37,15 @@ export function RelationshipRenderer({ data }: BlockRendererProps) {
         <div className="flex items-center gap-2">
           <span className="text-lg">{cfg.icon}</span>
           <span className={`font-medium ${colors.accent}`}>{d.npc_name}</span>
-          <span className="text-slate-500 text-xs">{cfg.label}</span>
+          <span className="text-muted-foreground text-xs">{cfg.label}</span>
         </div>
         <span className={`text-sm font-mono font-bold ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
           {isPositive ? '+' : ''}{d.change}
         </span>
       </div>
-      <div className="flex items-center gap-3 text-xs text-slate-400">
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <span>{d.rank}</span>
-        <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full ${isPositive ? 'bg-emerald-500' : 'bg-red-500'}`}
             style={{ width: `${Math.max(0, Math.min(100, d.new_level))}%` }}
@@ -53,7 +53,7 @@ export function RelationshipRenderer({ data }: BlockRendererProps) {
         </div>
         <span>{d.new_level}/100</span>
       </div>
-      <p className="text-slate-300 text-sm">{d.reason}</p>
+      <p className="text-foreground/80 text-sm">{d.reason}</p>
     </div>
   )
 }

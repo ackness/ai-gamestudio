@@ -88,7 +88,7 @@ export function useGameWebSocket(currentSession: Session | null) {
       appendStreamContent(content)
     }
 
-    ws.onDone = (fullContent, turnId, hasBlocks, messageId) => {
+    ws.onDone = (fullContent, turnId, hasBlocks, messageId, rawContent) => {
       setStreaming(false)
       setStreamStatus('done')
       if (fullContent || hasBlocks) {
@@ -97,6 +97,7 @@ export function useGameWebSocket(currentSession: Session | null) {
           session_id: currentSession.id,
           role: 'assistant',
           content: fullContent || '（结构化响应）',
+          raw_content: rawContent || undefined,
           turn_id: turnId || undefined,
           message_type: 'narration',
           created_at: new Date().toISOString(),

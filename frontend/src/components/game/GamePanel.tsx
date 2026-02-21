@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Save, Bug, Plus, RefreshCcw, XCircle, MonitorPlay, History } from 'lucide-react'
 import type { Session } from '../../types'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useGameStateStore } from '../../stores/gameStateStore'
@@ -18,6 +19,10 @@ import { useUiStore } from '../../stores/uiStore'
 import { useGameWebSocket } from '../../hooks/useGameWebSocket'
 import { useGameActions } from '../../hooks/useGameActions'
 import { useArchive } from '../../hooks/useArchive'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 const gamePanelText: Record<string, Record<string, string>> = {
   zh: {
@@ -122,17 +127,20 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
   const effectiveProvider = llmInfo?.provider || 'openai'
   const effectiveModelName = llmInfo?.model_name || ''
   const modelBadge = effectiveModel ? (
-    <span className="text-xs text-slate-500 font-mono truncate max-w-[200px]" title={effectiveModel}>
+    <Badge variant="outline" className="text-[10px] font-mono font-normal tracking-tight h-5 truncate max-w-[200px]" title={effectiveModel}>
       {effectiveProvider}/{effectiveModelName}
-    </span>
+    </Badge>
   ) : null
 
   if (!currentSession) {
     return (
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2 bg-slate-900 border-b border-slate-700">
+      <div className="h-full flex flex-col overflow-hidden bg-background relative">
+        <div className="h-12 flex items-center justify-between px-4 bg-muted/20 border-b shrink-0 z-10">
           <div className="flex items-center gap-3 min-w-0">
-            <span className="text-sm font-medium text-slate-300 shrink-0">{gpt.noSession}</span>
+            <span className="text-sm font-semibold flex items-center gap-2">
+              <MonitorPlay className="w-4 h-4 text-muted-foreground" />
+              {gpt.noSession}
+            </span>
             {modelBadge}
           </div>
           <SessionSelector
@@ -143,48 +151,74 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
             onDelete={(id) => deleteSession(id)}
           />
         </div>
-        <div className="flex-1 flex items-center justify-center text-slate-500">
-          {gpt.selectSession}
+        <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+          <MonitorPlay className="w-12 h-12 mb-4 opacity-20" />
+          <p className="text-sm font-medium">{gpt.selectSession}</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 bg-slate-900 border-b border-slate-700">
+    <div className="h-full flex flex-col overflow-hidden bg-background relative">
+      <div className="h-12 flex items-center justify-between px-4 bg-muted/20 border-b shrink-0 z-10">
         <div className="flex items-center gap-3 min-w-0">
-          <span className="text-sm font-medium text-slate-300 shrink-0">{gpt.gameSession}</span>
+          <span className="text-sm font-semibold flex items-center gap-2">
+            <MonitorPlay className="w-4 h-4 text-primary" />
+            {gpt.gameSession}
+          </span>
           {modelBadge}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={handleArchiveNow}
-            disabled={archiveBusy || !currentSession}
-            className="text-xs px-2 py-1 rounded transition-colors bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-300"
-            title={gpt.saveTip}
-          >
-            {gpt.save}
-          </button>
-          <button
-            onClick={handleRestoreArchive}
-            disabled={archiveBusy || !currentSession}
-            className="text-xs px-2 py-1 rounded transition-colors bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-300"
-            title={gpt.restoreTip}
-          >
-            {gpt.restore}
-          </button>
-          <button
-            onClick={() => setShowDebugLog((v) => !v)}
-            className={`text-xs px-2 py-1 rounded transition-colors ${
-              showDebugLog
-                ? 'bg-amber-700 text-amber-100'
-                : 'bg-slate-700 hover:bg-slate-600 text-slate-400'
-            }`}
-            title={gpt.debugTip}
-          >
-            {gpt.debug}
-          </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5 px-2.5"
+                onClick={handleArchiveNow}
+                disabled={archiveBusy || !currentSession}
+              >
+                {archiveBusy ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">{gpt.save}</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent><p>{gpt.saveTip}</p></TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5 px-2.5"
+                onClick={handleRestoreArchive}
+                disabled={archiveBusy || !currentSession}
+              >
+                <History className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{gpt.restore}</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent><p>{gpt.restoreTip}</p></TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={showDebugLog ? "default" : "outline"}
+                size="sm"
+                className="h-8 text-xs gap-1.5 px-2.5"
+                onClick={() => setShowDebugLog((v) => !v)}
+              >
+                <Bug className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{gpt.debug}</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent><p>{gpt.debugTip}</p></TooltipContent>
+          </Tooltip>
+
+          <div className="h-4 w-px bg-border mx-1" />
+          
           <SessionSelector
             sessions={sessions}
             currentSession={currentSession}
@@ -196,56 +230,50 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
       </div>
 
       {wsStatus !== 'connected' && (
-        <div className={`flex items-center gap-2 px-4 py-1.5 text-xs border-b ${
-          wsStatus === 'reconnecting'
-            ? 'bg-amber-900/30 border-amber-700/50 text-amber-300'
-            : 'bg-red-900/30 border-red-700/50 text-red-300'
-        }`}>
-          {wsStatus === 'reconnecting' ? (
-            <>
-              <span className="w-2.5 h-2.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin shrink-0" />
-              <span>正在重连后端...</span>
-            </>
-          ) : (
-            <>
-              <span className="text-red-400 shrink-0">&#10007;</span>
-              <span>连接已断开，请检查后端服务是否运行</span>
-            </>
-          )}
-        </div>
-      )}
-
-      {phase === 'init' && <WelcomeScreen onStart={handleInitGame} loading={isStreaming} error={initError} />}
-
-      {phase === 'ended' && (
-        <>
-          <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} />
-          <div className="px-4 py-3 bg-slate-900/80 border-t border-slate-700 text-center">
-            <p className="text-slate-400 text-sm mb-2">游戏结束</p>
-            <button
-              onClick={onNewSession}
-              className="text-xs px-4 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded transition-colors"
-            >
-              开始新游戏
-            </button>
+        <Alert variant={wsStatus === 'reconnecting' ? "default" : "destructive"} className="rounded-none border-x-0 border-t-0 shrink-0 py-2 px-4 shadow-sm">
+          <div className="flex items-center gap-2 text-xs font-medium">
+            {wsStatus === 'reconnecting' ? (
+              <RefreshCcw className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <XCircle className="w-3.5 h-3.5" />
+            )}
+            <AlertDescription className="text-xs mt-0 leading-tight">
+              {wsStatus === 'reconnecting' ? '正在重连后端...' : '连接已断开，请检查后端服务是否运行'}
+            </AlertDescription>
           </div>
-        </>
+        </Alert>
       )}
 
-      {(phase === 'character_creation' || phase === 'playing') && (
-        <>
-          {currentScene && (
-            <SceneBar currentScene={currentScene} scenes={scenes} onSceneSwitch={handleSceneSwitch} />
-          )}
-          <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} />
-          <QuickActions onTrigger={handleForceTrigger} disabled={isStreaming} />
-          <ChatInput onSend={handleSend} disabled={isStreaming} />
-        </>
-      )}
+      <div className="flex-1 relative flex flex-col min-h-0 overflow-hidden">
+        {phase === 'init' && <WelcomeScreen onStart={handleInitGame} loading={isStreaming} error={initError} />}
 
-      {showDebugLog && currentSession && (
-        <DebugLogPanel sessionId={currentSession.id} onClose={() => setShowDebugLog(false)} />
-      )}
+        {phase === 'ended' && (
+          <div className="flex flex-col h-full">
+            <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} />
+            <div className="px-4 py-4 bg-muted/30 border-t text-center shrink-0">
+              <p className="text-muted-foreground text-sm mb-3">游戏结束</p>
+              <Button onClick={onNewSession} className="gap-2">
+                <Plus className="w-4 h-4" /> 开始新游戏
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {(phase === 'character_creation' || phase === 'playing') && (
+          <div className="flex flex-col h-full">
+            {currentScene && (
+              <SceneBar currentScene={currentScene} scenes={scenes} onSceneSwitch={handleSceneSwitch} />
+            )}
+            <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} />
+            <QuickActions onTrigger={handleForceTrigger} disabled={isStreaming} />
+            <ChatInput onSend={handleSend} disabled={isStreaming} />
+          </div>
+        )}
+
+        {showDebugLog && currentSession && (
+          <DebugLogPanel sessionId={currentSession.id} onClose={() => setShowDebugLog(false)} />
+        )}
+      </div>
 
       {showRestoreModal && (
         <ArchiveRestoreModal

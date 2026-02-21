@@ -117,16 +117,18 @@ async def test_get_world_template_not_found(client: AsyncClient, templates_dir: 
 async def test_generate_world(client: AsyncClient):
     mock_result = "# Generated World\n\n## World Background\n\nAI generated content."
 
+    async def mock_stream():
+        yield mock_result
+
     with patch("backend.app.api.templates.completion", new_callable=AsyncMock) as mock_completion:
-        mock_completion.return_value = mock_result
+        mock_completion.return_value = mock_stream()
         resp = await client.post(
             "/api/templates/worlds/generate",
             json={"genre": "fantasy", "setting": "medieval", "language": "en"},
         )
 
     assert resp.status_code == 200
-    data = resp.json()
-    assert data["world_doc"] == mock_result
+    assert mock_result in resp.text
     mock_completion.assert_called_once()
 
     # Verify the messages structure passed to completion

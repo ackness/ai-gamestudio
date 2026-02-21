@@ -138,7 +138,7 @@ export function GenericBlockRenderer({ data, blockId, schema, onAction }: Generi
                 <button
                   key={i}
                   onClick={() => handleAction(btn.actionTemplate)}
-                  className="text-sm px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg transition-colors"
+                  className="text-sm px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-lg transition-colors"
                 >
                   {btn.label}
                 </button>
@@ -156,7 +156,7 @@ export function GenericBlockRenderer({ data, blockId, schema, onAction }: Generi
     default:
       return (
         <CardLayout title={title} variant={variant}>
-          {text && <p className="text-sm text-slate-400">{text}</p>}
+          {text && <p className="text-sm text-muted-foreground">{text}</p>}
           {interpolatedSections.map((section, i) => (
             <div key={i}>{renderSection(section)}</div>
           ))}
@@ -166,7 +166,7 @@ export function GenericBlockRenderer({ data, blockId, schema, onAction }: Generi
                 <button
                   key={i}
                   onClick={() => handleAction(btn.actionTemplate)}
-                  className="text-sm px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg transition-colors"
+                  className="text-sm px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-lg transition-colors"
                 >
                   {btn.label}
                 </button>

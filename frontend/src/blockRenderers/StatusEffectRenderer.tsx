@@ -34,12 +34,12 @@ export function StatusEffectRenderer({ data }: BlockRendererProps) {
       <div className="flex items-center gap-2">
         <span className="text-lg">{cfg.icon}</span>
         <span className={`${cfg.color} font-medium text-sm`}>{d.effect_name}</span>
-        <span className="text-slate-500 text-xs">({actionLabels[d.action] || d.action})</span>
+        <span className="text-muted-foreground text-xs">({actionLabels[d.action] || d.action})</span>
         {d.duration != null && d.duration > 0 && (
-          <span className="ml-auto text-xs text-slate-400">{d.duration} 回合</span>
+          <span className="ml-auto text-xs text-muted-foreground">{d.duration} 回合</span>
         )}
       </div>
-      <p className="text-slate-300 text-xs">{d.description}</p>
+      <p className="text-foreground/80 text-xs">{d.description}</p>
       {d.stats && Object.keys(d.stats).length > 0 && (
         <div className="flex gap-2 flex-wrap">
           {Object.entries(d.stats).map(([k, v]) => (

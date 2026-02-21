@@ -16,6 +16,7 @@ import type {
   StoryImageData,
 } from '../types'
 import { buildBrowserLlmHeaders } from '../utils/browserLlmConfig'
+import { useProjectStore } from '../stores/projectStore'
 
 function getBaseUrl(): string {
   const configured = String(import.meta.env.VITE_API_BASE_URL || '').trim()
@@ -28,7 +29,7 @@ const BASE_URL = getBaseUrl()
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...buildBrowserLlmHeaders(),
+    ...buildBrowserLlmHeaders(useProjectStore.getState().currentProject?.id),
   }
   const accessKey = String(import.meta.env.VITE_ACCESS_KEY || '').trim()
   if (accessKey) headers['X-Access-Key'] = accessKey
@@ -209,6 +210,17 @@ export function getLlmInfo(projectId?: string): Promise<LlmInfo> {
   return request(`/llm/info${query}`)
 }
 
+export async function testLlm(): Promise<{ ok: boolean; reply?: string; latency_ms: number; error?: string }> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...buildBrowserLlmHeaders(useProjectStore.getState().currentProject?.id),
+  }
+  const accessKey = String(import.meta.env.VITE_ACCESS_KEY || '').trim()
+  if (accessKey) headers['X-Access-Key'] = accessKey
+  const res = await fetch(`${BASE_URL}/llm/test`, { method: 'POST', headers })
+  return res.json()
+}
+
 // LLM Profiles
 export function getLlmProfiles(): Promise<LlmProfile[]> {
   return request('/llm/profiles')
@@ -255,14 +267,43 @@ export function getWorldTemplate(slug: string): Promise<WorldTemplateDetail> {
   return request(`/templates/worlds/${slug}`)
 }
 
-export function generateWorld(data: {
-  genre: string
-  setting?: string
-  tone?: string
-  language?: string
-  extra_notes?: string
-}): Promise<{ world_doc: string }> {
-  return request('/templates/worlds/generate', {
+async function streamRequest(path: string, data: unknown, onChunk: (text: string) => void, signal?: AbortSignal): Promise<void> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...buildBrowserLlmHeaders(useProjectStore.getState().currentProject?.id),
+  }
+  const accessKey = String(import.meta.env.VITE_ACCESS_KEY || '').trim()
+  if (accessKey) headers['X-Access-Key'] = accessKey
+  const res = await fetch(`${BASE_URL}${path}`, { method: 'POST', headers, body: JSON.stringify(data), signal })
+  if (!res.ok) throw new Error(`API Error ${res.status}: ${await res.text()}`)
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader()
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    onChunk(value)
+  }
+}
+
+export function generateWorldStream(
+  data: { genre: string; setting?: string; tone?: string; language?: string; extra_notes?: string },
+  onChunk: (text: string) => void, signal?: AbortSignal,
+) { return streamRequest('/templates/worlds/generate', data, onChunk, signal) }
+
+export interface ReviseEdit {
+  old_text: string
+  new_text: string
+}
+
+export interface ReviseWorldResult {
+  mode: 'search_replace' | 'full'
+  world_doc: string
+  edits: ReviseEdit[]
+}
+
+export function reviseWorld(
+  data: { world_doc: string; instruction: string; language?: string },
+): Promise<ReviseWorldResult> {
+  return request('/templates/worlds/revise', {
     method: 'POST',
     body: JSON.stringify(data),
   })
@@ -327,5 +368,54 @@ export async function getSessionStoryImages(sessionId: string): Promise<StoryIma
     return await request(`/sessions/${sessionId}/story-images`)
   } catch {
     return []
+  }
+}
+
+// Novel Generation
+export type NovelEvent =
+  | { type: 'outline'; chapters: { title: string; summary: string }[] }
+  | { type: 'chapter_chunk'; index: number; text: string }
+  | { type: 'chapter'; index: number; title: string; content: string }
+  | { type: 'error'; message: string }
+  | { type: 'done' }
+
+export async function generateNovelStream(
+  sessionId: string,
+  options: { style?: string; chapter_count?: number; language?: string },
+  onEvent: (event: NovelEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...buildBrowserLlmHeaders(useProjectStore.getState().currentProject?.id),
+  }
+  const accessKey = String(import.meta.env.VITE_ACCESS_KEY || '').trim()
+  if (accessKey) headers['X-Access-Key'] = accessKey
+
+  const res = await fetch(`${BASE_URL}/sessions/${sessionId}/novel/generate`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(options),
+    signal,
+  })
+  if (!res.ok) throw new Error(`API Error ${res.status}: ${await res.text()}`)
+
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader()
+  let buffer = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += value
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+    for (const line of lines) {
+      if (!line.trim()) continue
+      try {
+        onEvent(JSON.parse(line))
+      } catch { /* skip malformed lines */ }
+    }
+  }
+  if (buffer.trim()) {
+    try { onEvent(JSON.parse(buffer)) } catch { /* skip */ }
   }
 }

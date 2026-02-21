@@ -23,7 +23,7 @@ export function ReputationRenderer({ data }: BlockRendererProps) {
           {isPositive ? '+' : ''}{d.change}
         </span>
       </div>
-      <div className="flex items-center justify-between text-xs text-slate-400">
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>{d.reason}</span>
         <span className="text-amber-300/80 font-medium">{d.rank}</span>
       </div>

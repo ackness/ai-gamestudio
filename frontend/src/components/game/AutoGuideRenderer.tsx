@@ -63,20 +63,20 @@ export function AutoGuideRenderer({ data, blockId, onAction, locked }: BlockRend
   if (locked || submitted) {
     const text = chosenText
     return (
-      <div className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 max-w-[80%] opacity-70">
+      <div className="bg-card border rounded-xl px-4 py-3 max-w-[80%] opacity-70">
         {text ? (
           <p className="auto-guide-submitted">
             已选择：{text}
           </p>
         ) : (
-          <p className="text-slate-500 text-sm">行动建议（已过期）</p>
+          <p className="text-muted-foreground text-sm">行动建议（已过期）</p>
         )}
       </div>
     )
   }
 
   return (
-    <div className="auto-guide bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3">
+    <div className="auto-guide bg-card border rounded-xl px-4 py-3">
       <div
         className="auto-guide-header"
         onClick={() => {

@@ -37,12 +37,12 @@ function DebugModal({
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className="w-full max-w-6xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-3"
+        className="w-full max-w-6xl max-h-[90vh] overflow-y-auto bg-popover border rounded-xl p-4 space-y-3"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <p className="text-sm font-medium text-slate-200">Story Image Debug</p>
-          <button onClick={onClose} className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded">
+          <p className="text-sm font-medium">Story Image Debug</p>
+          <button onClick={onClose} className="text-xs px-2 py-1 bg-muted hover:bg-muted/80 rounded">
             Close
           </button>
         </div>
@@ -51,14 +51,14 @@ function DebugModal({
           <img
             src={payload.image_url}
             alt={payload.prompt || 'story image'}
-            className="w-full max-h-[520px] object-contain rounded-lg border border-slate-700 bg-slate-950"
+            className="w-full max-h-[520px] object-contain rounded-lg border bg-muted"
           />
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-          <div className="bg-slate-950/70 border border-slate-700 rounded p-2 space-y-1">
-            <p className="text-slate-400">Metadata</p>
-            <pre className="text-slate-300 whitespace-pre-wrap break-words">
+          <div className="bg-muted/50 border rounded p-2 space-y-1">
+            <p className="text-muted-foreground">Metadata</p>
+            <pre className="text-foreground/80 whitespace-pre-wrap break-words">
               {JSON.stringify(
                 {
                   image_id: payload.image_id,
@@ -78,23 +78,23 @@ function DebugModal({
             </pre>
           </div>
 
-          <div className="bg-slate-950/70 border border-slate-700 rounded p-2 space-y-1">
-            <p className="text-slate-400">Generated Prompt</p>
-            <pre className="text-slate-300 whitespace-pre-wrap break-words">
+          <div className="bg-muted/50 border rounded p-2 space-y-1">
+            <p className="text-muted-foreground">Generated Prompt</p>
+            <pre className="text-foreground/80 whitespace-pre-wrap break-words">
               {payload.debug?.generated_prompt || '(none)'}
             </pre>
           </div>
 
-          <div className="bg-slate-950/70 border border-slate-700 rounded p-2 space-y-1">
-            <p className="text-slate-400">World Lore Snapshot</p>
-            <pre className="text-slate-300 whitespace-pre-wrap break-words">
+          <div className="bg-muted/50 border rounded p-2 space-y-1">
+            <p className="text-muted-foreground">World Lore Snapshot</p>
+            <pre className="text-foreground/80 whitespace-pre-wrap break-words">
               {payload.debug?.world_lore_excerpt || '(none)'}
             </pre>
           </div>
 
-          <div className="bg-slate-950/70 border border-slate-700 rounded p-2 space-y-1">
-            <p className="text-slate-400">Current Text World State</p>
-            <pre className="text-slate-300 whitespace-pre-wrap break-words">
+          <div className="bg-muted/50 border rounded p-2 space-y-1">
+            <p className="text-muted-foreground">Current Text World State</p>
+            <pre className="text-foreground/80 whitespace-pre-wrap break-words">
               {payload.debug?.text_world_state || '(none)'}
             </pre>
           </div>
@@ -140,9 +140,9 @@ export function StoryImageRenderer({ data, blockId, onAction, locked }: BlockRen
   }
 
   return (
-    <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-3 max-w-[80%] space-y-2">
+    <div className="bg-card border rounded-xl p-3 max-w-[80%] space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-slate-200">{payload.title || 'Story Image'}</p>
+        <p className="text-sm font-medium">{payload.title || 'Story Image'}</p>
         <span
           className={`text-[10px] px-2 py-0.5 rounded ${
             status === 'ok'
@@ -158,7 +158,7 @@ export function StoryImageRenderer({ data, blockId, onAction, locked }: BlockRen
         <img
           src={payload.image_url}
           alt={payload.prompt || 'story image'}
-          className="w-full max-h-[460px] object-contain rounded-lg border border-slate-700 bg-slate-900 cursor-zoom-in"
+          className="w-full max-h-[460px] object-contain rounded-lg border bg-muted cursor-zoom-in"
           loading="lazy"
           onClick={() => setPreviewOpen(true)}
         />
@@ -172,20 +172,20 @@ export function StoryImageRenderer({ data, blockId, onAction, locked }: BlockRen
         <div className="space-y-2">
           <button
             onClick={() => setExpanded((v) => !v)}
-            className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             {expanded ? 'Hide context' : 'Show context'}
           </button>
           {expanded && (
-            <div className="space-y-2 text-xs text-slate-300 bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2">
+            <div className="space-y-2 text-xs text-foreground/80 bg-muted/50 border rounded-lg px-3 py-2">
               {payload.story_background && (
-                <p><span className="text-slate-400">Background:</span> {payload.story_background}</p>
+                <p><span className="text-muted-foreground">Background:</span> {payload.story_background}</p>
               )}
               {payload.prompt && (
-                <p><span className="text-slate-400">Prompt:</span> {payload.prompt}</p>
+                <p><span className="text-muted-foreground">Prompt:</span> {payload.prompt}</p>
               )}
               {payload.continuity_notes && (
-                <p><span className="text-slate-400">Continuity:</span> {payload.continuity_notes}</p>
+                <p><span className="text-muted-foreground">Continuity:</span> {payload.continuity_notes}</p>
               )}
             </div>
           )}
@@ -199,18 +199,18 @@ export function StoryImageRenderer({ data, blockId, onAction, locked }: BlockRen
           onChange={(e) => setReason(e.target.value)}
           disabled={!canRegenerate}
           placeholder="Optional regeneration note"
-          className="w-full bg-slate-900/70 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 disabled:opacity-50"
+          className="w-full bg-background border border-input rounded px-2 py-1 text-xs placeholder:text-muted-foreground disabled:opacity-50"
         />
         <button
           onClick={handleRegenerate}
           disabled={!canRegenerate}
-          className="text-xs px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-slate-100 rounded transition-colors"
+          className="text-xs px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors"
         >
           Regenerate image
         </button>
         <button
           onClick={() => setPreviewOpen(true)}
-          className="text-xs px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded transition-colors"
+          className="text-xs px-3 py-1.5 bg-muted hover:bg-muted/80 text-foreground rounded transition-colors"
         >
           Debug preview
         </button>

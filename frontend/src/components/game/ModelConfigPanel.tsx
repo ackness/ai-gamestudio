@@ -291,21 +291,21 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
   return (
     <div
       ref={panelRef}
-      className="absolute top-full left-0 mt-1 w-80 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-50 overflow-hidden"
+      className="absolute top-full left-0 mt-1 w-80 bg-popover border rounded-lg shadow-xl z-50 overflow-hidden"
     >
-      <div className="p-3 border-b border-slate-700 flex items-center justify-between">
-        <span className="text-sm font-medium text-slate-200">Model Configuration</span>
-        <button onClick={onClose} className="text-slate-400 hover:text-slate-200 text-lg leading-none">&times;</button>
+      <div className="p-3 border-b flex items-center justify-between">
+        <span className="text-sm font-medium">Model Configuration</span>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-lg leading-none">&times;</button>
       </div>
 
       <div className="p-3 space-y-3 max-h-96 overflow-y-auto">
         {/* Preset Model selector */}
         <div>
-          <label className="text-xs text-slate-400 block mb-1">Model Preset</label>
+          <label className="text-xs text-muted-foreground block mb-1">Model Preset</label>
           <select
             value={selectedPresetId}
             onChange={(e) => handlePresetSelect(e.target.value)}
-            className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
+            className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           >
             <option value="">-- Select a preset --</option>
             <optgroup label="DeepSeek">
@@ -332,12 +332,12 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
 
         {/* Profile selector */}
         <div>
-          <label className="text-xs text-slate-400 block mb-1">Saved Profile</label>
+          <label className="text-xs text-muted-foreground block mb-1">Saved Profile</label>
           <div className="flex gap-1">
             <select
               value={selectedProfileId}
               onChange={(e) => handleProfileSelect(e.target.value)}
-              className="flex-1 bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
+              className="flex-1 bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             >
               <option value="">-- Use global default --</option>
               {profiles.map((p) => (
@@ -349,7 +349,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
             {selectedProfileId && (
               <button
                 onClick={() => handleDeleteProfile(selectedProfileId)}
-                className="px-2 py-1 text-xs text-red-400 hover:text-red-300 hover:bg-slate-700 rounded"
+                className="px-2 py-1 text-xs text-destructive hover:text-destructive/80 hover:bg-muted rounded"
                 title="Delete preset"
               >
                 Del
@@ -361,9 +361,9 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
         {/* Model */}
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <label className="text-xs text-slate-400">Model</label>
+            <label className="text-xs text-muted-foreground">Model</label>
             {sourceLabel('model') && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                 {sourceLabel('model')}
               </span>
             )}
@@ -373,16 +373,16 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
             value={model}
             onChange={(e) => setModel(e.target.value)}
             placeholder={llmInfo?.model || 'gpt-4o-mini'}
-            className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+            className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
 
         {/* API Key */}
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <label className="text-xs text-slate-400">API Key</label>
+            <label className="text-xs text-muted-foreground">API Key</label>
             {sourceLabel('api_key') && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                 {sourceLabel('api_key')}
               </span>
             )}
@@ -392,16 +392,16 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder={llmInfo?.has_key ? '(set in .env)' : 'sk-...'}
-            className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+            className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
 
         {/* API Base */}
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <label className="text-xs text-slate-400">API Base</label>
+            <label className="text-xs text-muted-foreground">API Base</label>
             {sourceLabel('api_base') && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                 {sourceLabel('api_base')}
               </span>
             )}
@@ -411,30 +411,30 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
             value={apiBase}
             onChange={(e) => setApiBase(e.target.value)}
             placeholder={llmInfo?.api_base || 'https://api.openai.com/v1'}
-            className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+            className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
 
         {/* Actions */}
-        <div className="pt-1 border-t border-slate-700" />
+        <div className="pt-1 border-t" />
 
         {/* Image generation config */}
         <div className="space-y-2">
-          <div className="text-xs text-slate-400">Image Generation</div>
+          <div className="text-xs text-muted-foreground">Image Generation</div>
 
           <div>
-            <label className="text-xs text-slate-400 block mb-1">Image Model</label>
+            <label className="text-xs text-muted-foreground block mb-1">Image Model</label>
             <input
               type="text"
               value={imageModel}
               onChange={(e) => setImageModel(e.target.value)}
               placeholder={currentProject?.image_model || 'gemini-2.5-flash-image-preview'}
-              className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             />
           </div>
 
           <div>
-            <label className="text-xs text-slate-400 block mb-1">Image API Key</label>
+            <label className="text-xs text-muted-foreground block mb-1">Image API Key</label>
             <input
               type="password"
               value={imageApiKey}
@@ -446,18 +446,18 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
                     ? '(set in project/.env)'
                     : 'sk-...'
               }
-              className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             />
           </div>
 
           <div>
-            <label className="text-xs text-slate-400 block mb-1">Image API Base</label>
+            <label className="text-xs text-muted-foreground block mb-1">Image API Base</label>
             <input
               type="text"
               value={imageApiBase}
               onChange={(e) => setImageApiBase(e.target.value)}
               placeholder={currentProject?.image_api_base || 'https://api.whatai.cc/v1/chat/completions'}
-              className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             />
           </div>
         </div>
@@ -467,14 +467,14 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
           <button
             onClick={handleSaveToProject}
             disabled={saving}
-            className="flex-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors"
+            className="flex-1 px-3 py-1.5 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 rounded text-xs font-medium transition-colors"
           >
             {saving ? 'Saving...' : 'Save to Project'}
           </button>
           <button
             onClick={() => setShowSaveProfile(true)}
             disabled={!model.trim()}
-            className="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors"
+            className="px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 disabled:opacity-50 rounded text-xs font-medium transition-colors"
           >
             Save as Preset
           </button>
@@ -482,13 +482,13 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
 
         {/* Save as profile form */}
         {showSaveProfile && (
-          <div className="border border-slate-600 rounded p-2 space-y-2">
+          <div className="border rounded p-2 space-y-2">
             <input
               type="text"
               value={saveProfileName}
               onChange={(e) => setSaveProfileName(e.target.value)}
               placeholder="Preset name, e.g. GPT-4o"
-              className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSaveAsProfile()
@@ -499,13 +499,13 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
               <button
                 onClick={handleSaveAsProfile}
                 disabled={saving || !saveProfileName.trim()}
-                className="flex-1 px-2 py-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded text-xs transition-colors"
+                className="flex-1 px-2 py-1 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 rounded text-xs transition-colors"
               >
                 Confirm
               </button>
               <button
                 onClick={() => setShowSaveProfile(false)}
-                className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded text-xs transition-colors"
+                className="px-2 py-1 bg-muted hover:bg-muted/80 text-foreground rounded text-xs transition-colors"
               >
                 Cancel
               </button>
@@ -518,7 +518,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
           <button
             onClick={handleClearProjectConfig}
             disabled={saving}
-            className="w-full px-3 py-1.5 border border-slate-600 hover:bg-slate-700 text-slate-400 hover:text-slate-300 rounded text-xs transition-colors"
+            className="w-full px-3 py-1.5 border hover:bg-muted text-muted-foreground hover:text-foreground rounded text-xs transition-colors"
           >
             Reset to Global Default
           </button>

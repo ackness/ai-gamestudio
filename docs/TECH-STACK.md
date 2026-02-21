@@ -1,6 +1,6 @@
 # AI GameStudio — 技术栈与开发环境
 
-更新日期：2026-02-19
+更新日期：2026-02-22
 
 ---
 
@@ -11,8 +11,8 @@
 | **开发环境** | mise | ✅ 已实现 | 工具版本管理 + 任务运行器 |
 | **包管理 (Python)** | uv | ✅ 已实现 | 替代 pip/poetry，通过 mise 管理 |
 | **前端框架** | Vite + React 19 | ✅ 已实现 | 本地优先 SPA，Vite 更轻量 |
-| **UI 样式** | Tailwind CSS + 自定义组件 | ✅ 已实现 | 未引入 shadcn/ui，完全自定义组件 |
-| **Markdown 编辑器** | 原生 textarea + react-markdown 预览 | ✅ 已实现 | 轻量实现，双栏 编辑/预览 |
+| **UI 样式** | Tailwind CSS v4 + shadcn/ui（Radix） | ✅ 已实现 | 统一主题 Token + 组件变体体系（CVA） |
+| **Markdown 编辑器** | 原生 textarea + frontmatter 元数据面板 | ✅ 已实现 | 支持 AI 修订预览（search/replace）、流式生成与 `.md` 导出 |
 | **状态管理** | Zustand | ✅ 已实现 | 轻量，适合游戏状态管理 |
 | **浏览器存储** | IndexedDB (localDb.ts) | ✅ 已实现 | 离线 / Vercel 无数据库模式 |
 | **后端框架** | FastAPI | ✅ 已实现 | 原生 async，自带 WebSocket |
@@ -23,6 +23,8 @@
 | **模板引擎** | Jinja2 | ✅ 已实现 | Prompt 模板变量替换 |
 | **插件元数据** | manifest.json + python-frontmatter | ✅ 已实现 | V2 manifest 优先，V1 frontmatter 回退 |
 | **实时通信** | WebSocket + HTTP fallback | ✅ 已实现 | 游戏消息推送、LLM 流式输出；Vercel 用 HTTP |
+| **小说生成流** | NDJSON Streaming | ✅ 已实现 | 按章节流式输出：outline/chapter_chunk/chapter/done |
+| **连通性诊断** | `/api/llm/test` | ✅ 已实现 | 测试当前模型配置可用性并返回延迟 |
 | **脚本执行** | Python subprocess | ✅ 已实现 | stdin/stdout JSON，带超时和审计日志 |
 | **审计日志** | JSON-lines (append-only) | ✅ 已实现 | `data/audit/audit_YYYY-MM-DD.jsonl` |
 | **代码质量** | Ruff | ✅ 已实现 | Python lint + format 一体化 |
@@ -37,6 +39,10 @@
 **为什么 Vite 而不是 Next.js**
 
 本项目是本地部署的单页应用，Next.js 的 SSR/ISR/路由约定等能力用不上，反而增加与 Python 后端集成的复杂度。Vite + React 构建出纯静态文件，由 FastAPI 直接托管（生产模式）或 Vite 代理转发（开发模式）。
+
+**为什么引入 shadcn/ui + Radix**
+
+在大规模前端重构后，项目统一为 shadcn/ui 组件体系，底层使用 Radix primitives 保证可访问性，配合 Tailwind + CVA（`class-variance-authority`）统一变体风格，减少手写样式分叉并提升维护效率。
 
 **为什么 LiteLLM 而不是直接调各家 SDK**
 
@@ -164,36 +170,44 @@ ai-gamestudio/
 │   └── src/
 │       ├── pages/               # ProjectListPage, ProjectEditorPage
 │       ├── components/
-│       │   ├── editor/          # CreateProjectWizard, MarkdownEditor
+│       │   ├── editor/          # CreateProjectWizard, MarkdownEditor, NovelPanel
 │       │   ├── game/            # ChatMessages, GamePanel, QuickActions
 │       │   ├── plugins/         # PluginPanel, PluginDetailPanel
-│       │   └── status/          # RuntimeSettingsPanel, game state panels
+│       │   ├── status/          # RuntimeSettingsPanel, game state panels
+│       │   └── ui/              # shadcn/ui primitives（button, dialog, tabs, ...）
 │       ├── hooks/               # 自定义 React Hooks
 │       │   ├── useGameWebSocket.ts  # WebSocket 生命周期 + 回调绑定 + 状态水合
 │       │   ├── useGameActions.ts    # 游戏操作（发送/初始化/重试/触发等）
 │       │   └── useArchive.ts        # 存档版本管理、保存/恢复
 │       ├── stores/              # sessionStore, gameStateStore, projectStore, pluginStore, uiStore
 │       ├── services/
-│       │   ├── api.ts           # REST API client
+│       │   ├── api.ts           # REST API client（含模板流式生成/修订）
 │       │   ├── websocket.ts     # GameWebSocket (WebSocket + HTTP fallback)
 │       │   ├── settingsStorage.ts  # ISettingsStorage 统一存储接口
 │       │   ├── localDb.ts       # IndexedDB wrapper（离线模式）
 │       │   └── idbSync.ts      # 统一 IDB 写入（缓存持久化状态）
+│       ├── utils/
+│       │   ├── browserLlmConfig.ts  # 浏览器本地 LLM/图片模型覆盖配置
+│       │   ├── frontmatter.ts       # 世界文档 frontmatter 解析与序列化
+│       │   └── sessionBootstrap.ts  # 会话启动辅助逻辑
+│       ├── lib/
+│       │   └── utils.ts         # shadcn className 工具（clsx + tailwind-merge）
 │       ├── types/               # TypeScript 类型定义
 │       └── blockRenderers.ts    # Block renderer 注册入口
 │
 ├── backend/
 │   └── app/
-│       ├── main.py              # FastAPI 入口，静态文件托管，/api/health
+│       ├── main.py              # FastAPI 入口，静态文件托管，/api/health, /api/llm/test
 │       ├── api/                 # FastAPI 路由
 │       │   ├── chat.py          # WebSocket + HTTP chat（传输层）
 │       │   ├── debug_log.py     # 调试日志环形缓冲 + story-images 端点
+│       │   ├── novel.py         # 会话小说生成（NDJSON 流式输出）
 │       │   ├── projects.py
 │       │   ├── sessions.py
 │       │   ├── characters.py
 │       │   ├── scenes.py
 │       │   ├── plugins.py
-│       │   ├── templates.py
+│       │   ├── templates.py     # 世界模板列表/详情、流式生成、search/replace 修订
 │       │   ├── archive.py
 │       │   ├── events.py
 │       │   ├── llm_profiles.py
@@ -210,6 +224,7 @@ ai-gamestudio/
 │       │   ├── block_parser.py       # json:xxx Block 提取
 │       │   ├── block_handlers.py     # Block 分发 + 内置 Handler
 │       │   ├── block_validation.py   # Block schema 校验
+│       │   ├── search_replace.py     # search/replace edit block 解析与应用
 │       │   ├── game_state.py         # GameStateManager DB 操作
 │       │   └── event_bus.py          # 请求级事件总线
 │       ├── services/
@@ -220,6 +235,7 @@ ai-gamestudio/
 │       │   ├── command_handlers.py   # WebSocket 消息类型处理器
 │       │   ├── plugin_service.py     # 插件启用状态管理
 │       │   ├── runtime_settings_service.py  # 运行时设置 CRUD
+│       │   ├── novel_service.py      # 小说素材收集、大纲与章节生成
 │       │   ├── image_service.py      # 图片生成
 │       │   └── archive_service.py    # 会话存档与恢复
 │       ├── models/              # SQLModel ORM 模型
@@ -240,6 +256,7 @@ ai-gamestudio/
 ├── templates/worlds/            # 世界观模板
 │   ├── cyberpunk.md
 │   ├── dark-fantasy.md
+│   ├── urban-xianxia.md
 │   ├── wuxia.md
 │   └── epoch.md
 │

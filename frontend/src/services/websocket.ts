@@ -7,7 +7,7 @@ import { idbGetSession, idbGetProject } from './localDb'
 import * as api from './api'
 
 type ChunkCallback = (content: string) => void
-type DoneCallback = (fullContent: string, turnId: string, hasBlocks: boolean, messageId: string) => void
+type DoneCallback = (fullContent: string, turnId: string, hasBlocks: boolean, messageId: string, rawContent: string) => void
 type StateUpdateCallback = (state: Record<string, unknown>) => void
 type BlockCallback = (
   type: string,
@@ -271,7 +271,7 @@ export class GameWebSocket {
         this.onChunk(String(data.content || ''))
         break
       case 'done':
-        this.onDone(String(data.content || ''), String(data.turn_id || ''), !!data.has_blocks, String(data.message_id || ''))
+        this.onDone(String(data.content || ''), String(data.turn_id || ''), !!data.has_blocks, String(data.message_id || ''), String(data.raw_content || data.content || ''))
         break
       case 'state_update':
         this.onStateUpdate((data.data as Record<string, unknown>) || {})

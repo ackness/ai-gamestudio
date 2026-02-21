@@ -1,5 +1,5 @@
 {% set g = runtime_settings.get('auto-guide', {}) if runtime_settings else {} %}
-每次叙事回复末尾**必须**附加 `json:guide`（含 `json:character_sheet` 时不输出）：
+每次叙事回复末尾**必须**附加 `json:guide`（以下情况不输出：含 `json:character_sheet`、开场叙事、用户消息明确要求不输出时）：
 
 ```json:guide
 {

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Users, AlertCircle, Globe, Puzzle, Settings, Clock } from 'lucide-react'
 import { CharacterPanel } from './CharacterPanel'
 import { PluginPanel } from '../plugins/PluginPanel'
 import { EventPanel } from './EventPanel'
@@ -8,31 +9,32 @@ import { RuntimeSettingsPanel } from './RuntimeSettingsPanel'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useUiStore } from '../../stores/uiStore'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-type Tab = 'characters' | 'plugins' | 'events' | 'alerts' | 'world' | 'settings'
+type Tab = 'characters' | 'events' | 'alerts' | 'world' | 'plugins' | 'settings'
 
-const tabDefs: Record<string, { label: string; hint: string }[]> = {
+interface TabDef { label: string; hint: string; icon: React.ElementType }
+
+const tabDefs: Record<string, TabDef[]> = {
   zh: [
-    { label: '角色', hint: '角色状态' },
-    { label: '插件', hint: '插件能力' },
-    { label: '设置', hint: '运行时配置' },
-    { label: '事件', hint: '事件时间线' },
-    { label: '通知', hint: '通知与告警' },
-    { label: '世界', hint: '世界状态' },
+    { label: '角色', hint: '角色状态', icon: Users },
+    { label: '事件', hint: '事件时间线', icon: Clock },
+    { label: '通知', hint: '通知与告警', icon: AlertCircle },
+    { label: '世界', hint: '世界状态', icon: Globe },
+    { label: '插件', hint: '插件能力', icon: Puzzle },
+    { label: '设置', hint: '运行时配置', icon: Settings },
   ],
   en: [
-    { label: 'Characters', hint: 'Character status' },
-    { label: 'Plugins', hint: 'Plugin capabilities' },
-    { label: 'Settings', hint: 'Runtime config' },
-    { label: 'Events', hint: 'Event timeline' },
-    { label: 'Alerts', hint: 'Notifications' },
-    { label: 'World', hint: 'World state' },
+    { label: 'Characters', hint: 'Character status', icon: Users },
+    { label: 'Events', hint: 'Event timeline', icon: Clock },
+    { label: 'Alerts', hint: 'Notifications', icon: AlertCircle },
+    { label: 'World', hint: 'World state', icon: Globe },
+    { label: 'Plugins', hint: 'Plugin capabilities', icon: Puzzle },
+    { label: 'Settings', hint: 'Runtime config', icon: Settings },
   ],
 }
 
-const tabKeys: Tab[] = ['characters', 'plugins', 'settings', 'events', 'alerts', 'world']
-
-const panelsLabel: Record<string, string> = { zh: '面板', en: 'Panels' }
+const tabKeys: Tab[] = ['characters', 'events', 'alerts', 'world', 'plugins', 'settings']
 
 export function SidePanel() {
   const [activeTab, setActiveTab] = useState<Tab>('characters')
@@ -45,55 +47,74 @@ export function SidePanel() {
   const defs = tabDefs[language] ?? tabDefs.en
 
   const tabs = tabKeys.map((key, i) => ({ key, ...defs[i] }))
-  const currentTab = tabs.find((tab) => tab.key === activeTab) || tabs[0]
 
-  const handleTabClick = (tab: Tab) => {
+  const handleTabChange = (value: string) => {
+    const tab = value as Tab
     setActiveTab(tab)
     if (tab === 'alerts' && currentSessionId) {
       markAllRead(currentSessionId)
     }
   }
 
+  const gameTabs = tabs.slice(0, 4)
+  const configTabs = tabs.slice(4)
+
   return (
-    <div className="flex-1 flex overflow-hidden min-h-0">
-      <div className="w-28 shrink-0 border-r border-slate-700 bg-slate-900/40 p-2 space-y-1 overflow-y-auto">
-        <p className="px-1 pb-1 text-[10px] uppercase tracking-wide text-slate-500">{panelsLabel[language] ?? panelsLabel.en}</p>
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => handleTabClick(tab.key)}
-            className={`w-full rounded-lg px-2 py-2 text-left transition-colors ${
-              activeTab === tab.key
-                ? 'bg-slate-800 text-slate-100 ring-1 ring-emerald-500/40'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-            }`}
-          >
-            <div className="flex items-center justify-between gap-1">
-              <span className="text-xs font-medium">{tab.label}</span>
-              {tab.key === 'alerts' && unreadAlerts > 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-300">
-                  {unreadAlerts > 99 ? '99+' : unreadAlerts}
-                </span>
-              )}
-            </div>
-            <p className="text-[10px] text-slate-500 mt-1 leading-tight">{tab.hint}</p>
-          </button>
-        ))}
+    <Tabs value={activeTab} onValueChange={handleTabChange} className="h-full flex overflow-hidden bg-background" orientation="vertical">
+      {/* Icon nav column */}
+      <div className="w-16 border-r shrink-0 bg-muted/20 overflow-y-auto flex flex-col">
+        <TabsList className="flex flex-col h-auto w-full p-1.5 gap-1 bg-transparent justify-start">
+          {gameTabs.map((tab) => {
+            const Icon = tab.icon
+            return (
+              <TabsTrigger
+                key={tab.key}
+                value={tab.key}
+                title={tab.hint}
+                className="w-full h-auto flex flex-col items-center gap-0.5 py-2 px-1 rounded-lg data-[state=active]:bg-primary/10 data-[state=active]:text-primary relative group"
+              >
+                <Icon className="w-4 h-4 transition-all group-hover:scale-110 shrink-0" />
+                <span className="text-[9px] leading-tight font-medium truncate w-full text-center">{tab.label}</span>
+                {tab.key === 'alerts' && unreadAlerts > 0 && (
+                  <span className="absolute top-1 right-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-destructive px-0.5 text-[8px] font-bold text-destructive-foreground">
+                    {unreadAlerts > 9 ? '9+' : unreadAlerts}
+                  </span>
+                )}
+              </TabsTrigger>
+            )
+          })}
+        </TabsList>
+
+        {/* Divider between game and config tabs */}
+        <div className="mx-2 my-1 border-t border-border/50" />
+
+        <TabsList className="flex flex-col h-auto w-full p-1.5 gap-1 bg-transparent justify-start">
+          {configTabs.map((tab) => {
+            const Icon = tab.icon
+            return (
+              <TabsTrigger
+                key={tab.key}
+                value={tab.key}
+                title={tab.hint}
+                className="w-full h-auto flex flex-col items-center gap-0.5 py-2 px-1 rounded-lg data-[state=active]:bg-muted data-[state=active]:text-foreground relative group text-muted-foreground/60"
+              >
+                <Icon className="w-4 h-4 transition-all group-hover:scale-110 shrink-0" />
+                <span className="text-[9px] leading-tight font-medium truncate w-full text-center">{tab.label}</span>
+              </TabsTrigger>
+            )
+          })}
+        </TabsList>
       </div>
-      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <div className="px-3 py-2 border-b border-slate-700 bg-slate-900/30">
-          <p className="text-sm font-medium text-slate-200">{currentTab.label}</p>
-          <p className="text-xs text-slate-500 mt-0.5">{currentTab.hint}</p>
-        </div>
-        <div className="flex-1 overflow-y-auto p-3">
-          {activeTab === 'characters' && <CharacterPanel />}
-          {activeTab === 'plugins' && <PluginPanel />}
-          {activeTab === 'settings' && <RuntimeSettingsPanel />}
-          {activeTab === 'events' && <EventPanel />}
-          {activeTab === 'alerts' && <NotificationPanel />}
-          {activeTab === 'world' && <WorldStatePanel />}
-        </div>
+
+      {/* Content area */}
+      <div className="flex-1 min-w-0 relative overflow-hidden">
+        <TabsContent value="characters" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><CharacterPanel /></TabsContent>
+        <TabsContent value="events" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><EventPanel /></TabsContent>
+        <TabsContent value="alerts" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><NotificationPanel /></TabsContent>
+        <TabsContent value="world" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><WorldStatePanel /></TabsContent>
+        <TabsContent value="plugins" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><PluginPanel /></TabsContent>
+        <TabsContent value="settings" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><RuntimeSettingsPanel /></TabsContent>
       </div>
-    </div>
+    </Tabs>
   )
 }

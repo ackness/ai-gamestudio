@@ -18,12 +18,12 @@ export function SceneUpdateRenderer({ data }: BlockRendererProps) {
           {action === 'move' ? '场景切换' : '场景更新'}
         </span>
       </div>
-      <p className="text-sm text-slate-200 font-medium">{name}</p>
-      {description && <p className="text-xs text-slate-400">{description}</p>}
+      <p className="text-sm font-medium">{name}</p>
+      {description && <p className="text-xs text-muted-foreground">{description}</p>}
       {npcs && npcs.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-1">
           {npcs.map((npc, i) => (
-            <span key={i} className="text-xs bg-slate-700/60 text-slate-300 px-2 py-0.5 rounded">
+            <span key={i} className="text-xs bg-muted text-foreground px-2 py-0.5 rounded">
               {npc.character_name || npc.character_id || 'NPC'}
               {npc.role_in_scene && ` (${npc.role_in_scene})`}
             </span>

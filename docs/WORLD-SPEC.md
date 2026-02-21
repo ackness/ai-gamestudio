@@ -13,13 +13,26 @@
 
 ## Frontmatter（可选）
 
-世界文档可以包含 YAML frontmatter，声明默认启用的插件：
+世界文档可以包含 YAML frontmatter，声明元数据和默认启用的插件：
 
 ```yaml
 ---
+name: "世界名称"
+description: "一句话简介"
+genre: 都市玄幻
+tags: [现代修真, 日常喜剧]
+language: zh
 plugins: [skill-check, combat, inventory, quest, faction, relationship, status-effect, codex]
 ---
 ```
+
+字段说明：
+- `name`：世界名称（与正文一级标题一致）
+- `description`：一句话简介
+- `genre`：类型/题材
+- `tags`：标签数组
+- `language`：语言（zh / en）
+- `plugins`：推荐启用的玩法插件列表
 
 Frontmatter 不是必需的，省略时使用项目默认插件配置。
 

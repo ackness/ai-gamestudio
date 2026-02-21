@@ -35,13 +35,13 @@ export function NotificationRenderer({ data }: BlockRendererProps) {
 
   return (
     <div
-      className={`bg-slate-800/60 border-l-4 ${style.border} rounded-r-xl px-4 py-3 max-w-[80%]`}
+      className={`bg-card border-l-4 ${style.border} rounded-r-xl px-4 py-3 max-w-[80%]`}
     >
       <div className="flex items-start gap-2">
         <span className="text-sm leading-5">{style.icon}</span>
         <div>
           <p className={`text-sm font-medium ${style.titleColor}`}>{title}</p>
-          <p className="text-slate-300 text-sm mt-1">{content}</p>
+          <p className="text-foreground/80 text-sm mt-1">{content}</p>
         </div>
       </div>
     </div>
