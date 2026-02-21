@@ -209,7 +209,7 @@ export function DebugLogPanel({ sessionId, onClose }: Props) {
       <div
         onMouseDown={handleResizeStart}
         className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
-        style={{ background: 'linear-gradient(135deg, transparent 50%, #475569 50%)' }}
+        style={{ background: 'linear-gradient(135deg, transparent 50%, hsl(var(--border)) 50%)' }}
       />
     </div>
   )
