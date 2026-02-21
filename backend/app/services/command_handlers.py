@@ -285,7 +285,10 @@ async def _handle_form_submit(
             )
 
         formatted = ", ".join(f"{k}={v}" for k, v in values.items())
-        content = f"【角色创建完成】{formatted}。请开始冒险叙事。"
+        content = (
+            f"【角色创建完成】{formatted}。请开始冒险叙事。\n"
+            "（这是开场叙事，不要输出 json:guide，让玩家自由开始冒险。）"
+        )
         await _stream_process_message(
             sink, session_id, content,
             llm_overrides=llm_overrides, image_overrides=image_overrides,
