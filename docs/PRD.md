@@ -84,17 +84,18 @@ AI GameStudio 是一个基于 Web 的**低代码 RPG 游戏编辑器与运行平
 ### 4.1 世界观编辑器
 
 - 用户通过 **Markdown 文档** 描述游戏世界观（背景设定、规则、种族、地理等）
-- 所见即所得：编辑世界观的同时，游戏内容实时生成
+- 支持 frontmatter 元数据编辑（name/description/genre/tags/plugins）与 `.md` 导出
+- 支持 AI 流式生成与 AI 指令修订（search/replace 轻量补丁 + 修改预览）
 - 世界观文档即游戏的"源代码"
 
 ### 4.2 插件系统
 
 > 详见 [PLUGIN-SPEC.md](./PLUGIN-SPEC.md)
 
-插件采用 **PLUGIN.md** 格式（参考 [Agent Skills](https://agentskills.io) 规范），以 Markdown 文档 + 可选脚本的方式定义游戏能力。
+插件采用 **manifest.json + PLUGIN.md** 双文件格式（V2 规范），以机器可读元数据 + LLM 可读运行手册共同定义游戏能力。
 
 核心设计原则：
-- **文档驱动**：插件核心是 `PLUGIN.md`，对人和 LLM 都可读
+- **双事实源分层**：`manifest.json` 负责运行时契约，`PLUGIN.md` 负责 LLM 提示与操作手册
 - **渐进式加载**：启动时仅加载插件名称和描述，激活时才加载完整内容
 - **LLM 协作**：插件可声明 LLM 交互模式，将世界状态作为上下文传入模型
 
@@ -235,9 +236,12 @@ LLM 响应中的结构化数据通过 `` ```json:<type> `` 代码块传递。这
 | `character_sheet` | 更新角色数据 | 角色卡片 UI | 角色信息展示/编辑 |
 | `scene_update` | 创建/更新场景 | 场景切换通知 | 场景变更 |
 | `event` | 创建 GameEvent | 事件通知 | 游戏事件 |
+| `notification` | 透传 | 通知卡片 UI | 系统提示/警告 |
 | `choices` | -- | 选项按钮 | 玩家选择 |
-| `form` | -- | 动态表单 | 结构化输入收集 |
-| `notification` | -- | 提示通知 | 系统通知 |
+| `guide` | 透传 | 建议行动 UI | 自动行动建议 |
+| `story_image` | 触发图片生成并落库 | 图片卡片 UI | 场景/消息配图 |
+| `dice_result` | 声明式动作（存储+事件） | 通用卡片 UI | 检定结果 |
+| `plugin_use` | CapabilityExecutor 执行 | 结果 block 渲染 | 插件能力调用协议 |
 
 ---
 
@@ -377,7 +381,7 @@ LLM 响应中的结构化数据通过 `` ```json:<type> `` 代码块传递。这
 | 前端框架 | React 19 + Vite (SPA) |
 | UI 样式 | Tailwind CSS + 自定义组件 |
 | 状态管理 | Zustand |
-| Markdown 编辑器 | 原生 textarea + react-markdown 预览 |
+| Markdown 编辑器 | 原生 textarea + frontmatter 元数据面板 + AI 修订预览 |
 | 浏览器存储 | IndexedDB（离线 / Vercel 模式） |
 | 后端框架 | Python FastAPI |
 | ORM | SQLModel (Pydantic + SQLAlchemy) |
@@ -407,12 +411,13 @@ LLM 响应中的结构化数据通过 `` ```json:<type> `` 代码块传递。这
 ## 8. 已实现功能（当前状态）
 
 ### 核心引擎
-- [x] Web 端世界观 Markdown 编辑器（含模板选择 + AI 生成）
+- [x] Web 端世界观 Markdown 编辑器（模板选择、流式 AI 生成、search/replace AI 修订、frontmatter 元数据编辑、导出）
 - [x] 游戏对话/交互界面（流式输出、Block 渲染、会话管理）
 - [x] LiteLLM 接入（100+ 模型供应商，WebSocket + HTTP 双通道）
 - [x] Prompt 组装器（6 位置注入，Jinja2 模板）
 - [x] 插件系统（manifest.json V2 + PLUGIN.md V1 回退，依赖拓扑排序）
 - [x] Block 协议（提取、校验、分发、前端渲染注册系统）
+- [x] 模型设置增强（预设模型高亮、连接测试 `/api/llm/test`、按项目本地配置）
 
 ### 内置插件（9 个）
 - [x] core-blocks（状态同步、角色卡、场景、事件、通知）
@@ -450,7 +455,7 @@ LLM 响应中的结构化数据通过 `` ```json:<type> `` 代码块传递。这
 | 术语 | 说明 |
 |------|------|
 | 世界观文档 | 用 Markdown 编写的游戏世界设定，是游戏的"源代码" |
-| PLUGIN.md | 插件定义文件，采用 YAML frontmatter + Markdown 格式 |
+| manifest.json + PLUGIN.md | V2 插件双文件：manifest 定义运行时契约，PLUGIN.md 定义 LLM 运行手册 |
 | 全局插件 | 控制整个游戏世界运行规则的插件（如数据库、记忆） |
 | 游戏性插件 | 扩展具体玩法机制的插件（如角色、技能、时间） |
 | DM Agent | Dungeon Master，全局游戏主持人 AI，负责叙事协调和规则裁决 |
@@ -470,7 +475,7 @@ LLM 响应中的结构化数据通过 `` ```json:<type> `` 代码块传递。这
 ## 10. 相关资源
 
 - [架构文档](./ARCHITECTURE.md) — 技术架构详细说明
-- [插件规范文档](./PLUGIN-SPEC.md) — PLUGIN.md 格式完整定义
+- [插件规范文档](./PLUGIN-SPEC.md) — manifest.json + PLUGIN.md 完整定义
 - [技术栈文档](./TECH-STACK.md) — 技术选型与开发环境
 - [Agent Skills 规范](https://agentskills.io/specification) — 插件格式的灵感来源
 - [SillyTavern](https://github.com/SillyTavern/SillyTavern) — 事件系统与扩展架构参考
@@ -478,4 +483,4 @@ LLM 响应中的结构化数据通过 `` ```json:<type> `` 代码块传递。这
 
 ---
 
-*文档版本：v0.4 | 更新日期：2026-02-19*
+*文档版本：v0.5 | 更新日期：2026-02-21*
