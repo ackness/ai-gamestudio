@@ -271,9 +271,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
         )}
 
         {showDebugLog && currentSession && (
-          <div className="absolute top-0 right-0 bottom-0 w-full sm:w-[400px] z-20 shadow-xl border-l bg-background">
-            <DebugLogPanel sessionId={currentSession.id} onClose={() => setShowDebugLog(false)} />
-          </div>
+          <DebugLogPanel sessionId={currentSession.id} onClose={() => setShowDebugLog(false)} />
         )}
       </div>
 
