@@ -15,7 +15,7 @@ interface LootData {
 }
 
 const rarityColors: Record<string, { text: string; bg: string; border: string }> = {
-  common: { text: 'text-slate-400', bg: 'bg-slate-700/40', border: 'border-slate-600/50' },
+  common: { text: 'text-muted-foreground', bg: 'bg-muted/40', border: 'border-border/50' },
   uncommon: { text: 'text-green-400', bg: 'bg-green-900/20', border: 'border-green-700/50' },
   rare: { text: 'text-blue-400', bg: 'bg-blue-900/20', border: 'border-blue-700/50' },
   epic: { text: 'text-purple-400', bg: 'bg-purple-900/20', border: 'border-purple-700/50' },
@@ -61,7 +61,7 @@ export function LootRenderer({ data }: BlockRendererProps) {
                 <span className="text-xs shrink-0">{typeIcons[item.type] || '\uD83D\uDCE6'}</span>
                 <span className={`text-sm font-medium ${rarity.text} truncate`}>{item.name}</span>
                 {item.quantity > 1 && (
-                  <span className="text-slate-500 text-xs">x{item.quantity}</span>
+                  <span className="text-muted-foreground text-xs">x{item.quantity}</span>
                 )}
               </div>
               <span className={`text-xs ${rarity.text} shrink-0 ml-2`}>

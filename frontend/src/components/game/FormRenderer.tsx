@@ -98,13 +98,13 @@ export function FormRenderer({ data, blockId, onAction, locked }: BlockRendererP
 
   if (locked || submitted) {
     return (
-      <div className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 space-y-2 max-w-[80%] opacity-70">
-        <p className="text-slate-400 text-sm font-medium">{title}</p>
+      <div className="bg-card border rounded-xl px-4 py-3 space-y-2 max-w-[80%] opacity-70">
+        <p className="text-muted-foreground text-sm font-medium">{title}</p>
         <div className="space-y-1">
           {fields.map((field) => (
             <div key={field.name} className="text-sm">
-              <span className="text-slate-500">{field.label}：</span>
-              <span className="text-emerald-400">
+              <span className="text-muted-foreground">{field.label}：</span>
+              <span className="text-primary">
                 {field.type === 'checkbox' ? (values[field.name] ? '是' : '否') : String(values[field.name])}
               </span>
             </div>
@@ -116,16 +116,16 @@ export function FormRenderer({ data, blockId, onAction, locked }: BlockRendererP
   }
 
   return (
-    <div className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 space-y-3 max-w-[80%]">
+    <div className="bg-card border rounded-xl px-4 py-3 space-y-3 max-w-[80%]">
       <div>
-        <p className="text-slate-200 text-sm font-medium">{title}</p>
-        {description && <p className="text-slate-400 text-xs mt-1">{description}</p>}
+        <p className="text-sm font-medium">{title}</p>
+        {description && <p className="text-muted-foreground text-xs mt-1">{description}</p>}
       </div>
 
       <div className="space-y-2">
         {fields.map((field) => (
           <div key={field.name}>
-            <label className="block text-xs text-slate-400 mb-1">
+            <label className="block text-xs text-muted-foreground mb-1">
               {field.label}
               {field.required && <span className="text-red-400 ml-0.5">*</span>}
             </label>
@@ -136,7 +136,7 @@ export function FormRenderer({ data, blockId, onAction, locked }: BlockRendererP
                 value={getTextualValue(field.name)}
                 onChange={(e) => updateValue(field.name, e.target.value)}
                 placeholder={field.placeholder}
-                className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               />
             )}
 
@@ -146,7 +146,7 @@ export function FormRenderer({ data, blockId, onAction, locked }: BlockRendererP
                 value={getTextualValue(field.name)}
                 onChange={(e) => updateValue(field.name, e.target.value === '' ? '' : Number(e.target.value))}
                 placeholder={field.placeholder}
-                className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               />
             )}
 
@@ -156,7 +156,7 @@ export function FormRenderer({ data, blockId, onAction, locked }: BlockRendererP
                 onChange={(e) => updateValue(field.name, e.target.value)}
                 placeholder={field.placeholder}
                 rows={3}
-                className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 resize-none"
+                className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
               />
             )}
 
@@ -164,7 +164,7 @@ export function FormRenderer({ data, blockId, onAction, locked }: BlockRendererP
               <select
                 value={getTextualValue(field.name)}
                 onChange={(e) => updateValue(field.name, e.target.value)}
-                className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500"
+                className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               >
                 <option value="">请选择...</option>
                 {(field.options || []).map((opt) => (
@@ -183,12 +183,12 @@ export function FormRenderer({ data, blockId, onAction, locked }: BlockRendererP
                   onChange={(e) => updateValue(field.name, e.target.checked)}
                   className="accent-cyan-500"
                 />
-                <span className="text-sm text-slate-300">{field.placeholder || ''}</span>
+                <span className="text-sm text-foreground/80">{field.placeholder || ''}</span>
               </label>
             )}
 
             {errors[field.name] && (
-              <p className="text-red-400 text-xs mt-0.5">{errors[field.name]}</p>
+              <p className="text-destructive text-xs mt-0.5">{errors[field.name]}</p>
             )}
           </div>
         ))}
@@ -196,7 +196,7 @@ export function FormRenderer({ data, blockId, onAction, locked }: BlockRendererP
 
       <button
         onClick={handleSubmit}
-        className="text-xs px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded transition-colors"
+        className="text-xs px-3 py-1.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded transition-colors"
       >
         {submit_label}
       </button>

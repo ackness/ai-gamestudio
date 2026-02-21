@@ -19,12 +19,12 @@ export function CombatStartRenderer({ data }: BlockRendererProps) {
   return (
     <div className="bg-red-900/20 border border-red-500/40 rounded-xl px-4 py-3 max-w-[80%] space-y-2">
       <p className="text-sm font-medium text-red-300">战斗开始</p>
-      {d.description && <p className="text-xs text-slate-300">{d.description}</p>}
+      {d.description && <p className="text-xs text-foreground/80">{d.description}</p>}
       <div className="space-y-1">
         {sorted.map((c, i) => (
           <div key={i} className="flex items-center justify-between text-xs">
-            <span className="text-slate-200">{c.name}</span>
-            <span className="text-slate-400">
+            <span className="text-foreground">{c.name}</span>
+            <span className="text-muted-foreground">
               HP {c.hp} | 先攻 {c.initiative}
             </span>
           </div>
@@ -60,23 +60,23 @@ export function CombatRoundRenderer({ data }: BlockRendererProps) {
   const isHit = d.hit === true
 
   return (
-    <div className={`${isHit ? 'bg-orange-900/20 border-orange-500/40' : 'bg-slate-800/60 border-slate-600/50'} border rounded-xl px-4 py-3 max-w-[80%] space-y-2`}>
+    <div className={`${isHit ? 'bg-orange-900/20 border-orange-500/40' : 'bg-card border-border/50'} border rounded-xl px-4 py-3 max-w-[80%] space-y-2`}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-slate-200">
+        <p className="text-sm font-medium">
           {d.actor} → {d.target}
         </p>
-        <span className={`text-[10px] px-2 py-0.5 rounded ${isHit ? 'bg-orange-500/30 text-orange-300' : 'bg-slate-600/30 text-slate-400'}`}>
+        <span className={`text-[10px] px-2 py-0.5 rounded ${isHit ? 'bg-orange-500/30 text-orange-300' : 'bg-muted text-muted-foreground'}`}>
           {d.action_type === 'defend' ? '防御' : d.action_type === 'flee' ? '逃跑' : isHit ? '命中' : '未命中'}
         </span>
       </div>
 
-      <div className="flex items-baseline gap-3 text-xs text-slate-300 flex-wrap">
+      <div className="flex items-baseline gap-3 text-xs text-foreground/80 flex-wrap">
         {d.attack_roll !== undefined && d.attack_roll > 0 && (
-          <span>攻击骰: <span className="font-mono font-semibold text-slate-100">{d.attack_roll}</span></span>
+          <span>攻击骰: <span className="font-mono font-semibold text-foreground">{d.attack_roll}</span></span>
         )}
         {isHit && d.damage !== undefined && (
           <span>伤害: <span className="font-mono font-semibold text-red-300">{d.damage}</span>
-            {d.damage_roll && <span className="text-slate-500 ml-1">({d.damage_roll})</span>}
+            {d.damage_roll && <span className="text-muted-foreground ml-1">({d.damage_roll})</span>}
           </span>
         )}
         {d.effects && d.effects.length > 0 && (
@@ -88,19 +88,19 @@ export function CombatRoundRenderer({ data }: BlockRendererProps) {
         <div className="space-y-1">
           {d.hp_changes.map((h, i) => (
             <div key={i} className="flex items-center justify-between text-xs">
-              <span className="text-slate-200">{h.name}</span>
+              <span className="text-foreground">{h.name}</span>
               <span className="font-mono">
                 <span className={h.change < 0 ? 'text-red-400' : 'text-emerald-400'}>
                   {h.change > 0 ? `+${h.change}` : h.change}
                 </span>
-                <span className="text-slate-500 ml-1">→ HP {h.current_hp}{h.max_hp ? `/${h.max_hp}` : ''}</span>
+                <span className="text-muted-foreground ml-1">→ HP {h.current_hp}{h.max_hp ? `/${h.max_hp}` : ''}</span>
               </span>
             </div>
           ))}
         </div>
       )}
 
-      {d.description && <p className="text-xs text-slate-400">{d.description}</p>}
+      {d.description && <p className="text-xs text-muted-foreground">{d.description}</p>}
     </div>
   )
 }
@@ -129,16 +129,16 @@ export function CombatEndRenderer({ data }: BlockRendererProps) {
   return (
     <div className={`${config.bg} border ${config.border} rounded-xl px-4 py-3 max-w-[80%] space-y-2`}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-slate-200">战斗结束</p>
+        <p className="text-sm font-medium">战斗结束</p>
         <span className={`text-[10px] px-2 py-0.5 rounded ${config.text} bg-black/20`}>
           {config.label}
         </span>
       </div>
 
-      {d.description && <p className="text-xs text-slate-300">{d.description}</p>}
+      {d.description && <p className="text-xs text-foreground/80">{d.description}</p>}
 
       {d.survivors && d.survivors.length > 0 && (
-        <p className="text-xs text-slate-400">存活: {d.survivors.join(', ')}</p>
+        <p className="text-xs text-muted-foreground">存活: {d.survivors.join(', ')}</p>
       )}
 
       {d.rewards && (d.rewards.xp || (d.rewards.items && d.rewards.items.length > 0)) && (

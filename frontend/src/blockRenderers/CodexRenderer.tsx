@@ -31,15 +31,15 @@ export function CodexRenderer({ data }: BlockRendererProps) {
   return (
     <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl px-4 py-3 max-w-[80%] space-y-2">
       <div className="flex items-center gap-2">
-        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${isUnlock ? 'bg-amber-500/30 text-amber-300' : 'bg-slate-600/50 text-slate-300'}`}>
+        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${isUnlock ? 'bg-amber-500/30 text-amber-300' : 'bg-muted text-muted-foreground'}`}>
           {isUnlock ? '\u2728 New Discovery!' : '\u{1F504} Updated'}
         </span>
-        <span className="text-slate-500 text-xs flex items-center gap-1">
+        <span className="text-muted-foreground text-xs flex items-center gap-1">
           {cat.icon} {cat.label}
         </span>
       </div>
       <p className="text-amber-200 font-medium">{d.title}</p>
-      <p className="text-slate-300 text-sm">
+      <p className="text-foreground/80 text-sm">
         {needsTruncate && !expanded ? d.content.slice(0, TRUNCATE_LENGTH) + '...' : d.content}
         {needsTruncate && (
           <button
@@ -53,7 +53,7 @@ export function CodexRenderer({ data }: BlockRendererProps) {
       {d.tags && d.tags.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {d.tags.map((tag) => (
-            <span key={tag} className="text-xs bg-slate-700/60 text-slate-400 px-1.5 py-0.5 rounded">
+            <span key={tag} className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded">
               {tag}
             </span>
           ))}

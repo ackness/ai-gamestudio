@@ -131,20 +131,20 @@ export function DebugLogPanel({ sessionId, onClose }: Props) {
   return (
     <div
       ref={panelRef}
-      className="fixed z-[9999] flex flex-col bg-slate-950 border border-slate-600 rounded-lg shadow-2xl text-slate-300 text-xs font-mono"
+      className="fixed z-[9999] flex flex-col bg-popover border rounded-lg shadow-2xl text-foreground text-xs font-mono"
       style={{ left: pos.x, top: pos.y, width: size.w, height: size.h }}
     >
       {/* Draggable header */}
       <div
         onMouseDown={handleDragStart}
-        className="flex items-center justify-between px-3 py-1.5 bg-slate-900 border-b border-slate-700 rounded-t-lg cursor-move select-none shrink-0"
+        className="flex items-center justify-between px-3 py-1.5 bg-muted/50 border-b rounded-t-lg cursor-move select-none shrink-0"
       >
         <div className="flex items-center gap-2">
-          <span className="text-slate-400 font-medium">Debug Log</span>
+          <span className="text-foreground font-medium">Debug Log</span>
           <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-red-500'}`} />
         </div>
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1 text-slate-500 cursor-pointer">
+          <label className="flex items-center gap-1 text-muted-foreground cursor-pointer">
             <input
               type="checkbox"
               checked={autoScroll}
@@ -155,18 +155,18 @@ export function DebugLogPanel({ sessionId, onClose }: Props) {
           </label>
           <button
             onClick={() => setLogs([])}
-            className="px-2 py-0.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded"
+            className="px-2 py-0.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded"
           >
             Clear
           </button>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-lg leading-none">&times;</button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-lg leading-none">&times;</button>
         </div>
       </div>
 
       {/* Log entries */}
       <div className="flex-1 overflow-y-auto px-2 py-1 space-y-0.5">
         {logs.length === 0 && (
-          <div className="text-slate-600 text-center py-4">No log entries yet. Send a message to see events.</div>
+          <div className="text-muted-foreground/50 text-center py-4">No log entries yet. Send a message to see events.</div>
         )}
         {logs.map((entry, i) => {
           const isSend = entry.dir === 'send'
@@ -175,28 +175,28 @@ export function DebugLogPanel({ sessionId, onClose }: Props) {
           const content = entry.payload?.content
           return (
             <details key={i} className="group">
-              <summary className="flex items-center gap-2 py-0.5 px-1 rounded cursor-pointer hover:bg-slate-900">
-                <span className="text-slate-600 w-20 shrink-0">{formatTime(entry.ts)}</span>
+              <summary className="flex items-center gap-2 py-0.5 px-1 rounded cursor-pointer hover:bg-muted/50">
+                <span className="text-muted-foreground/50 w-20 shrink-0">{formatTime(entry.ts)}</span>
                 <span className={`w-4 text-center ${isSend ? 'text-blue-400' : 'text-amber-400'}`}>
                   {isSend ? '\u2191' : '\u2193'}
                 </span>
                 <span className={`px-1.5 py-0 rounded text-[10px] font-medium ${
                   type === 'error' ? 'bg-red-900/50 text-red-400' :
                   type === 'done' ? 'bg-emerald-900/50 text-emerald-400' :
-                  type === 'chunk' ? 'bg-slate-800 text-slate-500' :
+                  type === 'chunk' ? 'bg-muted text-muted-foreground' :
                   type === 'phase_change' ? 'bg-purple-900/50 text-purple-400' :
-                  'bg-slate-800 text-slate-400'
+                  'bg-muted text-muted-foreground'
                 }`}>
                   {type}
                 </span>
                 {type === 'done' && preview != null && (
-                  <span className="text-slate-600 truncate">{String(preview).slice(0, 80)}</span>
+                  <span className="text-muted-foreground/50 truncate">{String(preview).slice(0, 80)}</span>
                 )}
                 {type === 'message' && content != null && (
-                  <span className="text-slate-600 truncate">{String(content).slice(0, 80)}</span>
+                  <span className="text-muted-foreground/50 truncate">{String(content).slice(0, 80)}</span>
                 )}
               </summary>
-              <pre className="ml-8 mr-2 mb-1 p-2 bg-slate-900/80 rounded text-[11px] text-slate-400 overflow-x-auto whitespace-pre-wrap break-all">
+              <pre className="ml-8 mr-2 mb-1 p-2 bg-muted/50 rounded text-[11px] text-foreground/70 overflow-x-auto whitespace-pre-wrap break-all">
                 {formatPayload(entry.payload)}
               </pre>
             </details>

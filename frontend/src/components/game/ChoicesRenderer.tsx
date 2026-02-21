@@ -37,16 +37,16 @@ export function ChoicesRenderer({ data, blockId, onAction, locked }: BlockRender
   if (locked || submitted) {
     const chosenText = chosen.length > 0 ? chosen : [...selected].map((i) => options[i])
     return (
-      <div className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 space-y-2 max-w-[80%] opacity-70">
-        <p className="text-slate-400 text-sm">{prompt}</p>
+      <div className="bg-card border rounded-xl px-4 py-3 space-y-2 max-w-[80%] opacity-70">
+        <p className="text-muted-foreground text-sm">{prompt}</p>
         {chosenText.length > 0 ? (
-          <p className="text-emerald-400 text-sm">
+          <p className="text-primary text-sm">
             已选择：{chosenText.join('、')}
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {options.map((opt, i) => (
-              <span key={i} className="text-sm px-3 py-1.5 bg-slate-700/50 text-slate-500 rounded-lg cursor-not-allowed">
+              <span key={i} className="text-sm px-3 py-1.5 bg-muted text-muted-foreground rounded-lg cursor-not-allowed">
                 {opt}
               </span>
             ))}
@@ -74,19 +74,19 @@ export function ChoicesRenderer({ data, blockId, onAction, locked }: BlockRender
     }
 
     return (
-      <div className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 space-y-2 max-w-[80%]">
-        <p className="text-slate-300 text-sm font-medium">{prompt}</p>
+      <div className="bg-card border rounded-xl px-4 py-3 space-y-2 max-w-[80%]">
+        <p className="text-sm font-medium">{prompt}</p>
         <div className="space-y-1">
           {options.map((opt, i) => (
             <label
               key={i}
-              className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 hover:text-white"
+              className="flex items-center gap-2 cursor-pointer text-sm hover:text-foreground"
             >
               <input
                 type="checkbox"
                 checked={selected.has(i)}
                 onChange={() => toggle(i)}
-                className="accent-cyan-500"
+                className="accent-primary"
               />
               {opt}
             </label>
@@ -95,7 +95,7 @@ export function ChoicesRenderer({ data, blockId, onAction, locked }: BlockRender
         <button
           onClick={confirm}
           disabled={selected.size === 0}
-          className="text-xs px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded transition-colors"
+          className="text-xs px-3 py-1.5 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors"
         >
           确认选择
         </button>
@@ -111,14 +111,14 @@ export function ChoicesRenderer({ data, blockId, onAction, locked }: BlockRender
   }
 
   return (
-    <div className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 space-y-2 max-w-[80%]">
-      <p className="text-slate-300 text-sm font-medium">{prompt}</p>
+    <div className="bg-card border rounded-xl px-4 py-3 space-y-2 max-w-[80%]">
+      <p className="text-sm font-medium">{prompt}</p>
       <div className="flex flex-wrap gap-2">
         {options.map((opt, i) => (
           <button
             key={i}
             onClick={() => handleClick(opt, i)}
-            className="text-sm px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg transition-colors"
+            className="text-sm px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-lg transition-colors"
           >
             {opt}
           </button>

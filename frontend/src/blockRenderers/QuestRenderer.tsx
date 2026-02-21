@@ -52,11 +52,11 @@ export function QuestRenderer({ data }: BlockRendererProps) {
   const totalCount = d.objectives?.length ?? 0
 
   return (
-    <div className={`bg-slate-800/60 border ${style.border} rounded-xl px-4 py-3 max-w-[80%] space-y-2`}>
+    <div className={`bg-card border ${style.border} rounded-xl px-4 py-3 max-w-[80%] space-y-2`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm">{style.icon}</span>
-          <span className="text-slate-100 text-sm font-medium">{d.title}</span>
+          <span className="text-sm font-medium">{d.title}</span>
         </div>
         <span className={`text-xs px-2 py-0.5 rounded-full ${style.badge}`}>
           {style.badgeText}
@@ -64,21 +64,21 @@ export function QuestRenderer({ data }: BlockRendererProps) {
       </div>
 
       {d.description && (
-        <p className="text-slate-400 text-xs leading-relaxed">{d.description}</p>
+        <p className="text-muted-foreground text-xs leading-relaxed">{d.description}</p>
       )}
 
       {d.objectives && d.objectives.length > 0 && (
         <div className="space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-slate-500 text-xs">{'\u76EE\u6807'}</span>
-            <span className="text-slate-500 text-xs">{completedCount}/{totalCount}</span>
+            <span className="text-muted-foreground text-xs">{'\u76EE\u6807'}</span>
+            <span className="text-muted-foreground text-xs">{completedCount}/{totalCount}</span>
           </div>
           {d.objectives.map((obj) => (
             <div key={obj.id} className="flex items-start gap-2">
-              <span className={`text-xs mt-0.5 ${obj.completed ? 'text-emerald-400' : 'text-slate-600'}`}>
+              <span className={`text-xs mt-0.5 ${obj.completed ? 'text-emerald-400' : 'text-muted-foreground/40'}`}>
                 {obj.completed ? '\u25C9' : '\u25CB'}
               </span>
-              <span className={`text-xs ${obj.completed ? 'text-slate-500 line-through' : 'text-slate-300'}`}>
+              <span className={`text-xs ${obj.completed ? 'text-muted-foreground line-through' : 'text-foreground/80'}`}>
                 {obj.text}
               </span>
             </div>
@@ -87,8 +87,8 @@ export function QuestRenderer({ data }: BlockRendererProps) {
       )}
 
       {d.rewards && (
-        <div className="flex items-center gap-3 pt-1 border-t border-slate-700/50">
-          <span className="text-slate-500 text-xs">{'\u5956\u52B1'}</span>
+        <div className="flex items-center gap-3 pt-1 border-t">
+          <span className="text-muted-foreground text-xs">{'\u5956\u52B1'}</span>
           {d.rewards.xp != null && (
             <span className="text-cyan-400 text-xs">{d.rewards.xp} XP</span>
           )}

@@ -104,10 +104,10 @@ export function CharacterSheetRenderer({ data, blockId, onAction, locked }: Bloc
     }
   }
 
-  const borderClass = confirmed ? 'border-emerald-600' : 'border-slate-700'
+  const borderClass = confirmed ? 'border-primary' : 'border-border'
 
   return (
-    <div className={`bg-slate-800/60 border ${borderClass} rounded-xl px-4 py-3 space-y-3 max-w-[80%]`}>
+    <div className={`bg-card border ${borderClass} rounded-xl px-4 py-3 space-y-3 max-w-[80%]`}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -119,12 +119,12 @@ export function CharacterSheetRenderer({ data, blockId, onAction, locked }: Bloc
                 setEditedName(e.target.value)
                 setInteraction(blockId, { editedName: e.target.value })
               }}
-              className="bg-slate-700 border border-emerald-600/50 rounded px-2 py-1 text-sm text-slate-200 font-medium focus:outline-none focus:border-emerald-500"
+              className="bg-background border border-primary/50 rounded px-2 py-1 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-primary"
             />
           ) : (
-            <h3 className="text-slate-200 text-sm font-medium">{confirmed ? editedName : name}</h3>
+            <h3 className="text-sm font-medium">{confirmed ? editedName : name}</h3>
           )}
-          {role && <span className="text-xs text-slate-500 ml-2">{role}</span>}
+          {role && <span className="text-xs text-muted-foreground ml-2">{role}</span>}
         </div>
         {character_id === 'new' && !confirmed && (
           <span className="text-xs text-cyan-400 bg-cyan-900/30 px-2 py-0.5 rounded">新角色</span>
@@ -132,16 +132,16 @@ export function CharacterSheetRenderer({ data, blockId, onAction, locked }: Bloc
       </div>
 
       {/* Description */}
-      {description && <p className="text-slate-400 text-xs">{description}</p>}
+      {description && <p className="text-muted-foreground text-xs">{description}</p>}
 
       {/* Attributes */}
       {Object.keys(editedAttrs).length > 0 && (
         <div>
-          <p className="text-xs text-slate-500 mb-1">属性</p>
+          <p className="text-xs text-muted-foreground mb-1">属性</p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1">
             {Object.entries(editedAttrs).map(([key, value]) => (
               <div key={key} className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">{key}</span>
+                <span className="text-muted-foreground">{key}</span>
                 {isEditable(key) && !confirmed ? (
                   <input
                     type={typeof value === 'number' ? 'number' : 'text'}
@@ -152,10 +152,10 @@ export function CharacterSheetRenderer({ data, blockId, onAction, locked }: Bloc
                         typeof value === 'number' ? Number(e.target.value) : e.target.value
                       )
                     }
-                    className="w-20 bg-slate-700 border border-emerald-600/50 rounded px-1.5 py-0.5 text-xs text-slate-200 text-right focus:outline-none focus:border-emerald-500"
+                    className="w-20 bg-background border border-primary/50 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 ) : (
-                  <span className="text-slate-200">{String(confirmed ? editedAttrs[key] : value)}</span>
+                  <span className="text-foreground">{String(confirmed ? editedAttrs[key] : value)}</span>
                 )}
               </div>
             ))}
@@ -166,10 +166,10 @@ export function CharacterSheetRenderer({ data, blockId, onAction, locked }: Bloc
       {/* Inventory */}
       {inventory.length > 0 && (
         <div>
-          <p className="text-xs text-slate-500 mb-1">物品</p>
+          <p className="text-xs text-muted-foreground mb-1">物品</p>
           <div className="flex flex-wrap gap-1">
             {inventory.map((item, i) => (
-              <span key={i} className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">
+              <span key={i} className="text-xs bg-muted text-foreground px-2 py-0.5 rounded">
                 {item}
               </span>
             ))}
@@ -181,7 +181,7 @@ export function CharacterSheetRenderer({ data, blockId, onAction, locked }: Bloc
       {!confirmed && (
         <button
           onClick={handleConfirm}
-          className="text-xs px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded transition-colors"
+          className="text-xs px-3 py-1.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded transition-colors"
         >
           确认
         </button>
