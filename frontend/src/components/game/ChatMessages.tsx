@@ -334,7 +334,7 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
           if (msg.role === 'system') {
             return (
               <div key={msg.id} className="flex justify-center group py-2">
-                <Badge variant="secondary" className="px-4 py-1.5 text-xs font-normal bg-muted text-muted-foreground shadow-sm">
+                <Badge variant="secondary" className="px-4 py-1.5 text-xs font-normal bg-muted text-muted-foreground shadow-sm whitespace-normal text-center max-w-lg break-words">
                   {msg.content}
                 </Badge>
               </div>
