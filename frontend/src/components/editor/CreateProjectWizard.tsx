@@ -85,14 +85,17 @@ export function CreateProjectWizard({ open, onClose }: Props) {
     setGenerating(true)
     setGenerateError('')
     try {
-      const result = await api.generateWorld({
-        genre: aiGenre.trim(),
-        setting: aiSetting.trim() || undefined,
-        tone: aiTone.trim() || undefined,
-        language: aiLang,
-        extra_notes: aiExtra.trim() || undefined,
-      })
-      setGeneratedDoc(result.world_doc)
+      let doc = ''
+      await api.generateWorldStream(
+        {
+          genre: aiGenre.trim(),
+          setting: aiSetting.trim() || undefined,
+          tone: aiTone.trim() || undefined,
+          language: aiLang,
+          extra_notes: aiExtra.trim() || undefined,
+        },
+        (chunk) => { doc += chunk; setGeneratedDoc(doc) },
+      )
     } catch (err) {
       console.error('Failed to generate world:', err)
       setGenerateError(err instanceof Error ? err.message : '生成失败，请重试')

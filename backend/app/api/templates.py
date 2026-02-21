@@ -4,11 +4,13 @@ from pathlib import Path
 
 import frontmatter
 from fastapi import APIRouter, Header, HTTPException
+from fastapi.responses import JSONResponse, StreamingResponse
 from loguru import logger
 from pydantic import BaseModel
 
 from backend.app.core.config import settings
 from backend.app.core.llm_gateway import completion
+from backend.app.core.search_replace import apply_edits, is_search_replace, parse_edits
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
@@ -36,6 +38,16 @@ class GenerateWorldRequest(BaseModel):
 
 
 class GenerateWorldResponse(BaseModel):
+    world_doc: str
+
+
+class ReviseWorldRequest(BaseModel):
+    world_doc: str
+    instruction: str
+    language: str | None = "zh"
+
+
+class ReviseWorldResponse(BaseModel):
     world_doc: str
 
 
@@ -121,7 +133,7 @@ async def generate_world(
         "- Do NOT include any json:xxx block format details (e.g. json:state_update, json:event). "
         "Block formats are defined by the plugin system, not the world document.\n"
         "- The '玩法触发指引' section is REQUIRED — describe WHEN each game mechanic triggers in the world's narrative language.\n"
-        "- The frontmatter MUST include a 'plugins' field listing recommended gameplay plugins.\n\n"
+        "- The document MUST start with YAML frontmatter containing: name, description, genre, tags (array), language, plugins (array of recommended gameplay plugin names).\n\n"
         f"--- WORLD-SPEC ---\n{world_spec}"
     )
 
@@ -144,9 +156,83 @@ async def generate_world(
 
     result = await completion(
         messages,
-        stream=False,
+        stream=True,
         model=x_llm_model,
         api_key=x_llm_api_key,
         api_base=x_llm_api_base,
     )
-    return GenerateWorldResponse(world_doc=result)
+
+    async def _stream():
+        async for chunk in result:
+            yield chunk
+
+    return StreamingResponse(_stream(), media_type="text/plain; charset=utf-8")
+
+
+@router.post("/worlds/revise")
+async def revise_world(
+    body: ReviseWorldRequest,
+    x_llm_model: str | None = Header(default=None),
+    x_llm_api_key: str | None = Header(default=None),
+    x_llm_api_base: str | None = Header(default=None),
+):
+    """Revise an existing world document using search/replace blocks."""
+    lang = body.language or "zh"
+
+    system_prompt = (
+        "You are a world-document editor. "
+        "The user provides an existing document and an edit instruction.\n\n"
+        "OUTPUT FORMAT — output ONLY search/replace blocks:\n\n"
+        "<<<<<<< SEARCH\n"
+        "exact text from the original document\n"
+        "=======\n"
+        "replacement text\n"
+        ">>>>>>> REPLACE\n\n"
+        "RULES:\n"
+        "- SEARCH text must match the original EXACTLY.\n"
+        "- Include enough context in SEARCH to be unique.\n"
+        "- Use MULTIPLE blocks for changes in different places.\n"
+        "- To insert, use a nearby line as SEARCH anchor and include it + new content in REPLACE.\n"
+        "- Do NOT output the full document.\n"
+        "- Do NOT include any json:xxx blocks.\n"
+        "- The document may start with YAML frontmatter (---). You can edit frontmatter fields too.\n"
+        f"- Write in {lang}.\n"
+    )
+
+    user_prompt = (
+        f"## Current Document\n\n{body.world_doc}\n\n"
+        f"## Edit Instruction\n\n{body.instruction}"
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    result = await completion(
+        messages,
+        stream=True,
+        model=x_llm_model,
+        api_key=x_llm_api_key,
+        api_base=x_llm_api_base,
+    )
+
+    full_output = ""
+    async for chunk in result:
+        full_output += chunk
+
+    if not is_search_replace(full_output):
+        logger.warning("LLM returned full document instead of search/replace blocks")
+        return JSONResponse({"mode": "full", "world_doc": full_output, "edits": []})
+
+    edits = parse_edits(full_output)
+    revised, applied = apply_edits(body.world_doc, edits)
+
+    if len(applied) < len(edits):
+        logger.warning(f"Skipped {len(edits) - len(applied)} unmatched edits")
+
+    return JSONResponse({
+        "mode": "search_replace",
+        "world_doc": revised,
+        "edits": [{"old_text": e.old_text, "new_text": e.new_text} for e in applied],
+    })
