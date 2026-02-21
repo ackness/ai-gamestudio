@@ -1,6 +1,6 @@
 # AI GameStudio Architecture (Current Runtime)
 
-> Describes the architecture implemented in code as of 2026-02-21.
+> Describes the architecture implemented in code as of 2026-02-22.
 
 ---
 
@@ -10,7 +10,8 @@
 Frontend (React + Zustand)
   - Chat UI (streaming, block renderers)
   - Side panels: game (characters/events/alerts/world) + config (plugins/settings)
-  - World editor (Markdown)
+  - Editor area: world / init-prompt / model / novel tabs
+  - 3-pane resizable layout (editor / game / status)
   - Storage: IndexedDB (offline) or backend API
             |
             | WebSocket (/ws/chat/{session_id})
@@ -21,7 +22,9 @@ Backend (FastAPI + SQLModel + SQLite / PostgreSQL)
   - chat.py            — WebSocket & HTTP chat router (transport layer)
   - debug_log.py       — Debug log ring buffer + debug WS/HTTP + story-images
   - command_handlers   — Message type dispatch (init_game, scene_switch, etc.)
+  - novel.py           — NDJSON novel generation endpoint (outline + chapter stream)
   - chat_service       — Turn orchestration (async generator)
+  - novel_service      — Session material extraction + outline/chapter generation
   - turn_context       — TurnContext dataclass + async data loading
   - prompt_assembly    — Pure-function prompt assembly from TurnContext
   - block_processing   — Block extraction, validation, dispatch, event drain
@@ -68,6 +71,15 @@ Frontend stores both `content` (block-stripped) and `raw_content` (full model ou
 ### 2.3 HTTP chat fallback
 
 `POST /api/chat/{session_id}/command` runs the same `process_message` pipeline and returns all events as a JSON array. Used on Vercel (no persistent WebSocket).
+
+### 2.4 Novel generation flow
+
+`POST /api/sessions/{session_id}/novel/generate` streams NDJSON events:
+
+1. `novel_service.collect_novel_material()` gathers `world_doc`, session messages, characters, events.
+2. `novel_service.generate_outline()` returns chapter outline JSON (`title`, `summary`).
+3. For each chapter, `novel_service.generate_chapter()` streams text chunks.
+4. API emits event sequence: `outline` → `chapter_chunk`* → `chapter` (per chapter) → `done`.
 
 ---
 
@@ -242,6 +254,8 @@ The event bus is request-scoped and in-memory:
 | `pluginStore` | Plugin list, enabled flags, detail metadata |
 | `uiStore` | Language toggle, storage persistence flag |
 
+Project editor runtime uses `ResizablePanelGroup` (left editor + center game + right status) and left-side Tabs (`world`, `prompt`, `model`, `novel`).
+
 ### 9.2 Custom hooks
 
 | Hook | Responsibility |
@@ -322,6 +336,7 @@ Restore modes:
 | `characters.py` | `GET /api/sessions/{id}/characters`, `PUT /api/characters/{id}` |
 | `scenes.py` | `GET /api/sessions/{id}/scenes`, `GET /api/sessions/{id}/scenes/current`, `GET /api/scenes/{id}/npcs` |
 | `plugins.py` | `GET /api/plugins`, `POST /api/plugins/{name}/toggle`, `GET /api/plugins/enabled/{project_id}`, `GET /api/plugins/block-schemas`, `GET /api/plugins/block-conflicts`, `POST /api/plugins/import/validate`, `POST /api/plugins/import/install`, `GET /api/plugins/{name}/audit`, `GET /api/plugins/{name}/detail` |
+| `novel.py` | `POST /api/sessions/{session_id}/novel/generate` (NDJSON streaming: outline/chapter events) |
 | `templates.py` | `GET /api/templates/worlds`, `GET /api/templates/worlds/{slug}`, `POST /api/templates/worlds/generate` (streaming), `POST /api/templates/worlds/revise` (search/replace patching) |
 | `runtime_settings.py` | `GET /api/runtime-settings/schema?project_id=...`, `GET /api/runtime-settings?project_id=...(&session_id=...)`, `PATCH /api/runtime-settings` |
 | `main.py` | `GET /api/health`, `GET /api/llm/info`, `GET /api/llm/preset-models`, `POST /api/llm/test` |
@@ -367,5 +382,5 @@ frontend/dist/ → Vercel CDN (built via vercel.json buildCommand)
 
 ---
 
-Document version: `v2.2`
-Updated: `2026-02-21`
+Document version: `v2.3`
+Updated: `2026-02-22`

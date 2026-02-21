@@ -10,7 +10,7 @@ const typeBadgeColors: Record<string, string> = {
   combat: 'bg-red-900/50 text-red-400',
   social: 'bg-blue-900/50 text-blue-400',
   world: 'bg-emerald-900/50 text-emerald-400',
-  system: 'bg-slate-700 text-slate-400',
+  system: 'bg-muted text-muted-foreground',
 }
 
 const statusIcons: Record<string, string> = {
@@ -27,23 +27,23 @@ function EventCard({ event, depth = 0 }: { event: GameEvent; depth?: number }) {
   return (
     <div style={{ marginLeft: depth * 12 }}>
       <div
-        className="flex items-start gap-2 py-1.5 cursor-pointer hover:bg-slate-800/50 rounded px-1 -mx-1"
+        className="flex items-start gap-2 py-1.5 cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1"
         onClick={() => setExpanded(!expanded)}
       >
         <span
           className={`text-xs mt-0.5 ${
             event.status === 'active'
-              ? 'text-emerald-400'
+              ? 'text-primary'
               : event.status === 'resolved'
-                ? 'text-slate-400'
-                : 'text-slate-600'
+                ? 'text-muted-foreground'
+                : 'text-muted-foreground/40'
           }`}
         >
           {statusIcons[event.status] || statusIcons.ended}
         </span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-200 font-medium truncate">{event.name}</span>
+            <span className="text-sm font-medium truncate">{event.name}</span>
             <Badge
               variant="outline"
               className={`text-[10px] px-1.5 py-0 h-auto border-0 ${badgeClass}`}
@@ -52,13 +52,13 @@ function EventCard({ event, depth = 0 }: { event: GameEvent; depth?: number }) {
             </Badge>
           </div>
           {expanded && (
-            <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">{event.description}</p>
+            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{event.description}</p>
           )}
         </div>
       </div>
 
       {expanded && hasChildren && (
-        <div className="border-l border-slate-700 ml-1.5">
+        <div className="border-l border-neutral-300 ml-1.5">
           {event.children!.map((child) => (
             <EventCard key={child.id} event={child} depth={depth + 1} />
           ))}
@@ -76,7 +76,7 @@ export function EventPanel() {
     : []
 
   if (currentSession?.phase === 'init') {
-    return <p className="text-slate-500 text-sm text-center py-4">冒险尚未开始，暂无事件</p>
+    return <p className="text-muted-foreground text-sm text-center py-4">冒险尚未开始，暂无事件</p>
   }
 
   const withChildren = buildEventForest(events)
@@ -85,14 +85,14 @@ export function EventPanel() {
   const ended = withChildren.filter((e) => e.status !== 'active')
 
   if (events.length === 0) {
-    return <p className="text-slate-500 text-sm text-center py-4">暂无事件</p>
+    return <p className="text-muted-foreground text-sm text-center py-4">暂无事件</p>
   }
 
   return (
     <div className="space-y-4">
       {active.length > 0 && (
         <div>
-          <h4 className="text-xs font-medium text-slate-500 uppercase mb-2">活跃事件</h4>
+          <h4 className="text-xs font-medium text-muted-foreground uppercase mb-2">活跃事件</h4>
           <div className="space-y-0.5">
             {active.map((event) => (
               <EventCard key={event.id} event={event} />
@@ -103,7 +103,7 @@ export function EventPanel() {
 
       {ended.length > 0 && (
         <div>
-          <h4 className="text-xs font-medium text-slate-500 uppercase mb-2">已结束事件</h4>
+          <h4 className="text-xs font-medium text-muted-foreground uppercase mb-2">已结束事件</h4>
           <div className="space-y-0.5">
             {ended.map((event) => (
               <EventCard key={event.id} event={event} />

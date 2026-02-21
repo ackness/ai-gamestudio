@@ -40,7 +40,7 @@ export function CharacterPanel() {
 
   if (characters.length === 0) {
     return (
-      <div className="text-center text-slate-500 py-8 text-sm">
+      <div className="text-center text-muted-foreground py-8 text-sm">
         <p>暂无角色</p>
         <p className="text-xs mt-1">角色会随游戏推进出现</p>
       </div>
@@ -55,7 +55,7 @@ export function CharacterPanel() {
           size="sm"
           onClick={handleSync}
           disabled={syncing}
-          className="text-xs text-slate-400 hover:text-slate-200 h-auto py-0.5 px-2"
+          className="text-xs h-auto py-0.5 px-2"
         >
           {syncing ? '同步中...' : '同步角色'}
         </Button>
@@ -68,14 +68,14 @@ export function CharacterPanel() {
         return (
         <div
           key={char.id}
-          className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden"
+          className="rounded-lg border bg-card overflow-hidden"
         >
           <button
             onClick={() => toggleExpand(char.id)}
-            className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-slate-700/50 transition-colors"
+            className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-muted/50 transition-colors"
           >
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-slate-200">{char.name}</span>
+              <span className="text-sm font-medium">{char.name}</span>
               <Badge
                 variant="outline"
                 className={`text-[10px] px-1.5 py-0 h-auto font-medium border-0 ${
@@ -87,37 +87,37 @@ export function CharacterPanel() {
                 {role === 'player' ? '玩家' : 'NPC'}
               </Badge>
             </div>
-            <span className="text-slate-500 text-xs">{expandedIds.has(char.id) ? '-' : '+'}</span>
+            <span className="text-muted-foreground text-xs">{expandedIds.has(char.id) ? '-' : '+'}</span>
           </button>
 
           {expandedIds.has(char.id) && (
-            <div className="px-3 pb-3 border-t border-slate-700 pt-2 text-xs space-y-2">
+            <div className="px-3 pb-3 border-t pt-2 text-xs space-y-2">
               {char.description && (
-                <p className="text-slate-400">{char.description}</p>
+                <p className="text-muted-foreground">{char.description}</p>
               )}
               {char.personality && (
                 <div>
-                  <span className="text-slate-500">性格：</span>
-                  <span className="text-slate-300">{char.personality}</span>
+                  <span className="text-muted-foreground">性格：</span>
+                  <span className="text-foreground">{char.personality}</span>
                 </div>
               )}
               {Object.keys(attrs).length > 0 && (
                 <div className="space-y-1">
-                  <span className="text-slate-500">属性：</span>
+                  <span className="text-muted-foreground">属性：</span>
                   {Object.entries(attrs).map(([key, val]) => (
                     <div key={key} className="flex justify-between ml-2">
-                      <span className="text-slate-400">{key}</span>
-                      <span className="text-slate-300">{String(val)}</span>
+                      <span className="text-muted-foreground">{key}</span>
+                      <span className="text-foreground">{String(val)}</span>
                     </div>
                   ))}
                 </div>
               )}
               {inv.length > 0 && (
                 <div className="space-y-1">
-                  <span className="text-slate-500">物品：</span>
+                  <span className="text-muted-foreground">物品：</span>
                   <div className="flex flex-wrap gap-1 ml-2">
                     {inv.map((item, i) => (
-                      <span key={i} className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">
+                      <span key={i} className="text-xs bg-muted text-foreground px-2 py-0.5 rounded">
                         {normalizeInventoryItem(item)}
                       </span>
                     ))}
