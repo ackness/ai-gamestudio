@@ -6,6 +6,7 @@ import { useUiStore } from '../stores/uiStore'
 import { MarkdownEditor } from '../components/editor/MarkdownEditor'
 import { InitPromptEditor } from '../components/editor/InitPromptEditor'
 import { ModelSettings } from '../components/editor/ModelSettings'
+import { NovelPanel } from '../components/editor/NovelPanel'
 import { GamePanel } from '../components/game/GamePanel'
 import { SidePanel } from '../components/status/SidePanel'
 import { decideSessionBootstrap } from '../utils/sessionBootstrap'
@@ -17,11 +18,11 @@ const SUPPORTED_LANGS = [
 ]
 
 const editorUiText: Record<string, Record<string, string>> = {
-  zh: { worldDoc: '世界文档', initPrompt: '初始提示', status: '状态', loading: '加载项目中...' },
-  en: { worldDoc: 'World Doc', initPrompt: 'Init Prompt', status: 'Status', loading: 'Loading project...' },
+  zh: { worldDoc: '世界文档', initPrompt: '初始提示', status: '状态', loading: '加载项目中...', novel: '小说' },
+  en: { worldDoc: 'World Doc', initPrompt: 'Init Prompt', status: 'Status', loading: 'Loading project...', novel: 'Novel' },
 }
 
-type LeftTab = 'world' | 'init-prompt' | 'model'
+type LeftTab = 'world' | 'init-prompt' | 'model' | 'novel'
 
 export function ProjectEditorPage() {
   const { id } = useParams<{ id: string }>()
@@ -140,6 +141,16 @@ export function ProjectEditorPage() {
                   </span>
                 )}
               </button>
+              <button
+                onClick={() => setLeftTab('novel')}
+                className={`text-xs px-2 py-1 rounded transition-colors ${
+                  leftTab === 'novel'
+                    ? 'bg-slate-700 text-slate-200'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                {et.novel}
+              </button>
             </div>
           )}
           <button
@@ -154,6 +165,7 @@ export function ProjectEditorPage() {
         {!leftCollapsed && leftTab === 'model' && (
           <ModelSettings onLlmInfoChange={handleLlmInfoChange} />
         )}
+        {!leftCollapsed && leftTab === 'novel' && <NovelPanel />}
       </div>
 
       {/* Center Panel - Game Chat */}

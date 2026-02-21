@@ -370,3 +370,52 @@ export async function getSessionStoryImages(sessionId: string): Promise<StoryIma
     return []
   }
 }
+
+// Novel Generation
+export type NovelEvent =
+  | { type: 'outline'; chapters: { title: string; summary: string }[] }
+  | { type: 'chapter_chunk'; index: number; text: string }
+  | { type: 'chapter'; index: number; title: string; content: string }
+  | { type: 'error'; message: string }
+  | { type: 'done' }
+
+export async function generateNovelStream(
+  sessionId: string,
+  options: { style?: string; chapter_count?: number; language?: string },
+  onEvent: (event: NovelEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...buildBrowserLlmHeaders(useProjectStore.getState().currentProject?.id),
+  }
+  const accessKey = String(import.meta.env.VITE_ACCESS_KEY || '').trim()
+  if (accessKey) headers['X-Access-Key'] = accessKey
+
+  const res = await fetch(`${BASE_URL}/sessions/${sessionId}/novel/generate`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(options),
+    signal,
+  })
+  if (!res.ok) throw new Error(`API Error ${res.status}: ${await res.text()}`)
+
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader()
+  let buffer = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += value
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+    for (const line of lines) {
+      if (!line.trim()) continue
+      try {
+        onEvent(JSON.parse(line))
+      } catch { /* skip malformed lines */ }
+    }
+  }
+  if (buffer.trim()) {
+    try { onEvent(JSON.parse(buffer)) } catch { /* skip */ }
+  }
+}

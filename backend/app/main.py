@@ -94,6 +94,7 @@ from backend.app.api.projects import router as projects_router  # noqa: E402
 from backend.app.api.runtime_settings import router as runtime_settings_router  # noqa: E402
 from backend.app.api.scenes import router as scenes_router  # noqa: E402
 from backend.app.api.sessions import router as sessions_router  # noqa: E402
+from backend.app.api.novel import router as novel_router  # noqa: E402
 from backend.app.api.templates import router as templates_router  # noqa: E402
 
 app.include_router(projects_router)
@@ -107,6 +108,7 @@ app.include_router(scenes_router)
 app.include_router(events_router)
 app.include_router(llm_profiles_router)
 app.include_router(templates_router)
+app.include_router(novel_router)
 app.include_router(runtime_settings_router)
 
 
