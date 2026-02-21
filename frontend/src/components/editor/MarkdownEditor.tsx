@@ -4,7 +4,7 @@ import { useUiStore } from '../../stores/uiStore'
 import { reviseWorld, generateWorldStream, getLlmInfo } from '../../services/api'
 import type { ReviseWorldResult } from '../../services/api'
 import { getBrowserLlmConfig } from '../../utils/browserLlmConfig'
-import { parseFrontmatter, serializeFrontmatter, emptyMeta, hasFrontmatter } from '../../utils/frontmatter'
+import { parseFrontmatter, serializeFrontmatter, hasFrontmatter } from '../../utils/frontmatter'
 import type { WorldMeta } from '../../utils/frontmatter'
 
 const T = {
@@ -399,8 +399,8 @@ export function MarkdownEditor() {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/50">
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 border-b">
         {!hasKey && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title={t.noApiKey} />}
         <input
           type="text"
@@ -408,88 +408,88 @@ export function MarkdownEditor() {
           onChange={(e) => setAiInstruction(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && !aiLoading && handleRevise()}
           placeholder={hasKey ? t.aiPlaceholder : t.noApiKey}
-          className="flex-1 px-2 py-1 text-xs bg-slate-800 text-slate-200 rounded border border-slate-700 focus:outline-none focus:border-blue-500"
+          className="flex-1 px-2 py-1 text-xs bg-background text-foreground rounded border border-input focus:outline-none focus:ring-1 focus:ring-ring"
           disabled={aiLoading || reviseResult !== null}
         />
         <button
           onClick={handleRevise}
           disabled={aiLoading || !aiInstruction.trim() || isEmpty || reviseResult !== null}
-          className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+          className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
         >
           {aiLoading ? t.generating : t.aiRevise}
         </button>
         <button
           onClick={handleExport}
           disabled={isEmpty}
-          className="px-2 py-1 text-xs text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+          className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
           title={t.export}
         >
           {t.export}
         </button>
-        <span className="text-xs text-slate-500 whitespace-nowrap">
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
           {saveStatus === 'saving' && t.saving}
           {saveStatus === 'saved' && t.saved}
           {saveStatus === 'error' && t.saveFailed}
         </span>
       </div>
-      {aiError && <div className="px-3 py-1 text-xs text-red-400 bg-red-950/30">{aiError}</div>}
+      {aiError && <div className="px-3 py-1 text-xs text-destructive bg-destructive/10">{aiError}</div>}
       {reviseResult !== null ? (
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex items-center gap-2 px-3 py-1 bg-slate-800/50 border-b border-slate-700">
-            <span className="text-xs text-slate-400 flex-1">
+          <div className="flex items-center gap-2 px-3 py-1 bg-muted/30 border-b">
+            <span className="text-xs text-muted-foreground flex-1">
               {reviseResult.edits.length > 0
                 ? `${reviseResult.edits.length} ${language === 'zh' ? '处修改' : 'change(s)'} — ${t.diffHint}`
                 : t.diffHint}
             </span>
-            <button onClick={handleAccept} className="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-500">{t.accept}</button>
-            <button onClick={handleReject} className="px-3 py-1 text-xs bg-slate-600 text-white rounded hover:bg-slate-500">{t.reject}</button>
+            <button onClick={handleAccept} className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90">{t.accept}</button>
+            <button onClick={handleReject} className="px-3 py-1 text-xs bg-secondary text-secondary-foreground rounded hover:bg-secondary/80">{t.reject}</button>
           </div>
-          <pre className="flex-1 p-4 bg-slate-950 text-sm font-mono overflow-auto leading-relaxed whitespace-pre-wrap">
+          <pre className="flex-1 p-4 bg-muted/20 text-sm font-mono overflow-auto leading-relaxed whitespace-pre-wrap">
             {buildHighlightedSegments(reviseResult.world_doc, reviseResult.edits).map((seg, i) =>
               seg.highlight
                 ? <mark key={i} className="bg-green-900/50 text-green-200 rounded px-0.5">{seg.text}</mark>
-                : <span key={i} className="text-slate-200">{seg.text}</span>
+                : <span key={i} className="text-foreground">{seg.text}</span>
             )}
           </pre>
         </div>
       ) : isEmpty ? (
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="px-6 py-5 space-y-3 border-b border-slate-800">
-            <h3 className="text-sm font-medium text-slate-200">{t.emptyTitle}</h3>
-            <p className="text-xs text-slate-400">{t.emptyDesc}</p>
+          <div className="px-6 py-5 space-y-3 border-b">
+            <h3 className="text-sm font-medium">{t.emptyTitle}</h3>
+            <p className="text-xs text-muted-foreground">{t.emptyDesc}</p>
             <div className="space-y-1">
-              <p className="text-xs text-slate-500 font-medium">{t.emptyStructure}</p>
+              <p className="text-xs text-muted-foreground font-medium">{t.emptyStructure}</p>
               {[t.emptySection1, t.emptySection2, t.emptySection3, t.emptySection4, t.emptySection5, t.emptySection6].map((s) => (
-                <p key={s} className="text-xs text-slate-500 font-mono pl-2">{s}</p>
+                <p key={s} className="text-xs text-muted-foreground font-mono pl-2">{s}</p>
               ))}
             </div>
             <div className="flex items-center gap-3 pt-1">
-              <button onClick={handleUseSkeleton} className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-500">{t.emptyUseTemplate}</button>
-              <button onClick={() => setShowGenForm(true)} disabled={!hasKey} className="px-3 py-1.5 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed">{t.emptyAiGenerate}</button>
-              <span className="text-xs text-slate-600">{t.emptyOrManual}</span>
+              <button onClick={handleUseSkeleton} className="px-3 py-1.5 text-xs bg-secondary text-secondary-foreground rounded hover:bg-secondary/80">{t.emptyUseTemplate}</button>
+              <button onClick={() => setShowGenForm(true)} disabled={!hasKey} className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed">{t.emptyAiGenerate}</button>
+              <span className="text-xs text-muted-foreground/60">{t.emptyOrManual}</span>
             </div>
             {showGenForm && (
-              <div className="space-y-2 pt-2 border-t border-slate-700">
+              <div className="space-y-2 pt-2 border-t">
                 {genLoading ? (
                   <div className="flex items-center gap-2 py-4 justify-center">
-                    <div className="w-4 h-4 border-2 border-slate-600 border-t-emerald-500 rounded-full animate-spin" />
-                    <span className="text-xs text-slate-300">{t.genGenerating}</span>
+                    <div className="w-4 h-4 border-2 border-muted border-t-primary rounded-full animate-spin" />
+                    <span className="text-xs text-foreground">{t.genGenerating}</span>
                   </div>
                 ) : (
                   <>
-                    {genError && <div className="text-xs text-red-400 bg-red-950/30 px-2 py-1 rounded">{genError}</div>}
+                    {genError && <div className="text-xs text-destructive bg-destructive/10 px-2 py-1 rounded">{genError}</div>}
                     <div>
-                      <label className="block text-xs text-slate-400 mb-0.5">{t.genGenre}</label>
-                      <input type="text" value={genGenre} onChange={(e) => setGenGenre(e.target.value)} placeholder={t.genGenrePlaceholder} className="w-full px-2 py-1 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-emerald-500" />
+                      <label className="block text-xs text-muted-foreground mb-0.5">{t.genGenre}</label>
+                      <input type="text" value={genGenre} onChange={(e) => setGenGenre(e.target.value)} placeholder={t.genGenrePlaceholder} className="w-full px-2 py-1 text-xs bg-background border border-input rounded text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div>
-                      <label className="block text-xs text-slate-400 mb-0.5">{t.genSetting}</label>
-                      <input type="text" value={genSetting} onChange={(e) => setGenSetting(e.target.value)} placeholder={t.genSettingPlaceholder} className="w-full px-2 py-1 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-emerald-500" />
+                      <label className="block text-xs text-muted-foreground mb-0.5">{t.genSetting}</label>
+                      <input type="text" value={genSetting} onChange={(e) => setGenSetting(e.target.value)} placeholder={t.genSettingPlaceholder} className="w-full px-2 py-1 text-xs bg-background border border-input rounded text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="flex gap-2">
                       <div className="flex-1">
-                        <label className="block text-xs text-slate-400 mb-0.5">{t.genTone}</label>
-                        <select value={genTone} onChange={(e) => setGenTone(e.target.value)} className="w-full px-2 py-1 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-emerald-500">
+                        <label className="block text-xs text-muted-foreground mb-0.5">{t.genTone}</label>
+                        <select value={genTone} onChange={(e) => setGenTone(e.target.value)} className="w-full px-2 py-1 text-xs bg-background border border-input rounded text-foreground focus:outline-none focus:ring-1 focus:ring-ring">
                           <option value="">{t.genToneNone}</option>
                           <option value="暗黑">暗黑 / Dark</option>
                           <option value="轻松">轻松 / Light</option>
@@ -498,13 +498,13 @@ export function MarkdownEditor() {
                         </select>
                       </div>
                       <div className="flex-1">
-                        <label className="block text-xs text-slate-400 mb-0.5">{t.genExtra}</label>
-                        <input type="text" value={genExtra} onChange={(e) => setGenExtra(e.target.value)} placeholder={t.genExtraPlaceholder} className="w-full px-2 py-1 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-emerald-500" />
+                        <label className="block text-xs text-muted-foreground mb-0.5">{t.genExtra}</label>
+                        <input type="text" value={genExtra} onChange={(e) => setGenExtra(e.target.value)} placeholder={t.genExtraPlaceholder} className="w-full px-2 py-1 text-xs bg-background border border-input rounded text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                       </div>
                     </div>
                     <div className="flex gap-2 pt-1">
-                      <button onClick={handleGenerate} disabled={!genGenre.trim()} className="px-3 py-1 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed">{t.genSubmit}</button>
-                      <button onClick={() => setShowGenForm(false)} className="px-3 py-1 text-xs text-slate-400 hover:text-slate-200">{t.genCancel}</button>
+                      <button onClick={handleGenerate} disabled={!genGenre.trim()} className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed">{t.genSubmit}</button>
+                      <button onClick={() => setShowGenForm(false)} className="px-3 py-1 text-xs text-muted-foreground hover:text-foreground">{t.genCancel}</button>
                     </div>
                   </>
                 )}
@@ -515,43 +515,43 @@ export function MarkdownEditor() {
             value={content}
             onChange={handleChange}
             onBlur={handleBlur}
-            className="flex-1 w-full p-4 bg-slate-950 text-slate-200 text-sm font-mono resize-none focus:outline-none leading-relaxed"
+            className="flex-1 w-full p-4 bg-background text-foreground text-sm font-mono resize-none focus:outline-none leading-relaxed"
             placeholder={t.editorPlaceholder}
             spellCheck={false}
           />
         </div>
       ) : (
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="border-b border-slate-800">
+          <div className="border-b">
             <button
               onClick={() => setShowMeta(!showMeta)}
-              className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+              className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50"
             >
               <span className="text-[10px]">{showMeta ? '▼' : '▶'}</span>
               <span>{t.metaSection}</span>
-              {parsed.meta.name && <span className="text-slate-600 ml-1">— {parsed.meta.name}</span>}
+              {parsed.meta.name && <span className="text-muted-foreground/50 ml-1">— {parsed.meta.name}</span>}
             </button>
             {showMeta && (
               <div className="px-3 pb-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
                 <div>
-                  <label className="block text-[10px] text-slate-500">{t.metaName}</label>
-                  <input type="text" value={parsed.meta.name} onChange={(e) => updateMeta({ name: e.target.value })} className="w-full px-1.5 py-0.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-blue-500" />
+                  <label className="block text-[10px] text-muted-foreground">{t.metaName}</label>
+                  <input type="text" value={parsed.meta.name} onChange={(e) => updateMeta({ name: e.target.value })} className="w-full px-1.5 py-0.5 text-xs bg-background border border-input rounded text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-slate-500">{t.metaGenre}</label>
-                  <input type="text" value={parsed.meta.genre} onChange={(e) => updateMeta({ genre: e.target.value })} className="w-full px-1.5 py-0.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-blue-500" />
+                  <label className="block text-[10px] text-muted-foreground">{t.metaGenre}</label>
+                  <input type="text" value={parsed.meta.genre} onChange={(e) => updateMeta({ genre: e.target.value })} className="w-full px-1.5 py-0.5 text-xs bg-background border border-input rounded text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-[10px] text-slate-500">{t.metaDesc}</label>
-                  <input type="text" value={parsed.meta.description} onChange={(e) => updateMeta({ description: e.target.value })} className="w-full px-1.5 py-0.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-blue-500" />
+                  <label className="block text-[10px] text-muted-foreground">{t.metaDesc}</label>
+                  <input type="text" value={parsed.meta.description} onChange={(e) => updateMeta({ description: e.target.value })} className="w-full px-1.5 py-0.5 text-xs bg-background border border-input rounded text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-slate-500">{t.metaTags}</label>
-                  <input type="text" value={parsed.meta.tags.join(', ')} onChange={(e) => updateMeta({ tags: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} className="w-full px-1.5 py-0.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-blue-500" />
+                  <label className="block text-[10px] text-muted-foreground">{t.metaTags}</label>
+                  <input type="text" value={parsed.meta.tags.join(', ')} onChange={(e) => updateMeta({ tags: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} className="w-full px-1.5 py-0.5 text-xs bg-background border border-input rounded text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-slate-500">{t.metaPlugins}</label>
-                  <input type="text" value={parsed.meta.plugins.join(', ')} onChange={(e) => updateMeta({ plugins: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} className="w-full px-1.5 py-0.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-blue-500" />
+                  <label className="block text-[10px] text-muted-foreground">{t.metaPlugins}</label>
+                  <input type="text" value={parsed.meta.plugins.join(', ')} onChange={(e) => updateMeta({ plugins: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} className="w-full px-1.5 py-0.5 text-xs bg-background border border-input rounded text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                 </div>
               </div>
             )}
@@ -561,7 +561,7 @@ export function MarkdownEditor() {
             onChange={handleBodyChange}
             onPaste={handleBodyPaste}
             onBlur={handleBlur}
-            className="flex-1 w-full p-4 bg-slate-950 text-slate-200 text-sm font-mono resize-none focus:outline-none leading-relaxed"
+            className="flex-1 w-full p-4 bg-background text-foreground text-sm font-mono resize-none focus:outline-none leading-relaxed"
             placeholder={t.editorPlaceholder}
             spellCheck={false}
           />

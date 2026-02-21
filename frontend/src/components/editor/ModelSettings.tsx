@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Server, Settings, Monitor, ShieldCheck, ShieldAlert, Cpu, Eye, EyeOff, Activity, RefreshCcw, Save, Check } from 'lucide-react'
 import type { PresetModel } from '../../types'
 import { useProjectStore } from '../../stores/projectStore'
 import { useUiStore } from '../../stores/uiStore'
@@ -9,6 +10,13 @@ import {
   saveBrowserLlmConfig,
   clearBrowserLlmConfig,
 } from '../../utils/browserLlmConfig'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 const T = {
   zh: {
@@ -35,12 +43,12 @@ const T = {
     imageModel: '图片模型',
     imageApiKey: '图片 API Key',
     imageApiBase: '图片 API Base',
-    save: '保存',
-    saving: '保存中…',
-    saved: '已保存 ✓',
-    reset: '清除项目配置，恢复服务器默认',
+    save: '保存配置',
+    saving: '保存中...',
+    saved: '已保存',
+    reset: '恢复默认设置',
     test: '测试连接',
-    testing: '测试中…',
+    testing: '测试中...',
     testOk: '连接成功',
     testFail: '连接失败',
   },
@@ -68,12 +76,12 @@ const T = {
     imageModel: 'Image Model',
     imageApiKey: 'Image API Key',
     imageApiBase: 'Image API Base',
-    save: 'Save',
-    saving: 'Saving…',
-    saved: 'Saved ✓',
-    reset: 'Clear project config, revert to server default',
+    save: 'Save Config',
+    saving: 'Saving...',
+    saved: 'Saved',
+    reset: 'Reset to Defaults',
     test: 'Test Connection',
-    testing: 'Testing…',
+    testing: 'Testing...',
     testOk: 'Connected',
     testFail: 'Failed',
   },
@@ -146,13 +154,16 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
   }, [currentProject?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Determine where the current config comes from
-  const configSource = (): string => {
+  const getConfigSource = () => {
     const local = currentProject ? getBrowserLlmConfig(currentProject.id) : {}
-    if (local.apiKey || local.model) return t.sourceBrowser
-    if (currentProject?.llm_model || currentProject?.has_llm_api_key) return t.sourceProject
-    if (llmInfo?.source === 'env') return t.sourceEnv
-    return t.sourceDefault
+    if (local.apiKey || local.model) return { label: t.sourceBrowser, icon: Monitor, variant: 'default' as const }
+    if (currentProject?.llm_model || currentProject?.has_llm_api_key) return { label: t.sourceProject, icon: Settings, variant: 'secondary' as const }
+    if (llmInfo?.source === 'env') return { label: t.sourceEnv, icon: Server, variant: 'outline' as const }
+    return { label: t.sourceDefault, icon: Cpu, variant: 'outline' as const }
   }
+
+  const sourceConfig = getConfigSource()
+  const SourceIcon = sourceConfig.icon
 
   const apiKeyStatus = (): { label: string; ok: boolean } => {
     const local = currentProject ? getBrowserLlmConfig(currentProject.id) : {}
@@ -250,200 +261,244 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden text-sm">
-      <div className="flex-1 overflow-y-auto p-4 space-y-5">
+    <div className="flex flex-col h-full bg-background relative">
+      <ScrollArea className="flex-1">
+        <div className="p-4 space-y-6 pb-24">
+          {/* Current effective config banner */}
+          <Card className="bg-muted/30 border-muted">
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t.effectiveLabel}</span>
+                <Badge variant={sourceConfig.variant} className="flex items-center gap-1 text-[10px] font-normal h-5">
+                  <SourceIcon className="w-3 h-3" />
+                  {sourceConfig.label}
+                </Badge>
+              </div>
+              <div className="font-mono text-primary font-medium truncate">
+                {llmInfo?.model || '—'}
+              </div>
+              <div className="flex items-center justify-between pt-1">
+                <div className="flex items-center gap-2 text-xs">
+                  {keyStatus.ok ? (
+                    <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                  ) : (
+                    <ShieldAlert className="w-4 h-4 text-muted-foreground" />
+                  )}
+                  <span className={keyStatus.ok ? 'text-foreground font-medium' : 'text-muted-foreground'}>
+                    {keyStatus.label}
+                  </span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs px-2.5"
+                  onClick={handleTest}
+                  disabled={testing || !keyStatus.ok}
+                >
+                  {testing ? (
+                    <><RefreshCcw className="w-3 h-3 mr-1.5 animate-spin" />{t.testing}</>
+                  ) : (
+                    <><Activity className="w-3 h-3 mr-1.5" />{t.test}</>
+                  )}
+                </Button>
+              </div>
+              {testResult && (
+                <div className={`text-xs px-3 py-2 rounded-md flex flex-col gap-1 border ${
+                  testResult.ok 
+                    ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400' 
+                    : 'bg-destructive/10 text-destructive border-destructive/20'
+                }`}>
+                  <div className="flex items-center font-medium">
+                    {testResult.ok ? t.testOk : t.testFail}
+                    {testResult.ok && <span className="ml-2 opacity-80 font-normal">— {testResult.latency_ms}ms</span>}
+                  </div>
+                  {testResult.ok && testResult.reply ? (
+                    <div className="font-mono text-[10px] opacity-80 truncate">"{testResult.reply.slice(0, 60)}..."</div>
+                  ) : testResult.error ? (
+                    <div className="opacity-80 break-words">{testResult.error}</div>
+                  ) : null}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-        {/* Current effective config banner */}
-        <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-500">{t.effectiveLabel}</span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">
-              {configSource()}
-            </span>
-          </div>
-          <div className="font-mono text-emerald-400 text-sm truncate">
-            {llmInfo?.model || '—'}
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-xs">
-              <span
-                className={`w-1.5 h-1.5 rounded-full shrink-0 ${keyStatus.ok ? 'bg-emerald-500' : 'bg-slate-600'}`}
-              />
-              <span className={keyStatus.ok ? 'text-slate-400' : 'text-slate-600'}>
-                {keyStatus.label}
-              </span>
-            </div>
-            <button
-              onClick={handleTest}
-              disabled={testing || !keyStatus.ok}
-              className="text-[10px] px-2 py-0.5 rounded border border-slate-600 text-slate-400 hover:text-slate-200 hover:border-slate-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              {testing ? t.testing : t.test}
-            </button>
-          </div>
-          {testResult && (
-            <div className={`text-xs px-2 py-1 rounded ${testResult.ok ? 'bg-emerald-950/40 text-emerald-400' : 'bg-red-950/40 text-red-400'}`}>
-              {testResult.ok ? `${t.testOk} — ${testResult.latency_ms}ms` : `${t.testFail}: ${testResult.error}`}
-              {testResult.ok && testResult.reply && <span className="text-slate-500 ml-1.5">"{testResult.reply.slice(0, 50)}"</span>}
+          {/* Quick preset buttons — cloud providers */}
+          {Object.keys(presetGroups).length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Separator className="flex-1" />
+                <span className="text-xs font-medium text-muted-foreground uppercase">{t.cloudProviders}</span>
+                <Separator className="flex-1" />
+              </div>
+              <div className="space-y-4">
+                {Object.entries(presetGroups).map(([provider, items]) => (
+                  <div key={provider} className="space-y-2">
+                    <div className="text-[11px] font-medium text-muted-foreground">
+                      {PROVIDER_NAMES[provider] || provider}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {items.map((p) => (
+                        <Button
+                          key={p.id}
+                          variant={model === p.model ? 'default' : 'outline'}
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => handlePresetClick(p)}
+                        >
+                          {p.name}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
-        </div>
 
-        {/* Quick preset buttons — cloud providers */}
-        {Object.keys(presetGroups).length > 0 && (
-          <div>
-            <div className="text-xs text-slate-500 mb-2">{t.cloudProviders}</div>
-            <div className="space-y-2">
-              {Object.entries(presetGroups).map(([provider, items]) => (
-                <div key={provider}>
-                  <div className="text-[10px] text-slate-600 uppercase tracking-wider mb-1">
-                    {PROVIDER_NAMES[provider] ?? provider}
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {items.map((p) => (
-                      <button
-                        key={p.id}
-                        onClick={() => handlePresetClick(p)}
-                        className={`text-xs px-2.5 py-1 rounded border transition-colors ${
-                          model && model === p.model
-                            ? 'bg-emerald-700/30 border-emerald-600 text-emerald-300'
-                            : 'bg-slate-700/40 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-slate-500'
-                        }`}
-                      >
-                        {p.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+          {/* Local / OpenAI-compatible presets */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Separator className="flex-1" />
+              <span className="text-xs font-medium text-muted-foreground uppercase">{t.localProviders}</span>
+              <Separator className="flex-1" />
+            </div>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {LOCAL_PRESETS.map((p) => (
+                <Button
+                  key={p.id}
+                  variant={apiBase === p.apiBase && p.apiBase ? 'secondary' : 'outline'}
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => {
+                    setModel(p.model)
+                    setApiBase(p.apiBase)
+                    setApiKey(p.apiKey)
+                  }}
+                >
+                  {p.name}
+                </Button>
               ))}
             </div>
+            <p className="text-[11px] text-muted-foreground">{t.customNote}</p>
           </div>
-        )}
 
-        {/* Local / OpenAI-compatible presets */}
-        <div>
-          <div className="text-xs text-slate-500 mb-2">{t.localProviders}</div>
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {LOCAL_PRESETS.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => {
-                  setModel(p.model)
-                  setApiBase(p.apiBase)
-                  setApiKey(p.apiKey)
-                }}
-                className={`text-xs px-2.5 py-1 rounded border transition-colors ${
-                  apiBase === p.apiBase && p.apiBase
-                    ? 'bg-violet-700/30 border-violet-600 text-violet-300'
-                    : 'bg-slate-700/40 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-slate-500'
-                }`}
-              >
-                {p.name}
-              </button>
-            ))}
-          </div>
-          <p className="text-[11px] text-slate-600">{t.customNote}</p>
-        </div>
-
-        {/* Model */}
-        <div>
-          <label className="text-xs text-slate-400 block mb-1.5">{t.model}</label>
-          <input
-            type="text"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder={llmInfo?.model || t.modelPlaceholder}
-            className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 text-sm"
-          />
-        </div>
-
-        {/* API Key */}
-        <div>
-          <label className="text-xs text-slate-400 block mb-1.5">{t.apiKey}</label>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder={llmInfo?.has_key ? `(${t.keyServer})` : t.apiKeyPlaceholder}
-            className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 text-sm"
-          />
-          <p className="text-[11px] text-slate-600 mt-1">{t.apiKeyNote}</p>
-        </div>
-
-        {/* API Base */}
-        <div>
-          <label className="text-xs text-slate-400 block mb-1.5">{t.apiBase}</label>
-          <input
-            type="text"
-            value={apiBase}
-            onChange={(e) => setApiBase(e.target.value)}
-            placeholder={llmInfo?.api_base || t.apiBasePlaceholder}
-            className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 text-sm"
-          />
-        </div>
-
-        {/* Image generation — collapsible */}
-        <div>
-          <button
-            onClick={() => setShowImage(!showImage)}
-            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-400 transition-colors"
-          >
-            <span className="text-[10px]">{showImage ? '▾' : '▸'}</span>
-            {t.imageSection}
-          </button>
-          {showImage && (
-            <div className="mt-3 space-y-3 pl-1 border-l border-slate-700">
-              <div>
-                <label className="text-xs text-slate-400 block mb-1.5">{t.imageModel}</label>
-                <input
-                  type="text"
-                  value={imageModel}
-                  onChange={(e) => setImageModel(e.target.value)}
-                  placeholder={currentProject?.image_model || 'gemini-2.5-flash-image-preview'}
-                  className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 block mb-1.5">{t.imageApiKey}</label>
-                <input
-                  type="password"
-                  value={imageApiKey}
-                  onChange={(e) => setImageApiKey(e.target.value)}
-                  placeholder={currentProject?.has_image_api_key ? '(set)' : t.apiKeyPlaceholder}
-                  className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 block mb-1.5">{t.imageApiBase}</label>
-                <input
-                  type="text"
-                  value={imageApiBase}
-                  onChange={(e) => setImageApiBase(e.target.value)}
-                  placeholder={currentProject?.image_api_base || 'https://...'}
-                  className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 text-sm"
-                />
-              </div>
+          <div className="space-y-4">
+            {/* Model */}
+            <div className="space-y-2">
+              <Label htmlFor="model" className="text-xs text-muted-foreground">{t.model}</Label>
+              <Input
+                id="model"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder={llmInfo?.model || t.modelPlaceholder}
+                className="font-mono text-sm"
+              />
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Footer */}
-      <div className="border-t border-slate-700 p-4 space-y-2 shrink-0">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded text-sm font-medium transition-colors"
-        >
-          {savedMsg ? t.saved : saving ? t.saving : t.save}
-        </button>
-        <button
+            {/* API Key */}
+            <div className="space-y-2">
+              <Label htmlFor="apiKey" className="text-xs text-muted-foreground">{t.apiKey}</Label>
+              <Input
+                id="apiKey"
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={llmInfo?.has_key ? `(${t.keyServer})` : t.apiKeyPlaceholder}
+                className="font-mono text-sm"
+              />
+              <p className="text-[11px] text-muted-foreground">{t.apiKeyNote}</p>
+            </div>
+
+            {/* API Base */}
+            <div className="space-y-2">
+              <Label htmlFor="apiBase" className="text-xs text-muted-foreground">{t.apiBase}</Label>
+              <Input
+                id="apiBase"
+                value={apiBase}
+                onChange={(e) => setApiBase(e.target.value)}
+                placeholder={llmInfo?.api_base || t.apiBasePlaceholder}
+                className="font-mono text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Image generation — collapsible */}
+          <div className="pt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-between px-2 text-xs font-medium text-muted-foreground hover:text-foreground mb-2"
+              onClick={() => setShowImage(!showImage)}
+            >
+              <span className="flex items-center gap-2">
+                <Monitor className="w-3.5 h-3.5" />
+                {t.imageSection}
+              </span>
+              {showImage ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </Button>
+            
+            {showImage && (
+              <div className="space-y-4 p-4 bg-muted/20 border rounded-lg">
+                <div className="space-y-2">
+                  <Label htmlFor="imageModel" className="text-xs text-muted-foreground">{t.imageModel}</Label>
+                  <Input
+                    id="imageModel"
+                    value={imageModel}
+                    onChange={(e) => setImageModel(e.target.value)}
+                    placeholder={currentProject?.image_model || 'gemini-2.5-flash-image-preview'}
+                    className="font-mono text-sm h-8"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="imageApiKey" className="text-xs text-muted-foreground">{t.imageApiKey}</Label>
+                  <Input
+                    id="imageApiKey"
+                    type="password"
+                    value={imageApiKey}
+                    onChange={(e) => setImageApiKey(e.target.value)}
+                    placeholder={currentProject?.has_image_api_key ? '(set)' : t.apiKeyPlaceholder}
+                    className="font-mono text-sm h-8"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="imageApiBase" className="text-xs text-muted-foreground">{t.imageApiBase}</Label>
+                  <Input
+                    id="imageApiBase"
+                    value={imageApiBase}
+                    onChange={(e) => setImageApiBase(e.target.value)}
+                    placeholder={currentProject?.image_api_base || 'https://...'}
+                    className="font-mono text-sm h-8"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </ScrollArea>
+
+      {/* Fixed Footer */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-md border-t flex gap-2">
+        <Button
+          variant="outline"
+          className="flex-1 text-xs"
           onClick={handleReset}
           disabled={saving}
-          className="w-full py-1.5 text-xs text-slate-600 hover:text-slate-400 hover:bg-slate-800 rounded transition-colors"
         >
           {t.reset}
-        </button>
+        </Button>
+        <Button
+          className="flex-1 text-xs font-medium"
+          onClick={handleSave}
+          disabled={saving}
+        >
+          {savedMsg ? (
+            <><Check className="w-3.5 h-3.5 mr-1.5" />{t.saved}</>
+          ) : saving ? (
+            <><RefreshCcw className="w-3.5 h-3.5 mr-1.5 animate-spin" />{t.saving}</>
+          ) : (
+            <><Save className="w-3.5 h-3.5 mr-1.5" />{t.save}</>
+          )}
+        </Button>
       </div>
     </div>
   )

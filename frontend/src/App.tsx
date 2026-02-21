@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { ProjectListPage } from './pages/ProjectListPage'
 import { ProjectEditorPage } from './pages/ProjectEditorPage'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 interface ErrorBoundaryState {
   hasError: boolean
@@ -42,14 +43,16 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
 function App() {
   return (
     <ErrorBoundary>
-      <BrowserRouter>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<ProjectListPage />} />
-            <Route path="/projects/:id" element={<ProjectEditorPage />} />
-          </Routes>
-        </Layout>
-      </BrowserRouter>
+      <TooltipProvider>
+        <BrowserRouter>
+          <Layout>
+            <Routes>
+              <Route path="/" element={<ProjectListPage />} />
+              <Route path="/projects/:id" element={<ProjectEditorPage />} />
+            </Routes>
+          </Layout>
+        </BrowserRouter>
+      </TooltipProvider>
     </ErrorBoundary>
   )
 }

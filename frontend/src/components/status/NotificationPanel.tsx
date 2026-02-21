@@ -1,5 +1,6 @@
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useSessionStore } from '../../stores/sessionStore'
+import { Badge } from '@/components/ui/badge'
 
 const levelStyles: Record<string, { border: string; title: string; chip: string }> = {
   info: {
@@ -60,9 +61,12 @@ export function NotificationPanel() {
           >
             <div className="flex items-center justify-between gap-2">
               <p className={`text-sm font-medium ${style.title}`}>{item.title}</p>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded ${style.chip}`}>
+              <Badge
+                variant="outline"
+                className={`text-[10px] px-1.5 py-0 h-auto border-0 ${style.chip}`}
+              >
                 {item.level}
-              </span>
+              </Badge>
             </div>
             <p className="text-xs leading-relaxed text-slate-300">{item.content}</p>
             <div className="flex items-center justify-between text-[10px] text-slate-500">

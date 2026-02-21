@@ -141,36 +141,36 @@ export function NovelPanel() {
 
   if (!currentSession) {
     return (
-      <div className="flex-1 flex items-center justify-center text-slate-500 text-sm p-4">
+      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm p-4">
         {t.noSession}
       </div>
     )
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Controls */}
-      <div className="px-3 py-2 border-b border-slate-700 space-y-2">
+      <div className="px-3 py-2 border-b space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
-          <label className="text-xs text-slate-400">{t.style}</label>
+          <label className="text-xs text-muted-foreground">{t.style}</label>
           <select
             value={style}
             onChange={(e) => setStyle(e.target.value)}
-            className="text-xs bg-slate-800 text-slate-200 border border-slate-600 rounded px-2 py-1"
+            className="text-xs bg-background text-foreground border border-input rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
             disabled={loading}
           >
             {STYLES.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
-          <label className="text-xs text-slate-400">{t.chapters}</label>
+          <label className="text-xs text-muted-foreground">{t.chapters}</label>
           <input
             type="number"
             min={2}
             max={20}
             value={chapterCount}
             onChange={(e) => setChapterCount(Number(e.target.value))}
-            className="text-xs bg-slate-800 text-slate-200 border border-slate-600 rounded px-2 py-1 w-14"
+            className="text-xs bg-background text-foreground border border-input rounded px-2 py-1 w-14 focus:outline-none focus:ring-1 focus:ring-ring"
             disabled={loading}
           />
         </div>
@@ -178,14 +178,14 @@ export function NovelPanel() {
           {!loading ? (
             <button
               onClick={handleGenerate}
-              className="text-xs px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded transition-colors"
+              className="text-xs px-3 py-1 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
             >
               {t.generate}
             </button>
           ) : (
             <button
               onClick={handleStop}
-              className="text-xs px-3 py-1 bg-red-600 hover:bg-red-500 text-white rounded transition-colors"
+              className="text-xs px-3 py-1 bg-destructive text-destructive-foreground rounded hover:bg-destructive/90 transition-colors"
             >
               {t.stop}
             </button>
@@ -193,37 +193,37 @@ export function NovelPanel() {
           {chapters.length > 0 && chapters.some((c) => c.content) && (
             <button
               onClick={handleDownload}
-              className="text-xs px-3 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition-colors"
+              className="text-xs px-3 py-1 bg-secondary text-secondary-foreground rounded hover:bg-secondary/80 transition-colors"
             >
               {t.download}
             </button>
           )}
           {loading && (
-            <span className="text-xs text-indigo-400 animate-pulse">{t.generating}</span>
+            <span className="text-xs text-primary animate-pulse">{t.generating}</span>
           )}
         </div>
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error && <p className="text-xs text-destructive">{error}</p>}
       </div>
 
       {/* Chapter list + preview */}
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar: chapter list */}
         {chapters.length > 0 && (
-          <div className="w-40 min-w-[140px] border-r border-slate-700 overflow-y-auto">
+          <div className="w-40 min-w-[140px] border-r overflow-y-auto">
             {chapters.map((ch, i) => (
               <button
                 key={i}
                 onClick={() => setActiveIdx(i)}
-                className={`w-full text-left px-3 py-2 text-xs border-b border-slate-700/50 transition-colors ${
+                className={`w-full text-left px-3 py-2 text-xs border-b transition-colors ${
                   activeIdx === i
-                    ? 'bg-slate-700 text-slate-100'
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                 }`}
               >
                 <span className="font-medium">第{i + 1}章</span>
                 <span className="block truncate text-[11px] opacity-70">{ch.title}</span>
                 {streamingIdx === i && (
-                  <span className="inline-block w-1.5 h-1.5 bg-indigo-400 rounded-full animate-pulse ml-1" />
+                  <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse ml-1" />
                 )}
               </button>
             ))}
@@ -233,21 +233,21 @@ export function NovelPanel() {
         {/* Content preview */}
         <div className="flex-1 overflow-y-auto p-4">
           {chapters.length === 0 && !loading && (
-            <p className="text-sm text-slate-500">{t.selectChapter}</p>
+            <p className="text-sm text-muted-foreground">{t.selectChapter}</p>
           )}
           {chapters[activeIdx] && (
             <div className="prose prose-invert prose-sm max-w-none">
-              <h2 className="text-base font-bold text-slate-200 mb-3">
+              <h2 className="text-base font-bold mb-3">
                 第{activeIdx + 1}章 {chapters[activeIdx].title}
               </h2>
               {chapters[activeIdx].summary && (
-                <p className="text-xs text-slate-500 italic mb-3">
+                <p className="text-xs text-muted-foreground italic mb-3">
                   {chapters[activeIdx].summary}
                 </p>
               )}
-              <div className="whitespace-pre-wrap text-slate-300 text-sm leading-relaxed">
+              <div className="whitespace-pre-wrap text-foreground/80 text-sm leading-relaxed">
                 {chapters[activeIdx].content || (
-                  <span className="text-slate-600">
+                  <span className="text-muted-foreground/40">
                     {loading ? '...' : ''}
                   </span>
                 )}

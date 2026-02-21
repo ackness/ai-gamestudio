@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useGameStateStore } from '../../stores/gameStateStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import * as api from '../../services/api'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 
 function normalizeInventoryItem(item: string | { name: string; [key: string]: unknown }): string {
   return typeof item === 'string' ? item : item.name || String(item)
@@ -48,13 +50,15 @@ export function CharacterPanel() {
   return (
     <div className="space-y-2">
       <div className="flex justify-end px-1">
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={handleSync}
           disabled={syncing}
-          className="text-xs text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-50"
+          className="text-xs text-slate-400 hover:text-slate-200 h-auto py-0.5 px-2"
         >
           {syncing ? '同步中...' : '同步角色'}
-        </button>
+        </Button>
       </div>
       {characters.map((char) => {
         const role = char.role || 'npc'
@@ -68,19 +72,20 @@ export function CharacterPanel() {
         >
           <button
             onClick={() => toggleExpand(char.id)}
-            className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-slate-750 transition-colors"
+            className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-slate-700/50 transition-colors"
           >
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-slate-200">{char.name}</span>
-              <span
-                className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+              <Badge
+                variant="outline"
+                className={`text-[10px] px-1.5 py-0 h-auto font-medium border-0 ${
                   role === 'player'
                     ? 'bg-emerald-900/50 text-emerald-400'
                     : 'bg-cyan-900/50 text-cyan-400'
                 }`}
               >
                 {role === 'player' ? '玩家' : 'NPC'}
-              </span>
+              </Badge>
             </div>
             <span className="text-slate-500 text-xs">{expandedIds.has(char.id) ? '-' : '+'}</span>
           </button>

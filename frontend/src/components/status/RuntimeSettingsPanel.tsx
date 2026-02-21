@@ -5,6 +5,14 @@ import { useSessionStore } from '../../stores/sessionStore'
 import { usePluginStore } from '../../stores/pluginStore'
 import { useUiStore } from '../../stores/uiStore'
 import { StorageFactory, type ISettingsStorage } from '../../services/settingsStorage'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { AlertCircle } from 'lucide-react'
 
 type Scope = 'project' | 'session'
 
@@ -204,66 +212,63 @@ export function RuntimeSettingsPanel() {
 
   if (!currentProject) {
     return (
-      <div className="text-center text-slate-500 py-8 text-sm">
+      <div className="text-center text-muted-foreground py-8 text-sm">
         {t.selectProject}
       </div>
     )
   }
 
   if (loading && fields.length === 0) {
-    return <div className="text-center text-slate-500 py-8 text-sm">{t.loading}</div>
+    return <div className="text-center text-muted-foreground py-8 text-sm">{t.loading}</div>
   }
 
   return (
     <div className="space-y-3">
-      <div className="bg-slate-800/70 border border-slate-700 rounded-lg px-3 py-2 space-y-2">
-        <p className="text-xs text-slate-300">
+      <div className="rounded-lg border bg-muted/30 px-3 py-2 space-y-2">
+        <p className="text-xs text-muted-foreground">
           {t.description}
         </p>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400">{t.editScope}</span>
-          <button
+          <span className="text-xs text-muted-foreground">{t.editScope}</span>
+          <Button
+            variant={scope === 'project' ? 'default' : 'secondary'}
+            size="sm"
             onClick={() => setScope('project')}
-            className={`text-xs px-2 py-1 rounded ${
-              scope === 'project'
-                ? 'bg-emerald-700 text-emerald-100'
-                : 'bg-slate-700 text-slate-300'
-            }`}
+            className="text-xs h-6 px-2"
           >
             {t.project}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant={scope === 'session' ? 'default' : 'secondary'}
+            size="sm"
             onClick={() => setScope('session')}
             disabled={!currentSession}
-            className={`text-xs px-2 py-1 rounded disabled:opacity-40 ${
-              scope === 'session'
-                ? 'bg-emerald-700 text-emerald-100'
-                : 'bg-slate-700 text-slate-300'
-            }`}
+            className="text-xs h-6 px-2"
           >
             {t.session}
-          </button>
+          </Button>
         </div>
       </div>
 
       {error && (
-        <div className="text-xs text-red-300 bg-red-900/30 border border-red-700/40 rounded px-2 py-1.5">
-          {error}
-        </div>
+        <Alert variant="destructive" className="py-2">
+          <AlertCircle className="h-3 w-3" />
+          <AlertDescription className="text-xs">{error}</AlertDescription>
+        </Alert>
       )}
 
       {Object.keys(fieldsByPlugin).length === 0 && (
-        <div className="text-center text-slate-500 py-8 text-sm">
+        <div className="text-center text-muted-foreground py-8 text-sm">
           {t.noSettings}
         </div>
       )}
 
       {Object.entries(fieldsByPlugin).map(([pluginName, pluginFields]) => (
-        <div key={pluginName} className="bg-slate-800 border border-slate-700 rounded-lg p-3 space-y-3">
+        <div key={pluginName} className="rounded-lg border bg-card p-3 space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-medium text-slate-200">{pluginDisplayName(pluginName)}</p>
+            <p className="text-sm font-medium">{pluginDisplayName(pluginName)}</p>
             {pluginDisplayName(pluginName) !== pluginName && (
-              <span className="text-[10px] text-slate-500 font-mono">{pluginName}</span>
+              <span className="text-[10px] text-muted-foreground font-mono">{pluginName}</span>
             )}
           </div>
           {pluginFields.map((field) => {
@@ -284,60 +289,63 @@ export function RuntimeSettingsPanel() {
             }
 
             return (
-              <div key={field.key} className="space-y-1 border border-slate-700/70 rounded-md p-2">
+              <div key={field.key} className="space-y-1 border rounded-md p-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs text-slate-200 font-medium">{fieldLabel}</p>
+                  <p className="text-xs font-medium">{fieldLabel}</p>
                   <div className="flex items-center gap-1">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-auto">
                       {field.scope}
-                    </span>
+                    </Badge>
                     {isOverridden && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-900/40 text-cyan-300">
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-auto text-primary">
                         {t.overridden}
-                      </span>
+                      </Badge>
                     )}
                     {savingKey === field.key && (
-                      <span className="text-[10px] text-emerald-300">{t.saving}</span>
+                      <span className="text-[10px] text-primary">{t.saving}</span>
                     )}
                   </div>
                 </div>
 
                 {fieldDescription && (
-                  <p className="text-[11px] text-slate-500">{fieldDescription}</p>
+                  <p className="text-[11px] text-muted-foreground">{fieldDescription}</p>
                 )}
 
                 {field.type === 'boolean' ? (
-                  <label className="inline-flex items-center gap-2 text-xs text-slate-300">
-                    <input
-                      type="checkbox"
+                  <label className="inline-flex items-center gap-2 text-xs text-foreground cursor-pointer">
+                    <Checkbox
                       checked={Boolean(currentValue)}
                       disabled={disabledByScope}
-                      onChange={(e) => patchField(field, e.target.checked)}
+                      onCheckedChange={(checked: boolean) => patchField(field, checked)}
                     />
                     {t.enabled}
                   </label>
                 ) : field.type === 'enum' ? (
-                  <select
+                  <Select
                     value={displayValue(field, currentValue)}
                     disabled={disabledByScope}
-                    onChange={(e) => patchField(field, e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 disabled:opacity-50"
+                    onValueChange={(v: string) => patchField(field, v)}
                   >
-                    {(field.options || []).map((opt) => (
-                      <option key={String(opt.value)} value={String(opt.value)}>
-                        {opt.i18n?.[language]?.label || opt.label}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-7 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(field.options || []).map((opt) => (
+                        <SelectItem key={String(opt.value)} value={String(opt.value)} className="text-xs">
+                          {opt.i18n?.[language]?.label || opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 ) : field.component === 'textarea' ? (
-                  <textarea
+                  <Textarea
                     value={effectiveDisplayValue(currentValue)}
                     disabled={disabledByScope}
                     onChange={(e) => patchField(field, e.target.value)}
-                    className="w-full min-h-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 disabled:opacity-50"
+                    className="min-h-20 text-xs"
                   />
                 ) : (
-                  <input
+                  <Input
                     type={field.type === 'number' || field.type === 'integer' ? 'number' : 'text'}
                     min={field.min}
                     max={field.max}
@@ -345,31 +353,35 @@ export function RuntimeSettingsPanel() {
                     value={effectiveDisplayValue(currentValue)}
                     disabled={disabledByScope}
                     onChange={(e) => patchField(field, e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 disabled:opacity-50"
+                    className="h-7 text-xs"
                   />
                 )}
 
                 <div className="flex items-center justify-between">
-                  <p className="text-[10px] text-slate-500">
+                  <p className="text-[10px] text-muted-foreground">
                     key: <code>{field.key}</code>
                   </p>
                   <div className="flex items-center gap-1">
                     {localizedDefault !== undefined && (
-                      <button
+                      <Button
+                        variant="secondary"
+                        size="sm"
                         onClick={() => patchField(field, localizedDefault)}
                         disabled={disabledByScope}
-                        className="text-[10px] px-2 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 disabled:opacity-50"
+                        className="text-[10px] h-5 px-2"
                       >
                         {t.localizedDefault}
-                      </button>
+                      </Button>
                     )}
-                    <button
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       onClick={() => patchField(field, null, true)}
                       disabled={disabledByScope}
-                      className="text-[10px] px-2 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 disabled:opacity-50"
+                      className="text-[10px] h-5 px-2"
                     >
                       {t.reset}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>

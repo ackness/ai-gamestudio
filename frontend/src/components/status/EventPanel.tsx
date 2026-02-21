@@ -3,6 +3,7 @@ import { useGameStateStore } from '../../stores/gameStateStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { GameEvent } from '../../types'
 import { buildEventForest } from './eventTree'
+import { Badge } from '@/components/ui/badge'
 
 const typeBadgeColors: Record<string, string> = {
   quest: 'bg-amber-900/50 text-amber-400',
@@ -43,9 +44,12 @@ function EventCard({ event, depth = 0 }: { event: GameEvent; depth?: number }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-200 font-medium truncate">{event.name}</span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded ${badgeClass}`}>
+            <Badge
+              variant="outline"
+              className={`text-[10px] px-1.5 py-0 h-auto border-0 ${badgeClass}`}
+            >
               {event.event_type}
-            </span>
+            </Badge>
           </div>
           {expanded && (
             <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">{event.description}</p>
