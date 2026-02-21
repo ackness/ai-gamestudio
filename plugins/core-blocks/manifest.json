@@ -14,7 +14,7 @@
   "capabilities": {},
   "blocks": {
     "state_update": {
-      "instruction": "When character attributes, inventory, or world data changes:\n```json:state_update\n{\"characters\": [{\"name\": \"角色名\", \"attributes\": {\"气血\": 90}, \"inventory\": [\"长剑\"]}], \"world\": {\"world_doc\": \"...\" }}\n```",
+      "instruction": "When character attributes/HP/MP change, items are gained/lost/used, money changes, or skills are learned — output:\n```json:state_update\n{\"characters\": [{\"name\": \"角色名\", \"attributes\": {\"气血\": 90}, \"inventory\": [\"长剑\"]}], \"world\": {\"key\": \"value\"}}\n```\nOnly include fields that actually changed. Trigger on every combat hit, item pickup, trade, or stat modification.",
       "handler": {
         "actions": [
           { "type": "builtin", "handler_name": "state_update" }
@@ -44,7 +44,7 @@
       "requires_response": false
     },
     "event": {
-      "instruction": "When a significant event is created, evolved, resolved, or ended:\n```json:event\n{\"action\": \"create\", \"event_type\": \"quest\", \"name\": \"事件名\", \"description\": \"事件描述\", \"visibility\": \"known\"}\n```\nActions: create, evolve (with event_id of parent), resolve (with event_id), end (with event_id).",
+      "instruction": "Track quest/event lifecycle. create when player accepts a quest or a plot event begins; evolve on major progress; resolve on success; end on failure/abandonment:\n```json:event\n{\"action\": \"create\", \"event_type\": \"quest\", \"name\": \"事件名\", \"description\": \"事件描述\", \"visibility\": \"known\"}\n```\nActions: create, evolve (with event_id), resolve (with event_id), end (with event_id). Every created event MUST eventually resolve or end.",
       "handler": {
         "actions": [
           { "type": "builtin", "handler_name": "event" }
@@ -54,7 +54,7 @@
       "requires_response": false
     },
     "notification": {
-      "instruction": "For player-facing alerts:\n```json:notification\n{\"level\": \"info\", \"title\": \"提示\", \"content\": \"消息内容\"}\n```",
+      "instruction": "Send player-facing alerts for: entering dangerous areas, unlocking abilities, rule reminders (low HP/MP, overweight), environment warnings, achievement/reward notices:\n```json:notification\n{\"level\": \"info\", \"title\": \"提示\", \"content\": \"消息内容\"}\n```\nLevels: info, warning, success, danger.",
       "ui": { "component": "custom", "renderer_name": "notification" },
       "requires_response": false
     }
