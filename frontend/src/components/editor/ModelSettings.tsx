@@ -39,6 +39,10 @@ const T = {
     saving: '保存中…',
     saved: '已保存 ✓',
     reset: '清除项目配置，恢复服务器默认',
+    test: '测试连接',
+    testing: '测试中…',
+    testOk: '连接成功',
+    testFail: '连接失败',
   },
   en: {
     effectiveLabel: 'Effective',
@@ -68,6 +72,10 @@ const T = {
     saving: 'Saving…',
     saved: 'Saved ✓',
     reset: 'Clear project config, revert to server default',
+    test: 'Test Connection',
+    testing: 'Testing…',
+    testOk: 'Connected',
+    testFail: 'Failed',
   },
 }
 
@@ -108,6 +116,8 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
   const [showImage, setShowImage] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; latency_ms: number; reply?: string; error?: string } | null>(null)
+  const [testing, setTesting] = useState(false)
 
   const loadLlmInfo = useCallback(() => {
     api
@@ -161,25 +171,30 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
   const handlePresetClick = (preset: PresetModel) => {
     setModel(preset.model)
     setApiBase(preset.api_base || '')
-    setApiKey('')
+    // preserve existing apiKey — user may have already entered one
   }
 
   const handleSave = async () => {
     if (!currentProject) return
     setSaving(true)
     try {
+      // If user hasn't explicitly set model/apiBase, use the effective values from llmInfo
+      const effectiveModel = model || llmInfo?.model || ''
+      const effectiveApiBase = apiBase || llmInfo?.api_base || ''
       saveBrowserLlmConfig(currentProject.id, {
-        model: model || undefined,
+        model: effectiveModel || undefined,
         apiKey: apiKey || undefined,
-        apiBase: apiBase || undefined,
+        apiBase: effectiveApiBase || undefined,
         imageModel: imageModel || undefined,
         imageApiKey: imageApiKey || undefined,
         imageApiBase: imageApiBase || undefined,
       })
+      setModel(effectiveModel)
+      setApiBase(effectiveApiBase)
       await updateProject({
-        llm_model: model || undefined,
+        llm_model: effectiveModel || undefined,
         llm_api_key: '',
-        llm_api_base: apiBase || undefined,
+        llm_api_base: effectiveApiBase || undefined,
         image_model: imageModel || undefined,
         image_api_key: '',
         image_api_base: imageApiBase || undefined,
@@ -221,6 +236,19 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
 
   const keyStatus = apiKeyStatus()
 
+  const handleTest = async () => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await api.testLlm()
+      setTestResult(res)
+    } catch (e) {
+      setTestResult({ ok: false, latency_ms: 0, error: e instanceof Error ? e.message : 'Unknown error' })
+    } finally {
+      setTesting(false)
+    }
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden text-sm">
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
@@ -236,14 +264,29 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
           <div className="font-mono text-emerald-400 text-sm truncate">
             {llmInfo?.model || '—'}
           </div>
-          <div className="flex items-center gap-1.5 text-xs">
-            <span
-              className={`w-1.5 h-1.5 rounded-full shrink-0 ${keyStatus.ok ? 'bg-emerald-500' : 'bg-slate-600'}`}
-            />
-            <span className={keyStatus.ok ? 'text-slate-400' : 'text-slate-600'}>
-              {keyStatus.label}
-            </span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs">
+              <span
+                className={`w-1.5 h-1.5 rounded-full shrink-0 ${keyStatus.ok ? 'bg-emerald-500' : 'bg-slate-600'}`}
+              />
+              <span className={keyStatus.ok ? 'text-slate-400' : 'text-slate-600'}>
+                {keyStatus.label}
+              </span>
+            </div>
+            <button
+              onClick={handleTest}
+              disabled={testing || !keyStatus.ok}
+              className="text-[10px] px-2 py-0.5 rounded border border-slate-600 text-slate-400 hover:text-slate-200 hover:border-slate-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {testing ? t.testing : t.test}
+            </button>
           </div>
+          {testResult && (
+            <div className={`text-xs px-2 py-1 rounded ${testResult.ok ? 'bg-emerald-950/40 text-emerald-400' : 'bg-red-950/40 text-red-400'}`}>
+              {testResult.ok ? `${t.testOk} — ${testResult.latency_ms}ms` : `${t.testFail}: ${testResult.error}`}
+              {testResult.ok && testResult.reply && <span className="text-slate-500 ml-1.5">"{testResult.reply.slice(0, 50)}"</span>}
+            </div>
+          )}
         </div>
 
         {/* Quick preset buttons — cloud providers */}
@@ -262,7 +305,7 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
                         key={p.id}
                         onClick={() => handlePresetClick(p)}
                         className={`text-xs px-2.5 py-1 rounded border transition-colors ${
-                          model === p.model
+                          model && model === p.model
                             ? 'bg-emerald-700/30 border-emerald-600 text-emerald-300'
                             : 'bg-slate-700/40 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-slate-500'
                         }`}

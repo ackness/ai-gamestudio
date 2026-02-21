@@ -89,12 +89,7 @@ export function getBrowserLlmConfig(projectId?: string | null): BrowserLlmConfig
 }
 
 export function saveBrowserLlmConfig(projectId: string, cfg: Partial<BrowserLlmConfig>): void {
-  const mergedProject = {
-    ...getBrowserLlmConfig(projectId),
-    ...normalizeConfig(cfg),
-  }
-  writeConfig(projectKey(projectId), mergedProject)
-  writeConfig(GLOBAL_KEY, mergedProject)
+  writeConfig(projectKey(projectId), normalizeConfig(cfg))
 }
 
 export function clearBrowserLlmConfig(projectId: string): void {
