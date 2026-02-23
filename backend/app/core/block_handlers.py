@@ -325,8 +325,6 @@ class EventHandler:
 
 class StoryImageHandler:
     async def process(self, data: dict, context: BlockContext) -> dict | None:
-        from backend.app.services.image_service import generate_story_image
-
         if not isinstance(data, dict):
             return {
                 "status": "error",
@@ -352,27 +350,24 @@ class StoryImageHandler:
         )
         layout_preference = str(data.get("layout_preference") or "auto")
 
-        try:
-            return await generate_story_image(
-                context.db,
-                project_id=context.project_id,
-                session_id=context.session_id,
-                title=title,
-                story_background=story_background,
-                prompt=prompt,
-                continuity_notes=continuity_notes,
-                reference_image_ids=reference_image_ids,
-                scene_frames=scene_frames,
-                layout_preference=layout_preference,
-                turn_id=context.turn_id,
-                autocommit=context.autocommit,
-                image_overrides=context.image_overrides,
-                llm_overrides=context.llm_overrides,
-            )
-        except Exception as exc:
-            logger.exception("story_image generation failed")
-            return {
-                "status": "error",
+        # Return a "generating" placeholder immediately.
+        # The actual generation is deferred to a background task by the caller
+        # (see chat.py _stream_process_message) so it does NOT block the
+        # WebSocket message loop.
+        return {
+            "status": "generating",
+            "title": title,
+            "story_background": story_background,
+            "prompt": prompt,
+            "continuity_notes": continuity_notes,
+            "reference_image_ids": reference_image_ids,
+            "scene_frames": scene_frames,
+            "layout_preference": layout_preference,
+            "can_regenerate": False,
+            "_deferred": True,
+            "_generation_params": {
+                "project_id": context.project_id,
+                "session_id": context.session_id,
                 "title": title,
                 "story_background": story_background,
                 "prompt": prompt,
@@ -380,9 +375,11 @@ class StoryImageHandler:
                 "reference_image_ids": reference_image_ids,
                 "scene_frames": scene_frames,
                 "layout_preference": layout_preference,
-                "error": f"story_image generation failed: {exc}",
-                "can_regenerate": True,
-            }
+                "turn_id": context.turn_id,
+                "image_overrides": context.image_overrides,
+                "llm_overrides": context.llm_overrides,
+            },
+        }
 
 
 # ---- Register built-in handlers at import time ----

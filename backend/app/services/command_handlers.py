@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
@@ -530,86 +531,159 @@ async def _handle_story_image_regen(
     image_overrides: dict[str, str] | None = None,
     llm_overrides: dict[str, str] | None = None,
 ) -> None:
-    """Handle story image regeneration within a block_response."""
-    from backend.app.services.image_service import (
-        generate_story_image,
-        regenerate_story_image,
-    )
-
+    """Handle story image regeneration — non-blocking, spawns background task."""
     image_id = str(response_data.get("image_id") or "").strip()
     reason = str(response_data.get("reason") or "").strip()
 
     turn_id = str(uuid.uuid4())
-    if image_id:
-        regenerated = await regenerate_story_image(
-            db,
-            project_id=game_session.project_id,
-            session_id=session_id,
-            image_id=image_id,
-            reason=reason or None,
-            turn_id=turn_id,
-            autocommit=False,
-            image_overrides=image_overrides,
-            llm_overrides=llm_overrides,
-        )
-    else:
-        title = str(response_data.get("title") or "Story Image (regen)")
-        story_background = str(response_data.get("story_background") or "")
-        prompt = str(response_data.get("prompt") or "")
-        continuity_notes = str(response_data.get("continuity_notes") or "")
-        if reason:
-            if continuity_notes:
-                continuity_notes = f"{continuity_notes}. Regeneration note: {reason}"
-            else:
-                continuity_notes = f"Regeneration note: {reason}"
-        refs_raw = response_data.get("reference_image_ids")
-        refs = (
-            [str(item).strip() for item in refs_raw if str(item).strip()]
-            if isinstance(refs_raw, list)
-            else []
-        )
-        scene_frames_raw = response_data.get("scene_frames")
-        scene_frames = (
-            [str(item).strip() for item in scene_frames_raw if str(item).strip()]
-            if isinstance(scene_frames_raw, list)
-            else []
-        )
-        layout_preference = str(response_data.get("layout_preference") or "auto")
-        regenerated = await generate_story_image(
-            db,
-            project_id=game_session.project_id,
-            session_id=session_id,
-            title=title,
-            story_background=story_background,
-            prompt=prompt,
-            continuity_notes=continuity_notes,
-            reference_image_ids=refs,
-            scene_frames=scene_frames,
-            layout_preference=layout_preference,
-            turn_id=turn_id,
-            autocommit=False,
-            image_overrides=image_overrides,
-            llm_overrides=llm_overrides,
-        )
-
-    state_mgr = GameStateManager(db)
     regen_block_id = f"{turn_id}:0"
-    status_text = "（图片已重新生成）" if regenerated.get("status") == "ok" else "（图片重生成失败）"
-    await state_mgr.add_message(
-        session_id, "assistant", status_text,
-        message_type="narration",
-        metadata={"blocks": [{"type": "story_image", "data": regenerated, "block_id": regen_block_id}]},
-        raw_content="```json:story_image\n" + json.dumps(regenerated, ensure_ascii=False) + "\n```",
-    )
 
-    done_event = {"type": "done", "content": status_text, "turn_id": turn_id, "has_blocks": True}
+    # Build a placeholder for the "generating" status
+    placeholder_title = str(response_data.get("title") or "Story Image (regen)")
+    placeholder = {
+        "status": "generating",
+        "title": placeholder_title,
+        "story_background": str(response_data.get("story_background") or ""),
+        "prompt": str(response_data.get("prompt") or ""),
+        "continuity_notes": str(response_data.get("continuity_notes") or ""),
+        "can_regenerate": False,
+    }
+
+    # Send placeholder immediately so the user sees feedback
+    done_event = {"type": "done", "content": "（正在重新生成图片…）", "turn_id": turn_id, "has_blocks": True}
     _add_log(session_id, "send", done_event)
     await sink.send_json(done_event)
 
-    block_event = {"type": "story_image", "data": regenerated, "block_id": regen_block_id, "turn_id": turn_id}
+    block_event = {"type": "story_image", "data": placeholder, "block_id": regen_block_id, "turn_id": turn_id}
     _add_log(session_id, "send", block_event)
     await sink.send_json(block_event)
 
     turn_end_event = {"type": "turn_end", "turn_id": turn_id}
     _add_log(session_id, "send", turn_end_event)
     await sink.send_json(turn_end_event)
+
+    # Spawn background task for actual generation
+    asyncio.create_task(
+        _background_regen_image(
+            sink,
+            project_id=game_session.project_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            regen_block_id=regen_block_id,
+            image_id=image_id,
+            reason=reason,
+            response_data=response_data,
+            image_overrides=image_overrides,
+            llm_overrides=llm_overrides,
+        )
+    )
+
+
+async def _background_regen_image(
+    sink: EventSink,
+    *,
+    project_id: str,
+    session_id: str,
+    turn_id: str,
+    regen_block_id: str,
+    image_id: str,
+    reason: str,
+    response_data: dict,
+    image_overrides: dict[str, str] | None = None,
+    llm_overrides: dict[str, str] | None = None,
+) -> None:
+    """Run story image regeneration in the background."""
+    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
+
+    from backend.app.services.image_service import (
+        generate_story_image,
+        regenerate_story_image,
+    )
+
+    try:
+        async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+            if image_id:
+                regenerated = await regenerate_story_image(
+                    db,
+                    project_id=project_id,
+                    session_id=session_id,
+                    image_id=image_id,
+                    reason=reason or None,
+                    turn_id=turn_id,
+                    autocommit=True,
+                    image_overrides=image_overrides,
+                    llm_overrides=llm_overrides,
+                )
+            else:
+                title = str(response_data.get("title") or "Story Image (regen)")
+                story_background = str(response_data.get("story_background") or "")
+                prompt = str(response_data.get("prompt") or "")
+                continuity_notes = str(response_data.get("continuity_notes") or "")
+                if reason:
+                    if continuity_notes:
+                        continuity_notes = f"{continuity_notes}. Regeneration note: {reason}"
+                    else:
+                        continuity_notes = f"Regeneration note: {reason}"
+                refs_raw = response_data.get("reference_image_ids")
+                refs = (
+                    [str(item).strip() for item in refs_raw if str(item).strip()]
+                    if isinstance(refs_raw, list)
+                    else []
+                )
+                scene_frames_raw = response_data.get("scene_frames")
+                scene_frames = (
+                    [str(item).strip() for item in scene_frames_raw if str(item).strip()]
+                    if isinstance(scene_frames_raw, list)
+                    else []
+                )
+                layout_preference = str(response_data.get("layout_preference") or "auto")
+                regenerated = await generate_story_image(
+                    db,
+                    project_id=project_id,
+                    session_id=session_id,
+                    title=title,
+                    story_background=story_background,
+                    prompt=prompt,
+                    continuity_notes=continuity_notes,
+                    reference_image_ids=refs,
+                    scene_frames=scene_frames,
+                    layout_preference=layout_preference,
+                    turn_id=turn_id,
+                    autocommit=True,
+                    image_overrides=image_overrides,
+                    llm_overrides=llm_overrides,
+                )
+
+            # Save message to DB
+            state_mgr = GameStateManager(db)
+            status_text = "（图片已重新生成）" if regenerated.get("status") == "ok" else "（图片重生成失败）"
+            await state_mgr.add_message(
+                session_id, "assistant", status_text,
+                message_type="narration",
+                metadata={"blocks": [{"type": "story_image", "data": regenerated, "block_id": regen_block_id}]},
+                raw_content="```json:story_image\n" + json.dumps(regenerated, ensure_ascii=False) + "\n```",
+            )
+
+        # Push completed result to frontend (updates the "generating" placeholder)
+        block_event = {"type": "story_image", "data": regenerated, "block_id": regen_block_id, "turn_id": turn_id}
+        _add_log(session_id, "send", block_event)
+        await sink.send_json(block_event)
+
+    except Exception as exc:
+        logger.exception("Background story_image regeneration failed")
+        try:
+            error_event = {
+                "type": "story_image",
+                "data": {
+                    "status": "error",
+                    "title": str(response_data.get("title") or "Story Image"),
+                    "error": f"Image regeneration failed: {exc}",
+                    "can_regenerate": True,
+                },
+                "block_id": regen_block_id,
+                "turn_id": turn_id,
+            }
+            _add_log(session_id, "send", error_event)
+            await sink.send_json(error_event)
+        except Exception:
+            logger.warning("Failed to send regen error event (WebSocket likely closed)")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from typing import Any, Protocol
@@ -67,6 +68,70 @@ def _extract_image_overrides(data: dict[str, Any]) -> dict[str, str] | None:
     return overrides or None
 
 
+async def _background_generate_image(
+    sink: EventSink,
+    session_id: str,
+    block_id: str,
+    turn_id: str,
+    params: dict[str, Any],
+) -> None:
+    """Run story image generation in the background and push the result via WebSocket."""
+    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
+
+    from backend.app.services.image_service import generate_story_image
+
+    try:
+        async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+            result = await generate_story_image(
+                db,
+                project_id=params["project_id"],
+                session_id=params["session_id"],
+                title=params.get("title", "Story Image"),
+                story_background=params.get("story_background", ""),
+                prompt=params.get("prompt", ""),
+                continuity_notes=params.get("continuity_notes", ""),
+                reference_image_ids=params.get("reference_image_ids", []),
+                scene_frames=params.get("scene_frames", []),
+                layout_preference=params.get("layout_preference", "auto"),
+                turn_id=params.get("turn_id"),
+                autocommit=True,
+                image_overrides=params.get("image_overrides"),
+                llm_overrides=params.get("llm_overrides"),
+            )
+        event = {
+            "type": "story_image",
+            "data": result,
+            "block_id": block_id,
+            "turn_id": turn_id,
+        }
+        _add_log(session_id, "send", event)
+        await sink.send_json(event)
+    except Exception as exc:
+        logger.exception("Background story_image generation failed")
+        try:
+            error_event = {
+                "type": "story_image",
+                "data": {
+                    "status": "error",
+                    "title": params.get("title", "Story Image"),
+                    "story_background": params.get("story_background", ""),
+                    "prompt": params.get("prompt", ""),
+                    "continuity_notes": params.get("continuity_notes", ""),
+                    "reference_image_ids": params.get("reference_image_ids", []),
+                    "scene_frames": params.get("scene_frames", []),
+                    "layout_preference": params.get("layout_preference", "auto"),
+                    "error": f"Image generation failed: {exc}",
+                    "can_regenerate": True,
+                },
+                "block_id": block_id,
+                "turn_id": turn_id,
+            }
+            _add_log(session_id, "send", error_event)
+            await sink.send_json(error_event)
+        except Exception:
+            logger.warning("Failed to send image error event (WebSocket likely closed)")
+
+
 async def _stream_process_message(
     sink: EventSink,
     session_id: str,
@@ -126,13 +191,38 @@ async def _stream_process_message(
     await sink.send_json(done_event)
 
     for block in pending_blocks:
-        block_event = {
-            "type": block["type"], "data": block["data"],
-            "block_id": block.get("block_id"),
-            "turn_id": block.get("turn_id", turn_id),
-        }
-        _add_log(session_id, "send", block_event)
-        await sink.send_json(block_event)
+        block_data = block.get("data")
+        block_id = block.get("block_id") or f"{turn_id}:{uuid.uuid4()}"
+        block_turn_id = block.get("turn_id", turn_id)
+
+        # Detect deferred story_image blocks — spawn background generation
+        if (
+            isinstance(block_data, dict)
+            and block_data.get("_deferred")
+            and block_data.get("_generation_params")
+        ):
+            gen_params = block_data.pop("_generation_params")
+            block_data.pop("_deferred", None)
+            # Send "generating" placeholder to the frontend immediately
+            block_event = {
+                "type": block["type"], "data": block_data,
+                "block_id": block_id, "turn_id": block_turn_id,
+            }
+            _add_log(session_id, "send", block_event)
+            await sink.send_json(block_event)
+            # Spawn actual generation as a background task
+            asyncio.create_task(
+                _background_generate_image(
+                    sink, session_id, block_id, block_turn_id, gen_params,
+                )
+            )
+        else:
+            block_event = {
+                "type": block["type"], "data": block_data,
+                "block_id": block_id, "turn_id": block_turn_id,
+            }
+            _add_log(session_id, "send", block_event)
+            await sink.send_json(block_event)
 
     turn_end_event = {"type": "turn_end", "turn_id": turn_id}
     _add_log(session_id, "send", turn_end_event)

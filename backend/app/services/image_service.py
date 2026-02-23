@@ -212,15 +212,21 @@ def _detect_multi_scene_mode(
         "parallel",
         "multiple scenes",
         "scene transition",
+        "meanwhile",
     ]
     if any(kw in joined for kw in keywords):
         return True, "keyword"
 
     # Heuristic: explicit sequential cues often imply multiple beats/scenes.
-    sequencing_cues = ["先", "然后", "接着", "随后", "最后", "first", "then", "after that"]
+    sequencing_cues = ["先", "然后", "接着", "随后", "最后", "first", "then", "after that", "next"]
     hits = sum(1 for cue in sequencing_cues if cue in joined)
     if hits >= 2:
         return True, "sequence"
+
+    # Heuristic: dialogue turns — multiple quoted speech segments suggest conversation panels.
+    dialogue_patterns = re.findall(r'[""「].*?[""」]|".*?"', joined)
+    if len(dialogue_patterns) >= 2:
+        return True, "dialogue"
 
     return False, "default"
 
@@ -310,41 +316,126 @@ async def _build_text_world_state(
 
 
 _LLM_ENHANCE_SYSTEM_PROMPT = """\
-You are an expert image generation prompt engineer. Your task is to transform a raw scene description into an optimized, vivid prompt for an AI image generator.
+You are a professional image generation prompt engineer working for an RPG visual novel / comic studio.
 
-## Rules
+Your job: read the structured story context below and produce ONE optimized image generation prompt (sent directly to an AI image model like Gemini or DALL-E).
 
-1. PRESERVE the original scene's core subject, characters, setting, and narrative intent exactly. Never add or remove primary subjects.
-2. ENRICH the description with specific visual details: lighting, camera angle, composition, color palette, textures, and atmosphere.
-3. USE concrete visual language. Replace abstract concepts with visual descriptions (e.g., "peaceful" → "soft golden light filtering through leaves, gentle mist").
-4. STRUCTURE the output: [style/medium], [subject with details], [action/pose], [environment], [lighting], [mood], [camera/composition], [quality modifiers].
-5. KEEP the output between 40-100 words. Be detailed but focused.
-6. ADD quality modifiers appropriate to the style:
-   - Photorealistic: "photorealistic, highly detailed, sharp focus, cinematic lighting, 8K, HDR"
-   - Illustration/painting: "highly detailed, vibrant colors, masterpiece, professional illustration"
-   - Fantasy/concept art: "epic concept art, dramatic lighting, highly detailed, masterpiece"
-   - Anime: "anime key visual, highly detailed, studio quality, vibrant"
-7. ALWAYS specify lighting explicitly (e.g., "golden hour sunlight", "dramatic side lighting", "volumetric fog", "cinematic rim lighting").
-8. INCLUDE a camera/composition term (e.g., "wide-angle shot", "close-up portrait", "bird's-eye view", "85mm lens").
-9. Use POSITIVE descriptions instead of negations.
-10. Output ONLY the optimized prompt text, nothing else. No explanations, no labels, no markdown.
+## Priority
+
+The "Scene to Illustrate" section is the PRIMARY content — it describes exactly what should be drawn. World Setting and World State are supplementary context to inform visual details (environment, atmosphere, character appearance), but the scene description always takes priority.
+
+Reference images (if any) will be provided separately as image inputs to the image model — you do NOT need to describe them. Just ensure your prompt maintains visual consistency with any continuity notes provided.
+
+## Multi-Panel Comic Detection
+
+You MUST analyze the scene for multiple visual beats. Use a multi-panel comic layout when ANY of these apply:
+
+1. **Scene transitions** — the text describes moving between locations or times ("meanwhile", "later", "back at the tavern", "与此同时", "随后")
+2. **Sequential actions** — a cause-and-effect chain or step-by-step action ("first… then…", "she drew her sword, the enemy fell", "先…然后…接着…")
+3. **Dialogue exchange** — a meaningful back-and-forth conversation between characters (2+ dialogue turns imply 2+ panels showing different speakers/reactions)
+4. **Parallel events** — things happening simultaneously in different places
+5. **Emotional shift** — a dramatic mood change within the scene (calm → shock, joy → sorrow)
+6. **Explicit Scene Frames** — if "Scene Frames" are provided, ALWAYS use multi-panel layout with one panel per frame
+
+When using multi-panel layout:
+- Use 2-4 panels (match the number of distinct beats)
+- Describe each panel with: "Panel N:" prefix, followed by subject, action, composition, camera angle
+- Panels should read left-to-right, top-to-bottom (manga/comic reading order)
+- Maintain character appearance consistency across all panels
+- Each panel should have clear visual borders (panel gutters)
+- Vary camera angles between panels for visual interest (e.g. wide shot → close-up → medium shot)
+
+When the scene is a single moment with no transitions, use a single cinematic frame.
+
+## Process
+
+1. **Focus** on the "Scene to Illustrate" — this is what the image must depict.
+2. **Detect** if the scene contains multiple visual beats (see rules above).
+3. **Extract** key visual elements: characters (appearance, pose, expression), environment, lighting, mood, action.
+4. **Enrich** with context from World Setting/State where it adds visual value (e.g. time of day, weather, architecture style).
+5. **Compose** a concise, vivid prompt using concrete visual language.
+
+## Output Format
+
+For single frame:
+- 60-120 words. Art style, subject, action, environment, lighting, mood, camera angle, quality modifiers.
+
+For multi-panel comic:
+- 80-200 words total. Start with overall style/medium, then describe each panel.
+- Example structure:
+  "Digital comic page, [style], [N] panels with clear black gutters.
+   Panel 1: [wide shot] [description].
+   Panel 2: [close-up] [description].
+   Panel 3: [medium shot] [description].
+   [Overall mood/lighting/quality modifiers]."
+
+## General Rules
+
+- Use POSITIVE descriptions (describe what IS there, not what isn't).
+- Replace abstract concepts with visual descriptions ("angry" → "clenched fists, furrowed brow, veins visible on forehead").
+- Keep character appearance CONSISTENT with any provided continuity notes.
+- Output ONLY the prompt text. No explanations, labels, or markdown formatting.
 """
 
 
 async def _llm_enhance_prompt(
-    raw_prompt: str,
-    style_preset: str,
     *,
+    story_background: str,
+    prompt: str,
+    continuity_notes: str | None,
+    world_lore: str,
+    text_world_state: str,
+    scene_frames: list[str] | None,
+    layout_preference: str | None,
+    style_preset: str,
+    negative_prompt: str = "",
+    multi_scene_hint: bool = False,
+    multi_scene_reason: str = "",
     project: Project | None = None,
     llm_overrides: dict[str, str] | None = None,
 ) -> str:
-    """Use the main LLM to refine a raw image description into an optimized generation prompt."""
+    """Use the main LLM to intelligently distill structured story context into an optimized image prompt."""
     config = resolve_llm_config(project=project, overrides=llm_overrides)
-    user_msg = (
-        f"Style preset: {style_preset}\n\n"
-        f"Raw scene description:\n{raw_prompt}\n\n"
-        "Transform this into an optimized image generation prompt."
-    )
+
+    # Build structured context for the LLM to reason over
+    context_parts: list[str] = []
+
+    context_parts.append(f"## Style\n{style_preset}")
+
+    if world_lore and world_lore.strip():
+        context_parts.append(f"## World Setting (excerpt)\n{_truncate(world_lore, 1500)}")
+
+    if text_world_state and text_world_state.strip():
+        context_parts.append(f"## Current World State\n{_truncate(text_world_state, 1500)}")
+
+    context_parts.append(f"## Story Background\n{story_background.strip()}")
+    context_parts.append(f"## Scene to Illustrate\n{prompt.strip()}")
+
+    if continuity_notes and continuity_notes.strip():
+        context_parts.append(f"## Visual Continuity Notes\n{continuity_notes.strip()}")
+
+    if scene_frames:
+        frames_text = "\n".join(f"- {f}" for f in scene_frames if f.strip())
+        if frames_text:
+            context_parts.append(f"## Scene Frames (storyboard beats)\n{frames_text}")
+
+    if layout_preference and layout_preference.strip():
+        context_parts.append(f"## Layout Preference\n{layout_preference.strip()}")
+
+    # Provide multi-scene pre-detection hint
+    if multi_scene_hint:
+        context_parts.append(
+            f"## Layout Hint\n"
+            f"The system detected this scene likely needs multi-panel comic layout "
+            f"(reason: {multi_scene_reason}). Use your own judgment to confirm and "
+            f"decide the number of panels."
+        )
+
+    if negative_prompt:
+        context_parts.append(f"## Avoid in image\n{negative_prompt}")
+
+    user_msg = "\n\n".join(context_parts)
+
     messages = [
         {"role": "system", "content": _LLM_ENHANCE_SYSTEM_PROMPT},
         {"role": "user", "content": user_msg},
@@ -356,7 +447,7 @@ async def _llm_enhance_prompt(
             return enhanced
     except Exception:
         logger.warning("LLM prompt enhancement failed, falling back to raw prompt")
-    return raw_prompt
+    return ""
 
 
 def _build_generation_prompt(
@@ -1039,7 +1130,9 @@ async def generate_story_image(
     resolved_ref_ids = _collect_reference_ids(references)
     world_lore = _extract_world_lore_text(project.world_doc)
     text_world_state = await _build_text_world_state(db, session_id=session_id)
-    final_prompt = _build_generation_prompt(
+
+    # Always build the raw assembled prompt (used as fallback and stored for debug)
+    raw_assembled_prompt = _build_generation_prompt(
         world_lore=world_lore,
         text_world_state=text_world_state,
         story_background=story_background,
@@ -1052,27 +1145,51 @@ async def generate_story_image(
         runtime_settings=runtime_settings,
     )
 
-    # LLM prompt enhancement (if enabled)
+    # LLM prompt enhancement: let a text LLM intelligently distill context
+    # into a concise, professional image generation prompt.
     enhanced_prompt: str | None = None
-    llm_enhance_enabled = bool(runtime_settings.get("llm_prompt_enhance", False))
+    llm_enhance_enabled = bool(runtime_settings.get("llm_prompt_enhance", True))
+    style_preset = str(runtime_settings.get("style_preset") or "cinematic").strip()
+    negative_prompt = str(runtime_settings.get("negative_prompt") or "").strip()
+
+    # Pre-detect multi-scene mode to provide a hint to the LLM
+    scene_frames_clean = [str(item).strip() for item in (scene_frames or []) if str(item).strip()]
+    is_multi_scene, multi_scene_reason = _detect_multi_scene_mode(
+        story_background=story_background,
+        prompt=prompt,
+        scene_frames=scene_frames_clean,
+        layout_preference=layout_preference,
+    )
+
     if llm_enhance_enabled:
-        style_preset = str(runtime_settings.get("style_preset") or "cinematic").strip()
         logger.info("[story-image] LLM prompt enhancement enabled, refining prompt...")
         enhanced_prompt = await _llm_enhance_prompt(
-            final_prompt,
-            style_preset,
+            story_background=story_background,
+            prompt=prompt,
+            continuity_notes=continuity_notes,
+            world_lore=world_lore,
+            text_world_state=text_world_state,
+            scene_frames=scene_frames,
+            layout_preference=layout_preference,
+            style_preset=style_preset,
+            negative_prompt=negative_prompt,
+            multi_scene_hint=is_multi_scene,
+            multi_scene_reason=multi_scene_reason,
             project=project,
             llm_overrides=llm_overrides,
         )
-        if enhanced_prompt and enhanced_prompt != final_prompt:
+        if enhanced_prompt:
             logger.info(
-                "[story-image] Prompt enhanced ({} → {} chars)",
-                len(final_prompt), len(enhanced_prompt),
+                "[story-image] Prompt enhanced → {} chars",
+                len(enhanced_prompt),
             )
             final_prompt = enhanced_prompt
         else:
-            logger.info("[story-image] Enhancement returned same prompt, using original")
+            logger.info("[story-image] Enhancement returned empty, falling back to raw prompt")
             enhanced_prompt = None
+            final_prompt = raw_assembled_prompt
+    else:
+        final_prompt = raw_assembled_prompt
 
     api_messages, reference_input_count = _build_image_generation_messages(
         prompt=final_prompt,
@@ -1139,7 +1256,7 @@ async def generate_story_image(
         "mime_type": extracted.get("mime_type"),
         "provider_note": extracted.get("note"),
         "runtime_settings": runtime_settings,
-        "generation_prompt": final_prompt,
+        "generation_prompt": raw_assembled_prompt,
         "enhanced_prompt": enhanced_prompt,
         "reference_input_count": reference_input_count,
         "world_lore_excerpt": _truncate(world_lore, 2400),
@@ -1180,7 +1297,7 @@ async def generate_story_image(
         "provider_note": record["provider_note"],
         "settings_applied": runtime_settings,
         "debug": {
-            "generated_prompt": final_prompt,
+            "generated_prompt": raw_assembled_prompt,
             "enhanced_prompt": enhanced_prompt,
             "world_lore_excerpt": record["world_lore_excerpt"],
             "text_world_state": record["text_world_state"],

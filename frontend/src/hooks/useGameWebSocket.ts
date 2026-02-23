@@ -183,6 +183,20 @@ export function useGameWebSocket(currentSession: Session | null) {
           ? { ...(data as Record<string, unknown>), _block_type: type }
           : data
       const resolvedBlockId = blockId || `${turnId || 'turnless'}:${crypto.randomUUID()}`
+
+      // Check if this block updates an existing one (e.g. async story_image completion)
+      if (blockId) {
+        const state = useSessionStore.getState()
+        const existsInMessages = state.messages.some(
+          (m) => m.blocks?.some((b) => b.block_id === blockId),
+        )
+        const existsInPending = state.pendingBlocks.some((b) => b.blockId === blockId)
+        if (existsInMessages || existsInPending) {
+          state.updateBlockData(blockId, enrichedData)
+          return
+        }
+      }
+
       addPendingBlock({ type, data: enrichedData, turnId: turnId || undefined, blockId: resolvedBlockId })
     }
 

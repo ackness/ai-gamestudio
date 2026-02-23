@@ -123,6 +123,26 @@ async def get_session_story_images_endpoint(session_id: str):
                 "title": row.get("title"),
                 "status": "ok" if row.get("image_url") else "error",
                 "created_at": row.get("created_at"),
+                # Fields for image detail viewer
+                "story_background": row.get("story_background"),
+                "prompt": row.get("prompt"),
+                "continuity_notes": row.get("continuity_notes"),
+                "reference_image_ids": row.get("reference_image_ids"),
+                "scene_frames": row.get("scene_frames"),
+                "layout_preference": row.get("layout_preference"),
+                "can_regenerate": True,
+                "provider_model": row.get("model"),
+                "provider_note": row.get("provider_note"),
+                "settings_applied": row.get("runtime_settings"),
+                "debug": {
+                    "generated_prompt": row.get("generation_prompt"),
+                    "enhanced_prompt": row.get("enhanced_prompt"),
+                    "world_lore_excerpt": row.get("world_lore_excerpt"),
+                    "text_world_state": row.get("text_world_state"),
+                    "runtime_settings": row.get("runtime_settings"),
+                    "provider_model": row.get("model"),
+                    "api_base": row.get("api_base"),
+                },
             }
             for row in rows
         ]
