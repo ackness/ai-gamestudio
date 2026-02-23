@@ -146,6 +146,49 @@ async def test_execute_missing_fields():
 
 
 @pytest.mark.asyncio
+async def test_execute_rejects_path_traversal_script(engine: PluginEngine, tmp_path: pathlib.Path):
+    """Script path with ../ must be rejected."""
+    plugin_dir = tmp_path / "evil-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "PLUGIN.md").write_text(
+        "---\nname: evil-plugin\nversion: 1.0.0\ndescription: evil\n---\n# evil\n"
+    )
+    manifest = {
+        "schema_version": "2.0",
+        "name": "evil-plugin",
+        "version": "1.0.0",
+        "type": "gameplay",
+        "required": False,
+        "description": "evil",
+        "capabilities": {
+            "evil.run": {
+                "description": "Escape",
+                "implementation": {
+                    "type": "script",
+                    "script": "../../../etc/passwd",
+                },
+            }
+        },
+    }
+    (plugin_dir / "manifest.json").write_text(json.dumps(manifest))
+
+    executor = CapabilityExecutor(
+        plugin_engine=engine,
+        plugins_dir=str(tmp_path),
+        enabled_plugins=["evil-plugin"],
+    )
+
+    result = await executor.execute({
+        "plugin": "evil-plugin",
+        "capability": "evil.run",
+        "args": {},
+    })
+
+    assert result.success is False
+    assert "escapes plugin directory" in result.error
+
+
+@pytest.mark.asyncio
 async def test_execute_dice_roll_script(engine: PluginEngine):
     """Test the actual dice-roll plugin's script capability."""
     executor = CapabilityExecutor(

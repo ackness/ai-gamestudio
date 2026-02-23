@@ -283,8 +283,9 @@ async def get_plugin_detail(plugin_name: str):
         tmpl = manifest.prompt.get("template")
         content: str | None = None
         if tmpl:
-            tmpl_path = plugin_path / tmpl
-            if tmpl_path.is_file():
+            plugin_root = plugin_path.resolve()
+            tmpl_path = (plugin_path / tmpl).resolve()
+            if tmpl_path.is_relative_to(plugin_root) and tmpl_path.is_file():
                 try:
                     content = tmpl_path.read_text(encoding="utf-8")
                 except OSError:
