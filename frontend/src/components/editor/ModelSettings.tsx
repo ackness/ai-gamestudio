@@ -261,9 +261,9 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-background relative">
-      <ScrollArea className="flex-1">
-        <div className="p-4 space-y-6 pb-24">
+    <div className="flex min-h-0 h-full flex-col bg-background">
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="space-y-6 p-4">
           {/* Current effective config banner */}
           <Card className="bg-muted/30 border-muted">
             <CardContent className="p-4 space-y-3">
@@ -476,8 +476,7 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
         </div>
       </ScrollArea>
 
-      {/* Fixed Footer */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-md border-t flex gap-2">
+      <div className="shrink-0 border-t bg-background p-4 flex gap-2">
         <Button
           variant="outline"
           className="flex-1 text-xs"

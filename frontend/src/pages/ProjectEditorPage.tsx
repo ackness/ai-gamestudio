@@ -202,7 +202,7 @@ export function ProjectEditorPage() {
               <div className="flex-1 overflow-hidden relative">
                 <TabsContent value="world" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden"><MarkdownEditor /></TabsContent>
                 <TabsContent value="prompt" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden"><InitPromptEditor /></TabsContent>
-                <TabsContent value="model" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto">
+                <TabsContent value="model" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-hidden">
                   <ModelSettings onLlmInfoChange={handleLlmInfoChange} />
                 </TabsContent>
                 <TabsContent value="novel" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden"><NovelPanel /></TabsContent>
