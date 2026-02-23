@@ -4,6 +4,10 @@ description: 2187年的新上海，五大超级企业瓜分世界。在霓虹与
 genre: cyberpunk
 tags: [赛博朋克, 科幻, 反乌托邦, 近未来]
 language: zh
+i18n:
+  en:
+    name: "Neon Abyss: 2187"
+    description: "In New Shanghai, 2187, five megacorps divide the world. Fight fate with neural links and cybernetic upgrades between neon and shadow."
 plugins: [skill-check, combat, inventory, quest, faction, relationship, status-effect, codex]
 ---
 

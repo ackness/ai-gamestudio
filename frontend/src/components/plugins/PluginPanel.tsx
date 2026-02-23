@@ -9,6 +9,45 @@ import { Switch } from '@/components/ui/switch'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { AlertTriangle, Code2, Loader2 } from 'lucide-react'
 
+const pluginText: Record<string, Record<string, string>> = {
+  zh: {
+    detailLoading: '加载中...',
+    detailLoadFailed: '无法加载详情',
+    promptTab: '提示词',
+    blocksTab: '数据块',
+    position: '位置',
+    priority: '优先级',
+    noTemplateContent: '无模板内容',
+    suppressesOnEnable: '启用时抑制',
+    loadingPlugins: '加载插件中...',
+    noPlugins: '暂无可用插件',
+    blockConflictDetected: '检测到 block type 冲突',
+    requiredBy: '被依赖',
+    dependsOn: '依赖',
+    viewPromptAndSchema: '查看提示词与 Schema',
+    auto: '自动',
+    v1: '兼容',
+  },
+  en: {
+    detailLoading: 'Loading...',
+    detailLoadFailed: 'Failed to load detail',
+    promptTab: 'Prompt',
+    blocksTab: 'Blocks',
+    position: 'position',
+    priority: 'priority',
+    noTemplateContent: 'No template content',
+    suppressesOnEnable: 'Suppresses on enable',
+    loadingPlugins: 'Loading plugins...',
+    noPlugins: 'No plugins available',
+    blockConflictDetected: 'Detected block type conflicts',
+    requiredBy: 'Required by',
+    dependsOn: 'Depends on',
+    viewPromptAndSchema: 'View prompt and schema',
+    auto: 'auto',
+    v1: 'v1',
+  },
+}
+
 function getLocalizedField(
   plugin: Plugin,
   field: 'name' | 'description',
@@ -17,10 +56,11 @@ function getLocalizedField(
   return plugin.i18n?.[language]?.[field] || plugin[field] || ''
 }
 
-function PluginDetailPanel({ name }: { name: string }) {
+function PluginDetailPanel({ name, language }: { name: string; language: string }) {
   const [detail, setDetail] = useState<PluginDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'prompt' | 'blocks'>('prompt')
+  const t = pluginText[language] ?? pluginText.en
 
   useEffect(() => {
     setLoading(true)
@@ -31,10 +71,10 @@ function PluginDetailPanel({ name }: { name: string }) {
   }, [name])
 
   if (loading) {
-    return <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground"><Loader2 className="w-3 h-3 animate-spin" />加载中...</div>
+    return <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground"><Loader2 className="w-3 h-3 animate-spin" />{t.detailLoading}</div>
   }
   if (!detail) {
-    return <div className="text-xs text-destructive py-2">无法加载详情</div>
+    return <div className="text-xs text-destructive py-2">{t.detailLoadFailed}</div>
   }
 
   const blockNames = Object.keys(detail.blocks)
@@ -52,7 +92,7 @@ function PluginDetailPanel({ name }: { name: string }) {
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            Prompt
+            {t.promptTab}
           </button>
           <button
             onClick={() => setActiveTab('blocks')}
@@ -62,7 +102,7 @@ function PluginDetailPanel({ name }: { name: string }) {
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            Blocks ({blockNames.length})
+            {t.blocksTab} ({blockNames.length})
           </button>
         </div>
       )}
@@ -70,9 +110,9 @@ function PluginDetailPanel({ name }: { name: string }) {
       {(activeTab === 'prompt' || !hasTabs) && detail.prompt && (
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[10px] text-muted-foreground">position:</span>
+            <span className="text-[10px] text-muted-foreground">{t.position}:</span>
             <code className="text-[10px] text-primary">{detail.prompt.position ?? '—'}</code>
-            <span className="text-[10px] text-muted-foreground ml-1">priority:</span>
+            <span className="text-[10px] text-muted-foreground ml-1">{t.priority}:</span>
             <code className="text-[10px] text-primary">{detail.prompt.priority ?? '—'}</code>
           </div>
           {detail.prompt.content ? (
@@ -80,7 +120,7 @@ function PluginDetailPanel({ name }: { name: string }) {
               {detail.prompt.content}
             </pre>
           ) : (
-            <p className="text-[10px] text-muted-foreground italic">无模板内容</p>
+            <p className="text-[10px] text-muted-foreground italic">{t.noTemplateContent}</p>
           )}
         </div>
       )}
@@ -105,7 +145,7 @@ function PluginDetailPanel({ name }: { name: string }) {
 
       {detail.supersedes && detail.supersedes.length > 0 && (
         <p className="text-[10px] text-violet-400">
-          启用时抑制: {detail.supersedes.join(', ')}
+          {t.suppressesOnEnable}: {detail.supersedes.join(', ')}
         </p>
       )}
     </div>
@@ -116,6 +156,7 @@ export function PluginPanel() {
   const { plugins, blockConflicts, loading, fetchPlugins, togglePlugin } = usePluginStore()
   const currentProject = useProjectStore((s) => s.currentProject)
   const language = useUiStore((s) => s.language)
+  const t = pluginText[language] ?? pluginText.en
   const [expandedPlugin, setExpandedPlugin] = useState<string | null>(null)
 
   useEffect(() => {
@@ -126,7 +167,7 @@ export function PluginPanel() {
     return (
       <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
         <Loader2 className="w-4 h-4 animate-spin" />
-        Loading plugins...
+        {t.loadingPlugins}
       </div>
     )
   }
@@ -134,7 +175,7 @@ export function PluginPanel() {
   if (plugins.length === 0) {
     return (
       <div className="text-center text-muted-foreground py-8 text-sm">
-        <p>No plugins available</p>
+        <p>{t.noPlugins}</p>
       </div>
     )
   }
@@ -145,7 +186,7 @@ export function PluginPanel() {
         <Alert variant="destructive" className="py-2">
           <AlertTriangle className="h-3.5 w-3.5" />
           <AlertDescription className="text-xs">
-            <span className="font-medium">检测到 block type 冲突</span>
+            <span className="font-medium">{t.blockConflictDetected}</span>
             <div className="mt-1 space-y-0.5">
               {blockConflicts.map((c, i) => (
                 <p key={`${c.block_type}-${i}`} className="text-[11px]">
@@ -177,10 +218,10 @@ export function PluginPanel() {
                   )}
                   <Badge variant="secondary" className="text-[10px] h-4 px-1">{plugin.type}</Badge>
                   {plugin.auto_enabled && (
-                    <Badge variant="outline" className="text-[10px] h-4 px-1 text-cyan-400 border-cyan-400/30">auto</Badge>
+                    <Badge variant="outline" className="text-[10px] h-4 px-1 text-cyan-400 border-cyan-400/30">{t.auto}</Badge>
                   )}
                   {plugin.manifest_source === 'v1_fallback' && (
-                    <Badge variant="outline" className="text-[10px] h-4 px-1 text-orange-400 border-orange-400/30">v1</Badge>
+                    <Badge variant="outline" className="text-[10px] h-4 px-1 text-orange-400 border-orange-400/30">{t.v1}</Badge>
                   )}
                 </div>
                 {displayDescription && (
@@ -194,10 +235,10 @@ export function PluginPanel() {
                   </div>
                 )}
                 {plugin.required_by && plugin.required_by.length > 0 && (
-                  <p className="text-[11px] text-amber-400 mt-0.5">被依赖: {plugin.required_by.join(', ')}</p>
+                  <p className="text-[11px] text-amber-400 mt-0.5">{t.requiredBy}: {plugin.required_by.join(', ')}</p>
                 )}
                 {plugin.dependencies && plugin.dependencies.length > 0 && (
-                  <p className="text-[11px] text-muted-foreground mt-0.5">依赖: {plugin.dependencies.join(', ')}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{t.dependsOn}: {plugin.dependencies.join(', ')}</p>
                 )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
@@ -206,7 +247,7 @@ export function PluginPanel() {
                   className={`p-1 rounded transition-colors ${
                     isExpanded ? 'text-foreground bg-muted' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                   }`}
-                  title="查看提示词与 Schema"
+                  title={t.viewPromptAndSchema}
                 >
                   <Code2 className="w-3.5 h-3.5" />
                 </button>
@@ -222,7 +263,7 @@ export function PluginPanel() {
               </div>
             </div>
 
-            {isExpanded && <PluginDetailPanel name={plugin.name} />}
+            {isExpanded && <PluginDetailPanel name={plugin.name} language={language} />}
           </div>
         )
       })}

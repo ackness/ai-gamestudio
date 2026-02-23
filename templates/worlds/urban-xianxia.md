@@ -4,6 +4,10 @@ description: "灵气复苏时代的都市玄幻世界，外卖小哥意外踏上
 genre: 都市玄幻
 tags: [现代修真, 都市奇幻, 日常喜剧, 跑团设定]
 language: zh
+i18n:
+  en:
+    name: "Qi Resurgence: A Courier's Cultivation Life"
+    description: "In a modern city where spiritual energy returns, an ordinary delivery rider is pulled into hidden cultivation circles and urban mysteries."
 plugins: [skill-check, combat, inventory, quest, faction, relationship, status-effect, codex]
 ---
 # 灵气复苏：外卖小哥的修仙日常

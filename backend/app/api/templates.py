@@ -61,8 +61,41 @@ def _load_template(path: Path) -> tuple[dict, str]:
     return dict(post.metadata), post.content
 
 
+def _lang_candidates(lang: str | None) -> list[str]:
+    if not lang:
+        return []
+    normalized = str(lang).strip().lower()
+    if not normalized:
+        return []
+    candidates = [normalized]
+    base = normalized.replace("_", "-").split("-", 1)[0]
+    if base and base not in candidates:
+        candidates.append(base)
+    return candidates
+
+
+def _localized_text(metadata: dict, field: str, lang: str | None) -> str:
+    i18n = metadata.get("i18n")
+    if isinstance(i18n, dict):
+        for key in [*_lang_candidates(lang), "en"]:
+            payload = i18n.get(key)
+            if isinstance(payload, dict):
+                value = payload.get(field)
+                if isinstance(value, str) and value.strip():
+                    return value
+    fallback = metadata.get(field, "")
+    return str(fallback) if fallback is not None else ""
+
+
+def _metadata_tags(metadata: dict) -> list[str]:
+    raw_tags = metadata.get("tags", [])
+    if not isinstance(raw_tags, list):
+        return []
+    return [str(tag) for tag in raw_tags]
+
+
 @router.get("/worlds", response_model=list[WorldTemplateMeta])
-async def list_world_templates():
+async def list_world_templates(lang: str | None = None):
     """List all available world templates."""
     templates_dir = _templates_dir()
     if not templates_dir.is_dir():
@@ -75,10 +108,10 @@ async def list_world_templates():
             result.append(
                 WorldTemplateMeta(
                     slug=path.stem,
-                    name=metadata.get("name", path.stem),
-                    description=metadata.get("description", ""),
+                    name=_localized_text(metadata, "name", lang) or path.stem,
+                    description=_localized_text(metadata, "description", lang),
                     genre=metadata.get("genre", ""),
-                    tags=metadata.get("tags", []),
+                    tags=_metadata_tags(metadata),
                     language=metadata.get("language", ""),
                 )
             )
@@ -89,7 +122,7 @@ async def list_world_templates():
 
 
 @router.get("/worlds/{slug}", response_model=WorldTemplateDetail)
-async def get_world_template(slug: str):
+async def get_world_template(slug: str, lang: str | None = None):
     """Get a single world template by slug."""
     templates_dir = _templates_dir()
     path = templates_dir / f"{slug}.md"
@@ -100,10 +133,10 @@ async def get_world_template(slug: str):
     raw = path.read_text(encoding="utf-8")
     return WorldTemplateDetail(
         slug=slug,
-        name=metadata.get("name", slug),
-        description=metadata.get("description", ""),
+        name=_localized_text(metadata, "name", lang) or slug,
+        description=_localized_text(metadata, "description", lang),
         genre=metadata.get("genre", ""),
-        tags=metadata.get("tags", []),
+        tags=_metadata_tags(metadata),
         language=metadata.get("language", ""),
         content=content,
         raw=raw,

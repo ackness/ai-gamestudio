@@ -18,14 +18,31 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Loader2 } from 'lucide-react'
 
-const SUPPORTED_LANGS = [
-  { code: 'en', label: 'EN' },
-  { code: 'zh', label: '中文' },
-]
-
 const editorUiText: Record<string, Record<string, string>> = {
-  zh: { worldDoc: '世界文档', initPrompt: '初始提示', model: '模型', novel: '小说', status: '状态', loading: '加载项目中...' },
-  en: { worldDoc: 'World Doc', initPrompt: 'Init Prompt', model: 'Model', novel: 'Novel', status: 'Status', loading: 'Loading project...' },
+  zh: {
+    worldDoc: '世界文档',
+    initPrompt: '初始提示',
+    model: '模型',
+    novel: '小说',
+    status: '状态',
+    loading: '加载项目中...',
+    expandEditor: '展开编辑区',
+    collapseEditor: '收起编辑区',
+    expandStatus: '展开状态栏',
+    collapseStatus: '收起状态栏',
+  },
+  en: {
+    worldDoc: 'World Doc',
+    initPrompt: 'Init Prompt',
+    model: 'Model',
+    novel: 'Novel',
+    status: 'Status',
+    loading: 'Loading project...',
+    expandEditor: 'Expand editor',
+    collapseEditor: 'Collapse editor',
+    expandStatus: 'Expand status',
+    collapseStatus: 'Collapse status',
+  },
 }
 
 export function ProjectEditorPage() {
@@ -46,7 +63,7 @@ export function ProjectEditorPage() {
   const sessionsCheckedRef = useRef(false)
   const [autoCreating, setAutoCreating] = useState(false)
 
-  const { language, setLanguage } = useUiStore()
+  const { language } = useUiStore()
   const et = editorUiText[language] ?? editorUiText.en
 
   useEffect(() => {
@@ -127,7 +144,7 @@ export function ProjectEditorPage() {
                 setLeftCollapsed(true)
               }
             }}
-            title={leftCollapsed ? "Expand editor" : "Collapse editor"}
+            title={leftCollapsed ? et.expandEditor : et.collapseEditor}
           >
             {leftCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           </Button>
@@ -137,23 +154,7 @@ export function ProjectEditorPage() {
           </h2>
         </div>
         
-        <div className="flex items-center gap-2">
-          <div className="flex items-center bg-muted rounded-md p-1 border">
-            {SUPPORTED_LANGS.map((lang) => (
-              <button
-                key={lang.code}
-                onClick={() => setLanguage(lang.code)}
-                className={`text-xs px-2.5 py-1 rounded-sm font-medium transition-all ${
-                  language === lang.code
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {lang.label}
-              </button>
-            ))}
-          </div>
-          <div className="h-4 w-px bg-border mx-2" />
+        <div className="flex items-center">
           <Button 
             variant="ghost" 
             size="icon" 
@@ -167,7 +168,7 @@ export function ProjectEditorPage() {
                 setRightCollapsed(true)
               }
             }}
-            title={rightCollapsed ? "Expand status" : "Collapse status"}
+            title={rightCollapsed ? et.expandStatus : et.collapseStatus}
           >
             {rightCollapsed ? <PanelRightOpen className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
           </Button>
@@ -202,7 +203,7 @@ export function ProjectEditorPage() {
               <div className="flex-1 overflow-hidden relative">
                 <TabsContent value="world" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden"><MarkdownEditor /></TabsContent>
                 <TabsContent value="prompt" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden"><InitPromptEditor /></TabsContent>
-                <TabsContent value="model" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto">
+                <TabsContent value="model" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-hidden">
                   <ModelSettings onLlmInfoChange={handleLlmInfoChange} />
                 </TabsContent>
                 <TabsContent value="novel" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden"><NovelPanel /></TabsContent>

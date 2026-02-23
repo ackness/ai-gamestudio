@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useGameStateStore } from '../../stores/gameStateStore'
 import { useSessionStore } from '../../stores/sessionStore'
+import { useUiStore } from '../../stores/uiStore'
 import type { GameEvent } from '../../types'
 import { buildEventForest } from './eventTree'
 import { Badge } from '@/components/ui/badge'
@@ -19,7 +20,44 @@ const statusIcons: Record<string, string> = {
   ended: '\u25CB',
 }
 
-function EventCard({ event, depth = 0 }: { event: GameEvent; depth?: number }) {
+const eventText: Record<string, Record<string, string>> = {
+  zh: {
+    initEmpty: '冒险尚未开始，暂无事件',
+    empty: '暂无事件',
+    active: '活跃事件',
+    ended: '已结束事件',
+  },
+  en: {
+    initEmpty: 'No events yet. Adventure has not started.',
+    empty: 'No events',
+    active: 'Active Events',
+    ended: 'Ended Events',
+  },
+}
+
+const eventTypeText: Record<string, Record<string, string>> = {
+  zh: {
+    quest: '任务',
+    combat: '战斗',
+    social: '社交',
+    world: '世界',
+    system: '系统',
+  },
+  en: {
+    quest: 'Quest',
+    combat: 'Combat',
+    social: 'Social',
+    world: 'World',
+    system: 'System',
+  },
+}
+
+function getEventTypeLabel(eventType: string, language: string): string {
+  const labels = eventTypeText[language] ?? eventTypeText.en
+  return labels[eventType] ?? eventType
+}
+
+function EventCard({ event, depth = 0, language }: { event: GameEvent; depth?: number; language: string }) {
   const [expanded, setExpanded] = useState(event.status === 'active')
   const hasChildren = event.children && event.children.length > 0
   const badgeClass = typeBadgeColors[event.event_type] || typeBadgeColors.system
@@ -48,7 +86,7 @@ function EventCard({ event, depth = 0 }: { event: GameEvent; depth?: number }) {
               variant="outline"
               className={`text-[10px] px-1.5 py-0 h-auto border-0 ${badgeClass}`}
             >
-              {event.event_type}
+              {getEventTypeLabel(event.event_type, language)}
             </Badge>
           </div>
           {expanded && (
@@ -60,7 +98,7 @@ function EventCard({ event, depth = 0 }: { event: GameEvent; depth?: number }) {
       {expanded && hasChildren && (
         <div className="border-l border-neutral-300 ml-1.5">
           {event.children!.map((child) => (
-            <EventCard key={child.id} event={child} depth={depth + 1} />
+            <EventCard key={child.id} event={child} depth={depth + 1} language={language} />
           ))}
         </div>
       )}
@@ -71,12 +109,14 @@ function EventCard({ event, depth = 0 }: { event: GameEvent; depth?: number }) {
 export function EventPanel() {
   const currentSession = useSessionStore((s) => s.currentSession)
   const allEvents = useGameStateStore((s) => s.events)
+  const language = useUiStore((s) => s.language)
+  const t = eventText[language] ?? eventText.en
   const events = currentSession
     ? allEvents.filter((event) => event.session_id === currentSession.id)
     : []
 
   if (currentSession?.phase === 'init') {
-    return <p className="text-muted-foreground text-sm text-center py-4">冒险尚未开始，暂无事件</p>
+    return <p className="text-muted-foreground text-sm text-center py-4">{t.initEmpty}</p>
   }
 
   const withChildren = buildEventForest(events)
@@ -85,17 +125,17 @@ export function EventPanel() {
   const ended = withChildren.filter((e) => e.status !== 'active')
 
   if (events.length === 0) {
-    return <p className="text-muted-foreground text-sm text-center py-4">暂无事件</p>
+    return <p className="text-muted-foreground text-sm text-center py-4">{t.empty}</p>
   }
 
   return (
     <div className="space-y-4">
       {active.length > 0 && (
         <div>
-          <h4 className="text-xs font-medium text-muted-foreground uppercase mb-2">活跃事件</h4>
+          <h4 className="text-xs font-medium text-muted-foreground uppercase mb-2">{t.active}</h4>
           <div className="space-y-0.5">
             {active.map((event) => (
-              <EventCard key={event.id} event={event} />
+              <EventCard key={event.id} event={event} language={language} />
             ))}
           </div>
         </div>
@@ -103,10 +143,10 @@ export function EventPanel() {
 
       {ended.length > 0 && (
         <div>
-          <h4 className="text-xs font-medium text-muted-foreground uppercase mb-2">已结束事件</h4>
+          <h4 className="text-xs font-medium text-muted-foreground uppercase mb-2">{t.ended}</h4>
           <div className="space-y-0.5">
             {ended.map((event) => (
-              <EventCard key={event.id} event={event} />
+              <EventCard key={event.id} event={event} language={language} />
             ))}
           </div>
         </div>
