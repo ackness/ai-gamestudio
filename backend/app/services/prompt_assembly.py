@@ -41,10 +41,13 @@ def assemble_prompt(
             lang_display = _LANG_DISPLAY.get(world_language, world_language)
             builder.inject(
                 "system", 1,
-                f"**LANGUAGE REQUIREMENT**: All your narrative text, dialogue, and descriptions "
-                f"MUST be written in **{lang_display}**. "
-                f"This does not apply to ```json:xxx``` structured data blocks — "
-                f"field keys and technical identifiers inside blocks may remain in English.",
+                f"**LANGUAGE REQUIREMENT**: ALL your output MUST be in **{lang_display}**, "
+                f"including narrative text, dialogue, descriptions, AND the human-readable "
+                f"string values inside ```json:xxx``` structured data blocks "
+                f"(such as name, description, title, inventory item names, scene names, "
+                f"continuity_notes, story_background, prompt, personality, etc.). "
+                f"Only JSON field keys (like \"action\", \"item_type\") and schema-defined "
+                f"enum values (like \"gain\", \"move\", \"player\") may remain in English.",
             )
     else:
         builder.inject(

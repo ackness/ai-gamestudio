@@ -27,6 +27,9 @@ const pluginText: Record<string, Record<string, string>> = {
     viewPromptAndSchema: '查看提示词与 Schema',
     auto: '自动',
     v1: '兼容',
+    scriptBadge: 'SCRIPT',
+    scriptWarningTitle: '检测到可执行脚本插件',
+    scriptWarningDesc: '这些插件可执行本地脚本。生产环境启用前请先审查插件源码。',
   },
   en: {
     detailLoading: 'Loading...',
@@ -45,6 +48,9 @@ const pluginText: Record<string, Record<string, string>> = {
     viewPromptAndSchema: 'View prompt and schema',
     auto: 'auto',
     v1: 'v1',
+    scriptBadge: 'SCRIPT',
+    scriptWarningTitle: 'Script execution plugins detected',
+    scriptWarningDesc: 'These plugins can execute local scripts. Review plugin source before enabling in production.',
   },
 }
 
@@ -79,9 +85,21 @@ function PluginDetailPanel({ name, language }: { name: string; language: string 
 
   const blockNames = Object.keys(detail.blocks)
   const hasTabs = detail.prompt && blockNames.length > 0
+  const scriptCapabilities = Object.entries(detail.capabilities || {})
+    .filter(([, cfg]) => cfg?.type === 'script')
+    .map(([id]) => id)
 
   return (
     <div className="mt-2 border-t pt-2 space-y-2">
+      {scriptCapabilities.length > 0 && (
+        <Alert variant="destructive" className="py-2">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          <AlertDescription className="text-xs">
+            <span className="font-semibold">{t.scriptWarningTitle}</span>
+            <p className="mt-1 break-all">{scriptCapabilities.join(', ')}</p>
+          </AlertDescription>
+        </Alert>
+      )}
       {hasTabs && (
         <div className="flex gap-1">
           <button
@@ -111,9 +129,9 @@ function PluginDetailPanel({ name, language }: { name: string; language: string 
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[10px] text-muted-foreground">{t.position}:</span>
-            <code className="text-[10px] text-primary">{detail.prompt.position ?? '—'}</code>
+            <code className="text-[10px] text-primary">{detail.prompt.position ?? '-'}</code>
             <span className="text-[10px] text-muted-foreground ml-1">{t.priority}:</span>
-            <code className="text-[10px] text-primary">{detail.prompt.priority ?? '—'}</code>
+            <code className="text-[10px] text-primary">{detail.prompt.priority ?? '-'}</code>
           </div>
           {detail.prompt.content ? (
             <pre className="text-[10px] text-foreground/80 bg-muted/50 border rounded p-2 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
@@ -158,6 +176,7 @@ export function PluginPanel() {
   const language = useUiStore((s) => s.language)
   const t = pluginText[language] ?? pluginText.en
   const [expandedPlugin, setExpandedPlugin] = useState<string | null>(null)
+  const scriptPlugins = plugins.filter((p) => !!p.has_script_capability)
 
   useEffect(() => {
     fetchPlugins(currentProject?.id)
@@ -182,6 +201,17 @@ export function PluginPanel() {
 
   return (
     <div className="space-y-2">
+      {scriptPlugins.length > 0 && (
+        <Alert variant="destructive" className="py-2 border-red-500/50 bg-red-500/10">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          <AlertDescription className="text-xs">
+            <span className="font-semibold">{t.scriptWarningTitle}</span>
+            <p className="mt-1">{t.scriptWarningDesc}</p>
+            <p className="mt-1 break-all">{scriptPlugins.map((p) => p.name).join(', ')}</p>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {blockConflicts.length > 0 && (
         <Alert variant="destructive" className="py-2">
           <AlertTriangle className="h-3.5 w-3.5" />
@@ -190,7 +220,7 @@ export function PluginPanel() {
             <div className="mt-1 space-y-0.5">
               {blockConflicts.map((c, i) => (
                 <p key={`${c.block_type}-${i}`} className="text-[11px]">
-                  <code>{c.block_type}</code>: {c.overridden_plugin} → {c.winner_plugin}
+                  <code>{c.block_type}</code>: {c.overridden_plugin}{' -> '}{c.winner_plugin}
                 </p>
               ))}
             </div>
@@ -222,6 +252,9 @@ export function PluginPanel() {
                   )}
                   {plugin.manifest_source === 'v1_fallback' && (
                     <Badge variant="outline" className="text-[10px] h-4 px-1 text-orange-400 border-orange-400/30">{t.v1}</Badge>
+                  )}
+                  {plugin.has_script_capability && (
+                    <Badge variant="destructive" className="text-[10px] h-4 px-1">{t.scriptBadge}</Badge>
                   )}
                 </div>
                 {displayDescription && (

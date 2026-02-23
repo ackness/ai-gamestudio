@@ -82,7 +82,9 @@ class AccessKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         if request.url.path in _EXEMPT_PATHS:
             return await call_next(request)
-        if not is_request_authorized(request.headers, request.query_params):
+        # For HTTP requests, only accept header-based access key to avoid
+        # leaking secrets in URLs/logs. Query-param auth remains for WebSocket.
+        if not is_request_authorized(request.headers, None):
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
         return await call_next(request)
 

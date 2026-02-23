@@ -98,6 +98,7 @@ export interface Plugin {
   version?: string
   manifest_source?: 'manifest' | 'v1_fallback'
   capabilities?: string[]
+  has_script_capability?: boolean
   schema_status?: string
   i18n?: Record<string, { name?: string; description?: string }>
 }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import frontmatter
@@ -13,6 +14,7 @@ from backend.app.core.llm_gateway import completion
 from backend.app.core.search_replace import apply_edits, is_search_replace, parse_edits
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
+_TEMPLATE_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
 class WorldTemplateMeta(BaseModel):
@@ -53,6 +55,18 @@ class ReviseWorldResponse(BaseModel):
 
 def _templates_dir() -> Path:
     return Path(settings.TEMPLATES_DIR)
+
+
+def _safe_template_path(slug: str) -> Path:
+    cleaned = str(slug or "").strip()
+    if not _TEMPLATE_SLUG_RE.fullmatch(cleaned):
+        raise HTTPException(status_code=400, detail="Invalid template slug")
+
+    root = _templates_dir().resolve()
+    target = (root / f"{cleaned}.md").resolve()
+    if root not in target.parents:
+        raise HTTPException(status_code=400, detail="Invalid template path")
+    return target
 
 
 def _load_template(path: Path) -> tuple[dict, str]:
@@ -135,8 +149,7 @@ async def list_world_templates(lang: str | None = None):
 @router.get("/worlds/{slug}", response_model=WorldTemplateDetail)
 async def get_world_template(slug: str, lang: str | None = None):
     """Get a single world template by slug."""
-    templates_dir = _templates_dir()
-    path = templates_dir / f"{slug}.md"
+    path = _safe_template_path(slug)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Template not found")
 

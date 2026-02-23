@@ -45,6 +45,11 @@ class TestDiscover:
     def test_nonexistent_dir_returns_empty(self, engine: PluginEngine):
         assert engine.discover("/nonexistent/path") == []
 
+    def test_marks_plugins_with_script_capabilities(self, engine: PluginEngine):
+        plugins = engine.discover(PLUGINS_DIR)
+        by_name = {p["name"]: p for p in plugins}
+        assert by_name["dice-roll"]["has_script_capability"] is True
+
 
 # ---------------------------------------------------------------------------
 # Loading

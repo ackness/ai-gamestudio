@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     IMAGE_GEN_MODEL: str = "gemini-2.5-flash-image-preview"
     IMAGE_GEN_API_KEY: str | None = None
     IMAGE_GEN_API_BASE: str | None = None
+    API_BASE_ALLOW_HTTP: bool = False
+    API_BASE_ALLOW_PRIVATE_NET: bool = False
+    API_BASE_ALLOWED_HOSTS: list[str] = []
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
     ACCESS_KEY: str | None = None  # if set, all API requests must include X-Access-Key header
     PLUGINS_DIR: str = "plugins"
@@ -49,6 +52,25 @@ class Settings(BaseSettings):
                     pass
             return [item.strip() for item in raw.split(",") if item.strip()]
         return value
+
+    @field_validator("API_BASE_ALLOWED_HOSTS", mode="before")
+    @classmethod
+    def _parse_allowed_hosts(cls, value):
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return []
+            if raw.startswith("["):
+                try:
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, list):
+                        return [str(item).strip().lower() for item in parsed if str(item).strip()]
+                except Exception:
+                    pass
+            return [item.strip().lower() for item in raw.split(",") if item.strip()]
+        if isinstance(value, list):
+            return [str(item).strip().lower() for item in value if str(item).strip()]
+        return []
 
     @model_validator(mode="after")
     def _apply_runtime_defaults(self):

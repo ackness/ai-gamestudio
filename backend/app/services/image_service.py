@@ -18,6 +18,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from backend.app.core.config import settings
+from backend.app.core.network_safety import ApiBaseValidationError, ensure_safe_api_base
 from backend.app.core.secret_store import get_secret_store
 from backend.app.core.llm_config import resolve_llm_config
 from backend.app.core.llm_gateway import completion_with_config
@@ -59,6 +60,8 @@ def _normalize_image_api_base(
     raw_base: str | None, *, auto_suffix: bool = True
 ) -> str:
     base = (raw_base or "").strip() or _DEFAULT_IMAGE_ENDPOINT
+    if not base:
+        return ""
     if not auto_suffix:
         return base
     if base.endswith("/chat/completions"):
@@ -728,6 +731,13 @@ async def _call_image_api(
     config: ResolvedImageConfig,
     messages: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    try:
+        safe_api_base = ensure_safe_api_base(config.api_base, purpose="image")
+    except ApiBaseValidationError as exc:
+        raise RuntimeError(str(exc)) from exc
+    if not safe_api_base:
+        raise RuntimeError("Image API base URL is not configured")
+
     payload = {
         "model": config.model,
         "stream": False,
@@ -742,7 +752,7 @@ async def _call_image_api(
 
     return await asyncio.to_thread(
         _post_json_sync,
-        endpoint=config.api_base,
+        endpoint=safe_api_base,
         payload=payload,
         headers=headers,
     )

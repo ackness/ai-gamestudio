@@ -9,6 +9,7 @@ import litellm
 from loguru import logger
 
 from backend.app.core.llm_config import ResolvedLlmConfig, resolve_llm_config
+from backend.app.core.network_safety import ApiBaseValidationError, ensure_safe_api_base
 
 # Suppress litellm's built-in verbose logging
 litellm.suppress_debug_info = True
@@ -35,7 +36,12 @@ async def completion_with_config(
     if not config.is_empty_key():
         call_kwargs["api_key"] = config.api_key
     if config.api_base:
-        call_kwargs["api_base"] = config.api_base
+        try:
+            safe_api_base = ensure_safe_api_base(config.api_base, purpose="LLM")
+        except ApiBaseValidationError as exc:
+            raise ValueError(str(exc)) from exc
+        if safe_api_base:
+            call_kwargs["api_base"] = safe_api_base
 
     try:
         if stream:

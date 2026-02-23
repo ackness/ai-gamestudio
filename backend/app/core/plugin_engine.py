@@ -85,6 +85,16 @@ class PluginEngine:
                     if not loaded:
                         continue
                     meta = loaded["metadata"]
+                    manifest = loaded.get("manifest")
+                    has_script_capability = False
+                    if manifest and getattr(manifest, "capabilities", None):
+                        for cap_cfg in manifest.capabilities.values():
+                            if not isinstance(cap_cfg, dict):
+                                continue
+                            impl = cap_cfg.get("implementation")
+                            if isinstance(impl, dict) and impl.get("type") == "script":
+                                has_script_capability = True
+                                break
                     entry: dict[str, Any] = {
                         "name": meta.get("name", child.name),
                         "description": meta.get("description", ""),
@@ -98,6 +108,7 @@ class PluginEngine:
                         "capabilities": list(loaded.get("manifest").capabilities.keys())
                         if loaded.get("manifest")
                         else [],
+                        "has_script_capability": has_script_capability,
                         "i18n": meta.get("i18n", {}),
                         "path": str(child),
                     }

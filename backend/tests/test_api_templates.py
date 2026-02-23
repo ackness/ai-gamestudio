@@ -146,6 +146,16 @@ async def test_get_world_template_not_found(client: AsyncClient, templates_dir: 
 
 
 @pytest.mark.asyncio
+async def test_get_world_template_rejects_path_traversal(client: AsyncClient, templates_dir: Path):
+    with patch("backend.app.api.templates.settings") as mock_settings:
+        mock_settings.TEMPLATES_DIR = str(templates_dir)
+        # Backslash traversal payload for Windows path semantics.
+        resp = await client.get("/api/templates/worlds/..%5C..%5Cdocs%5CARCHITECTURE")
+
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_generate_world(client: AsyncClient):
     mock_result = "# Generated World\n\n## World Background\n\nAI generated content."
 
