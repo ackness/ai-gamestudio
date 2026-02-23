@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import tempfile
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -13,7 +15,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 # Force test database URL before any app imports
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite://"
 os.environ["PLUGINS_DIR"] = "plugins"
-os.environ["SECRET_STORE_DIR"] = "/tmp/ai-gamestudio-test-secrets"
+os.environ["SECRET_STORE_DIR"] = str(
+    Path(tempfile.gettempdir()) / "ai-gamestudio-test-secrets"
+)
 
 
 @pytest.fixture(scope="session")

@@ -153,6 +153,7 @@ export function CreateProjectWizard({ open, onClose }: Props) {
   const [loadingTemplates, setLoadingTemplates] = useState(false)
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
   const [previewContent, setPreviewContent] = useState('')
+  const [rawTemplateContent, setRawTemplateContent] = useState('')
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [templateQuery, setTemplateQuery] = useState('')
   const [templateLanguageFilter, setTemplateLanguageFilter] = useState<'all' | 'zh' | 'en'>('all')
@@ -204,6 +205,7 @@ export function CreateProjectWizard({ open, onClose }: Props) {
     try {
       const detail = await api.getWorldTemplate(slug, language)
       setPreviewContent(detail.content)
+      setRawTemplateContent(detail.raw)
     } finally {
       setLoadingPreview(false)
     }
@@ -417,37 +419,39 @@ export function CreateProjectWizard({ open, onClose }: Props) {
                           <p className="text-xs mt-1">{t.noTemplateMatchHint}</p>
                         </div>
                       ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {filteredTemplates.map((template) => (
-                            <Card
-                              key={template.slug}
-                              className="cursor-pointer hover:border-primary/50 transition-colors h-full"
-                              onClick={() => handleSelectTemplate(template.slug)}
-                            >
-                              <CardHeader className="p-4 h-full">
-                                <div className="flex items-start justify-between gap-2">
-                                  <CardTitle className="text-base line-clamp-2">{template.name}</CardTitle>
-                                  <Badge variant="outline" className="text-[10px] shrink-0">
-                                    {formatTemplateLanguage(template.language)}
-                                  </Badge>
-                                </div>
-                                <CardDescription className="mt-1 line-clamp-3">
-                                  {template.description}
-                                </CardDescription>
-                                <div className="mt-3 flex flex-wrap gap-1.5">
-                                  <Badge variant="secondary" className="font-normal text-[10px]">
-                                    {t.genre}: {template.genre}
-                                  </Badge>
-                                  {template.tags.slice(0, 4).map((tag) => (
-                                    <Badge key={tag} variant="secondary" className="font-normal text-[10px]">
-                                      {tag}
+                        <ScrollArea className="max-h-[45vh]">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pr-2">
+                            {filteredTemplates.map((template) => (
+                              <Card
+                                key={template.slug}
+                                className="cursor-pointer hover:border-primary/50 transition-colors h-full"
+                                onClick={() => handleSelectTemplate(template.slug)}
+                              >
+                                <CardHeader className="p-4 h-full">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <CardTitle className="text-base line-clamp-2">{template.name}</CardTitle>
+                                    <Badge variant="outline" className="text-[10px] shrink-0">
+                                      {formatTemplateLanguage(template.language)}
                                     </Badge>
-                                  ))}
-                                </div>
-                              </CardHeader>
-                            </Card>
-                          ))}
-                        </div>
+                                  </div>
+                                  <CardDescription className="mt-1 line-clamp-3">
+                                    {template.description}
+                                  </CardDescription>
+                                  <div className="mt-3 flex flex-wrap gap-1.5">
+                                    <Badge variant="secondary" className="font-normal text-[10px]">
+                                      {t.genre}: {template.genre}
+                                    </Badge>
+                                    {template.tags.slice(0, 4).map((tag) => (
+                                      <Badge key={tag} variant="secondary" className="font-normal text-[10px]">
+                                        {tag}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </CardHeader>
+                              </Card>
+                            ))}
+                          </div>
+                        </ScrollArea>
                       )}
                     </div>
                   )
@@ -616,8 +620,8 @@ export function CreateProjectWizard({ open, onClose }: Props) {
             )}
 
             {step === 'world' && worldMode === 'template' && selectedSlug && previewContent && !loadingPreview && (
-              <Button 
-                onClick={() => handleCreate(previewContent)}
+              <Button
+                onClick={() => handleCreate(rawTemplateContent || previewContent)}
                 disabled={creating}
               >
                 {creating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t.creating}</> : t.useTemplate}

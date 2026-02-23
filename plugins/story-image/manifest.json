@@ -306,6 +306,22 @@
               "description": "强化角色与道具的视觉一致性。"
             }
           }
+        },
+        {
+          "key": "llm_prompt_enhance",
+          "type": "boolean",
+          "label": "LLM Prompt Enhancement",
+          "description": "Use the LLM to intelligently distill story context (world lore, world state, scene description, continuity notes) into a concise, professional image generation prompt before sending to the image API.",
+          "default": true,
+          "affects": [
+            "image"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "LLM 提示词优化",
+              "description": "使用 LLM 将故事上下文（世界设定、世界状态、场景描述、连续性注记）智能提炼为简洁专业的图像生成提示词，再发送给图像 API。"
+            }
+          }
         }
       ]
     }

@@ -6,6 +6,12 @@ import pathlib
 import socket
 from contextlib import asynccontextmanager
 
+# Ensure localhost connections bypass any system HTTP proxy (e.g. Clash, V2Ray).
+# Must be set before any library (litellm, httpx, etc.) reads proxy env vars.
+_no_proxy = set(filter(None, os.environ.get("NO_PROXY", os.environ.get("no_proxy", "")).split(",")))
+_no_proxy.update(["localhost", "127.0.0.1", "::1"])
+os.environ["NO_PROXY"] = ",".join(sorted(_no_proxy))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -76,7 +82,9 @@ class AccessKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         if request.url.path in _EXEMPT_PATHS:
             return await call_next(request)
-        if not is_request_authorized(request.headers, request.query_params):
+        # For HTTP requests, only accept header-based access key to avoid
+        # leaking secrets in URLs/logs. Query-param auth remains for WebSocket.
+        if not is_request_authorized(request.headers, None):
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
         return await call_next(request)
 

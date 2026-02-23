@@ -3,7 +3,7 @@ from __future__ import annotations
 import pathlib
 import shutil
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -255,7 +255,7 @@ async def install_plugin(body: ImportInstallBody):
 @router.get("/{plugin_name}/audit")
 async def get_plugin_audit(
     plugin_name: str,
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=500),
 ):
     """Return recent audit entries for a plugin's capability invocations."""
     from backend.app.core.audit_logger import AuditLogger
@@ -283,8 +283,9 @@ async def get_plugin_detail(plugin_name: str):
         tmpl = manifest.prompt.get("template")
         content: str | None = None
         if tmpl:
-            tmpl_path = plugin_path / tmpl
-            if tmpl_path.is_file():
+            plugin_root = plugin_path.resolve()
+            tmpl_path = (plugin_path / tmpl).resolve()
+            if tmpl_path.is_relative_to(plugin_root) and tmpl_path.is_file():
                 try:
                     content = tmpl_path.read_text(encoding="utf-8")
                 except OSError:

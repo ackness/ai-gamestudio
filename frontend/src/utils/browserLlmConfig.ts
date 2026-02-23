@@ -5,6 +5,7 @@ export interface BrowserLlmConfig {
   imageModel?: string
   imageApiKey?: string
   imageApiBase?: string
+  imageApiBaseAutoSuffix?: boolean
 }
 
 export interface LlmOverridePayload {
@@ -17,6 +18,7 @@ export interface ImageOverridePayload {
   model?: string
   api_key?: string
   api_base?: string
+  auto_suffix?: boolean
 }
 
 const GLOBAL_KEY = 'ai-gamestudio:llm-config:global'
@@ -45,6 +47,7 @@ function normalizeConfig(raw: Partial<BrowserLlmConfig>): BrowserLlmConfig {
     imageModel: normalize(raw.imageModel),
     imageApiKey: normalize(raw.imageApiKey),
     imageApiBase: normalize(raw.imageApiBase),
+    imageApiBaseAutoSuffix: raw.imageApiBaseAutoSuffix,
   }
 }
 
@@ -125,7 +128,8 @@ export function buildBrowserImageOverrides(projectId?: string | null): ImageOver
   if (cfg.imageModel) overrides.model = cfg.imageModel
   if (cfg.imageApiKey) overrides.api_key = cfg.imageApiKey
   if (cfg.imageApiBase) overrides.api_base = cfg.imageApiBase
-  if (!overrides.model && !overrides.api_key && !overrides.api_base) {
+  if (cfg.imageApiBaseAutoSuffix === false) overrides.auto_suffix = false
+  if (!overrides.model && !overrides.api_key && !overrides.api_base && overrides.auto_suffix === undefined) {
     return undefined
   }
   return overrides

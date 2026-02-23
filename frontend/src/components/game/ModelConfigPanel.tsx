@@ -33,6 +33,9 @@ const modelPanelText: Record<string, Record<string, string>> = {
     imageModel: '图片模型',
     imageApiKey: '图片 API Key',
     imageApiBase: '图片 API Base',
+    imageApiBaseAutoSuffix: '自动补全 /v1/chat/completions',
+    imageApiBaseAutoSuffixHint: '将自动在 URL 末尾追加 /v1/chat/completions',
+    imageApiBaseManualHint: '请输入完整的 API 端点地址',
     saving: '保存中...',
     saveToProject: '保存到项目',
     saveAsPreset: '另存为预设',
@@ -64,6 +67,9 @@ const modelPanelText: Record<string, Record<string, string>> = {
     imageModel: 'Image Model',
     imageApiKey: 'Image API Key',
     imageApiBase: 'Image API Base',
+    imageApiBaseAutoSuffix: 'Auto-append /v1/chat/completions',
+    imageApiBaseAutoSuffixHint: 'Will auto-append /v1/chat/completions to the URL',
+    imageApiBaseManualHint: 'Enter the full API endpoint URL',
     saving: 'Saving...',
     saveToProject: 'Save to Project',
     saveAsPreset: 'Save as Preset',
@@ -97,6 +103,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
   const [imageModel, setImageModel] = useState('')
   const [imageApiKey, setImageApiKey] = useState('')
   const [imageApiBase, setImageApiBase] = useState('')
+  const [imageApiBaseAutoSuffix, setImageApiBaseAutoSuffix] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveProfileName, setSaveProfileName] = useState('')
   const [showSaveProfile, setShowSaveProfile] = useState(false)
@@ -138,6 +145,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
       setImageModel(local.imageModel || currentProject.image_model || '')
       setImageApiKey(local.imageApiKey || '')
       setImageApiBase(local.imageApiBase || currentProject.image_api_base || '')
+      setImageApiBaseAutoSuffix(local.imageApiBaseAutoSuffix !== false)
     }
   }, [currentProject])
 
@@ -254,6 +262,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
         imageModel,
         imageApiKey,
         imageApiBase,
+        imageApiBaseAutoSuffix,
       })
       await updateProject({
         llm_model: model || undefined,
@@ -324,6 +333,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
       setImageModel('')
       setImageApiKey('')
       setImageApiBase('')
+      setImageApiBaseAutoSuffix(true)
       setSelectedProfileId('')
       onSaved()
     } finally {
@@ -519,14 +529,30 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
           </div>
 
           <div>
-            <label className="text-xs text-muted-foreground block mb-1">{t.imageApiBase}</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-muted-foreground">{t.imageApiBase}</label>
+              <button
+                type="button"
+                onClick={() => setImageApiBaseAutoSuffix(!imageApiBaseAutoSuffix)}
+                className={`text-[10px] px-1.5 py-0.5 rounded-full border transition-colors ${
+                  imageApiBaseAutoSuffix
+                    ? 'bg-primary/10 border-primary/30 text-primary'
+                    : 'bg-muted border-muted-foreground/20 text-muted-foreground'
+                }`}
+              >
+                {t.imageApiBaseAutoSuffix}
+              </button>
+            </div>
             <input
               type="text"
               value={imageApiBase}
               onChange={(e) => setImageApiBase(e.target.value)}
-              placeholder={currentProject?.image_api_base || 'https://api.whatai.cc/v1/chat/completions'}
+              placeholder={imageApiBaseAutoSuffix ? 'https://api.example.com' : 'https://api.example.com/v1/chat/completions'}
               className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             />
+            <p className="text-[10px] text-muted-foreground mt-1">
+              {imageApiBaseAutoSuffix ? t.imageApiBaseAutoSuffixHint : t.imageApiBaseManualHint}
+            </p>
           </div>
         </div>
 

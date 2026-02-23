@@ -22,13 +22,33 @@ def assemble_prompt(
             import frontmatter as fm
             parsed = fm.loads(ctx.project.world_doc)
             clean_world_doc = parsed.content
+            world_language = (parsed.metadata.get("language") or "").strip().lower()
         except Exception:
             clean_world_doc = ctx.project.world_doc
+            world_language = ""
         builder.inject(
             "system", 0,
             "You are the Dungeon Master (DM) for a role-playing game.\n\n"
             f"## World Document\n\n{clean_world_doc}",
         )
+        # Enforce output language based on world document metadata
+        if world_language:
+            _LANG_DISPLAY = {
+                "zh": "中文", "en": "English", "ja": "日本語",
+                "ko": "한국어", "es": "Español", "fr": "Français",
+                "de": "Deutsch", "pt": "Português", "ru": "Русский",
+            }
+            lang_display = _LANG_DISPLAY.get(world_language, world_language)
+            builder.inject(
+                "system", 1,
+                f"**LANGUAGE REQUIREMENT**: ALL your output MUST be in **{lang_display}**, "
+                f"including narrative text, dialogue, descriptions, AND the human-readable "
+                f"string values inside ```json:xxx``` structured data blocks "
+                f"(such as name, description, title, inventory item names, scene names, "
+                f"continuity_notes, story_background, prompt, personality, etc.). "
+                f"Only JSON field keys (like \"action\", \"item_type\") and schema-defined "
+                f"enum values (like \"gain\", \"move\", \"player\") may remain in English.",
+            )
     else:
         builder.inject(
             "system", 0,

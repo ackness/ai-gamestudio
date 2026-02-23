@@ -85,6 +85,16 @@ class PluginEngine:
                     if not loaded:
                         continue
                     meta = loaded["metadata"]
+                    manifest = loaded.get("manifest")
+                    has_script_capability = False
+                    if manifest and getattr(manifest, "capabilities", None):
+                        for cap_cfg in manifest.capabilities.values():
+                            if not isinstance(cap_cfg, dict):
+                                continue
+                            impl = cap_cfg.get("implementation")
+                            if isinstance(impl, dict) and impl.get("type") == "script":
+                                has_script_capability = True
+                                break
                     entry: dict[str, Any] = {
                         "name": meta.get("name", child.name),
                         "description": meta.get("description", ""),
@@ -98,6 +108,7 @@ class PluginEngine:
                         "capabilities": list(loaded.get("manifest").capabilities.keys())
                         if loaded.get("manifest")
                         else [],
+                        "has_script_capability": has_script_capability,
                         "i18n": meta.get("i18n", {}),
                         "path": str(child),
                     }
@@ -287,8 +298,9 @@ class PluginEngine:
             template_path = prompt_cfg.get("template")
 
             if template_path:
-                tpl_file = pathlib.Path(data["path"]) / template_path
-                if tpl_file.is_file():
+                plugin_root = pathlib.Path(data["path"]).resolve()
+                tpl_file = (plugin_root / template_path).resolve()
+                if tpl_file.is_relative_to(plugin_root) and tpl_file.is_file():
                     tpl_text = self._read_template_cached(tpl_file)
                 else:
                     tpl_text = data["content"]
@@ -525,8 +537,12 @@ class PluginEngine:
 
                     # Check prompt template exists (from manifest)
                     if manifest.prompt and manifest.prompt.get("template"):
-                        tpl = child / manifest.prompt["template"]
-                        if not tpl.is_file():
+                        tpl = (child / manifest.prompt["template"]).resolve()
+                        if not tpl.is_relative_to(child.resolve()):
+                            errors.append(
+                                f"Prompt template escapes plugin directory: {manifest.prompt['template']}"
+                            )
+                        elif not tpl.is_file():
                             errors.append(
                                 f"Prompt template not found: {manifest.prompt['template']}"
                             )
@@ -536,10 +552,16 @@ class PluginEngine:
                         impl = cap_cfg.get("implementation", {})
                         if impl.get("type") == "script":
                             script = impl.get("script", "")
-                            if script and not (child / script).is_file():
-                                errors.append(
-                                    f"Capability '{cap_id}' script not found: {script}"
-                                )
+                            if script:
+                                script_resolved = (child / script).resolve()
+                                if not script_resolved.is_relative_to(child.resolve()):
+                                    errors.append(
+                                        f"Capability '{cap_id}' script escapes plugin directory: {script}"
+                                    )
+                                elif not script_resolved.is_file():
+                                    errors.append(
+                                        f"Capability '{cap_id}' script not found: {script}"
+                                    )
 
                     # Check dependencies exist
                     for dep in manifest.dependencies:

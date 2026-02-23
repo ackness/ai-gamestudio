@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import Markdown from 'react-markdown'
-import { Copy, Image as ImageIcon, RotateCcw, Pencil, Trash2, X, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Copy, Image as ImageIcon, RotateCcw, Pencil, Trash2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useUiStore } from '../../stores/uiStore'
 import type { StreamStatus } from '../../stores/sessionStore'
 import { getBlockRenderer } from '../../services/blockRenderers'
-import type { Message, StoryImageData } from '../../types'
+import type { Message } from '../../types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -272,68 +272,12 @@ function RawMessageViewer({ msg, onClose, t }: { msg: Message; onClose: () => vo
   )
 }
 
-/** Fullscreen image preview modal. */
-function ImagePreviewModal({ image, onClose, closeLabel, altLabel }: { image: StoryImageData; onClose: () => void; closeLabel: string; altLabel: string }) {
-  return (
-    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8" onClick={onClose}>
-      <Button 
-        variant="ghost" 
-        size="icon" 
-        className="absolute top-4 right-4 rounded-full bg-background/20 hover:bg-background/40 text-foreground backdrop-blur-md"
-        onClick={onClose}
-        aria-label={closeLabel}
-      >
-        <X className="w-5 h-5" />
-      </Button>
-      <img
-        src={image.image_url}
-        alt={image.title || altLabel}
-        className="max-w-full max-h-full object-contain rounded-lg shadow-2xl ring-1 ring-border/50"
-        onClick={(e) => e.stopPropagation()}
-      />
-    </div>
-  )
-}
-
-/** Inline image strip rendered below a message. */
-function MessageImageStrip({
-  images,
-  onPreview,
-}: {
-  images: StoryImageData[]
-  onPreview: (image: StoryImageData) => void
-}) {
-  return (
-    <div className="flex justify-start pl-1 pt-1">
-      <div className="max-w-[80%] space-y-2">
-        {images.map((img, i) => (
-          <div key={img.image_id || i} className="relative group/img overflow-hidden rounded-xl border bg-muted shadow-sm">
-            <img
-              src={img.image_url}
-              alt={img.title || 'Story image'}
-              className="w-full max-h-[400px] object-cover cursor-zoom-in transition-transform duration-300 group-hover/img:scale-[1.02]"
-              loading="lazy"
-              onClick={() => onPreview(img)}
-            />
-            {img.title && (
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-4 py-3 opacity-0 group-hover/img:opacity-100 transition-opacity duration-300">
-                <span className="text-xs text-white font-medium drop-shadow-md">{img.title}</span>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
   const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom, messageImages, imageLoadingMessages } = useSessionStore()
   const language = useUiStore((s) => s.language)
   const t = chatText[language] ?? chatText.en
   const bottomRef = useRef<HTMLDivElement>(null)
   const [inspectMsg, setInspectMsg] = useState<Message | null>(null)
-  const [previewImage, setPreviewImage] = useState<StoryImageData | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
 
@@ -488,9 +432,16 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
               </div>
               
               {messageImages[msg.id]?.length > 0 && (
-                <MessageImageStrip
-                  images={messageImages[msg.id]}
-                  onPreview={setPreviewImage}
+                <BlockList
+                  blocks={messageImages[msg.id].map((img, i) => ({
+                    type: 'story_image',
+                    data: img,
+                    block_id: `img-${msg.id}-${img.image_id || i}`,
+                  }))}
+                  onAction={onAction}
+                  locked={blocksLocked}
+                  idPrefix={`${msg.id}-img`}
+                  t={t}
                 />
               )}
               
@@ -556,7 +507,6 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
       <div ref={bottomRef} className="h-4" />
 
       {inspectMsg && <RawMessageViewer msg={inspectMsg} onClose={() => setInspectMsg(null)} t={t} />}
-      {previewImage && <ImagePreviewModal image={previewImage} onClose={() => setPreviewImage(null)} closeLabel={t.close} altLabel={t.storyImageAlt} />}
     </div>
   )
 }

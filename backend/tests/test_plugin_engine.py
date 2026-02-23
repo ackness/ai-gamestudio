@@ -45,6 +45,11 @@ class TestDiscover:
     def test_nonexistent_dir_returns_empty(self, engine: PluginEngine):
         assert engine.discover("/nonexistent/path") == []
 
+    def test_marks_plugins_with_script_capabilities(self, engine: PluginEngine):
+        plugins = engine.discover(PLUGINS_DIR)
+        by_name = {p["name"]: p for p in plugins}
+        assert by_name["dice-roll"]["has_script_capability"] is True
+
 
 # ---------------------------------------------------------------------------
 # Loading
@@ -177,6 +182,60 @@ class TestValidate:
         results = engine.validate(str(tmp_path))
         errors = results[0]["errors"]
         assert any("does not match" in e for e in errors)
+
+    def test_validate_rejects_script_path_traversal(self, engine: PluginEngine, tmp_path: Path):
+        import json
+        plugin_dir = tmp_path / "evil-plugin"
+        plugin_dir.mkdir()
+        (plugin_dir / "PLUGIN.md").write_text(
+            "---\nname: evil-plugin\nversion: 1.0.0\ndescription: evil\ntype: gameplay\nrequired: false\n---\n# evil\n"
+        )
+        manifest = {
+            "schema_version": "2.0",
+            "name": "evil-plugin",
+            "version": "1.0.0",
+            "type": "gameplay",
+            "required": False,
+            "description": "evil",
+            "capabilities": {
+                "evil.run": {
+                    "description": "Escape",
+                    "implementation": {
+                        "type": "script",
+                        "script": "../../etc/passwd",
+                    },
+                }
+            },
+        }
+        (plugin_dir / "manifest.json").write_text(json.dumps(manifest))
+        results = engine.validate(str(tmp_path))
+        errors = results[0]["errors"]
+        assert any("escapes plugin directory" in e for e in errors)
+
+    def test_validate_rejects_template_path_traversal(self, engine: PluginEngine, tmp_path: Path):
+        import json
+        plugin_dir = tmp_path / "evil-tmpl"
+        plugin_dir.mkdir()
+        (plugin_dir / "PLUGIN.md").write_text(
+            "---\nname: evil-tmpl\nversion: 1.0.0\ndescription: evil\ntype: gameplay\nrequired: false\n---\n# evil\n"
+        )
+        manifest = {
+            "schema_version": "2.0",
+            "name": "evil-tmpl",
+            "version": "1.0.0",
+            "type": "gameplay",
+            "required": False,
+            "description": "evil",
+            "prompt": {
+                "position": "system",
+                "priority": 1,
+                "template": "../../../etc/passwd",
+            },
+        }
+        (plugin_dir / "manifest.json").write_text(json.dumps(manifest))
+        results = engine.validate(str(tmp_path))
+        errors = results[0]["errors"]
+        assert any("escapes plugin directory" in e for e in errors)
 
 
 # ---------------------------------------------------------------------------

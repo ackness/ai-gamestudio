@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -92,7 +92,7 @@ async def delete_session(
 @router.get("/sessions/{session_id}/messages")
 async def get_messages(
     session_id: str,
-    limit: int = 100,
+    limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
 ):
     # Verify session exists

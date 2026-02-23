@@ -387,6 +387,28 @@ export async function getSessionStoryImages(sessionId: string): Promise<StoryIma
   }
 }
 
+// Debug Prompt Preview
+export interface DebugPromptMessage {
+  role: string
+  content: string
+  length: number
+}
+
+export interface DebugPromptResponse {
+  model: string
+  api_base: string | null
+  source: string
+  enabled_plugins: string[]
+  messages: DebugPromptMessage[]
+  total_chars: number
+  message_count: number
+  error?: string
+}
+
+export async function getDebugPrompt(sessionId: string): Promise<DebugPromptResponse> {
+  return request(`/sessions/${sessionId}/debug-prompt`)
+}
+
 // Novel Generation
 export type NovelEvent =
   | { type: 'outline'; chapters: { title: string; summary: string }[] }

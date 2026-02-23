@@ -139,7 +139,14 @@ class CapabilityExecutor:
         language = implementation.get("language", "python")
 
         plugin_dir = pathlib.Path(self._plugins_dir) / plugin_name
-        script_path = plugin_dir / script_rel
+        script_path = (plugin_dir / script_rel).resolve()
+
+        # Prevent path traversal — script must be inside plugin directory
+        if not script_path.is_relative_to(plugin_dir.resolve()):
+            return CapabilityResult(
+                success=False,
+                error=f"Script path escapes plugin directory: {script_rel}",
+            )
 
         try:
             runner = self._script_factory.get_runner(language)

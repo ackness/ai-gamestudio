@@ -50,6 +50,7 @@ interface SessionStore {
   setImageLoading: (messageId: string, loading: boolean) => void
   clearMessageImages: () => void
   hydrateMessageImages: (sessionId: string) => Promise<void>
+  updateBlockData: (blockId: string, data: unknown) => void
 }
 
 export const useSessionStore = create<SessionStore>((set) => ({
@@ -304,4 +305,34 @@ export const useSessionStore = create<SessionStore>((set) => ({
       // ignore
     }
   },
+
+  updateBlockData: (blockId, data) =>
+    set((state) => {
+      // Update block in messages (already flushed blocks)
+      let found = false
+      const nextMessages = state.messages.map((msg) => {
+        if (!msg.blocks) return msg
+        const updatedBlocks = msg.blocks.map((b) => {
+          if (b.block_id === blockId) {
+            found = true
+            return { ...b, data }
+          }
+          return b
+        })
+        return found ? { ...msg, blocks: updatedBlocks } : msg
+      })
+      if (found) return { messages: nextMessages }
+
+      // Update block in pendingBlocks (not yet flushed)
+      const nextPending = state.pendingBlocks.map((b) => {
+        if (b.blockId === blockId) {
+          found = true
+          return { ...b, data }
+        }
+        return b
+      })
+      if (found) return { pendingBlocks: nextPending }
+
+      return state
+    }),
 }))

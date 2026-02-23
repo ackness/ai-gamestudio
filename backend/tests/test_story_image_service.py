@@ -277,6 +277,7 @@ async def test_generate_story_image_builds_debug_prompt_with_world_state_and_mul
                     "multi_scene_policy": "comic",
                     "reference_count": 2,
                     "strict_continuity": True,
+                    "llm_prompt_enhance": False,
                 }
             }
         }
