@@ -259,12 +259,28 @@ export function applyLlmProfile(profileId: string, projectId: string): Promise<{
 }
 
 // World Templates
-export function getWorldTemplates(): Promise<WorldTemplate[]> {
-  return request('/templates/worlds')
+export async function getWorldTemplates(lang?: string): Promise<WorldTemplate[]> {
+  const query = lang ? `?lang=${encodeURIComponent(lang)}` : ''
+  try {
+    return await request(`/templates/worlds${query}`)
+  } catch (error) {
+    if (lang && lang !== 'en') {
+      return request('/templates/worlds?lang=en')
+    }
+    throw error
+  }
 }
 
-export function getWorldTemplate(slug: string): Promise<WorldTemplateDetail> {
-  return request(`/templates/worlds/${slug}`)
+export async function getWorldTemplate(slug: string, lang?: string): Promise<WorldTemplateDetail> {
+  const query = lang ? `?lang=${encodeURIComponent(lang)}` : ''
+  try {
+    return await request(`/templates/worlds/${slug}${query}`)
+  } catch (error) {
+    if (lang && lang !== 'en') {
+      return request(`/templates/worlds/${slug}?lang=en`)
+    }
+    throw error
+  }
 }
 
 async function streamRequest(path: string, data: unknown, onChunk: (text: string) => void, signal?: AbortSignal): Promise<void> {

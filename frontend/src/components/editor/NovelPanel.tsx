@@ -22,6 +22,7 @@ const uiText: Record<string, Record<string, string>> = {
     outline: '大纲生成完成',
     selectChapter: '点击左侧章节预览内容',
     stop: '停止',
+    chapterLabel: '章',
   },
   en: {
     title: 'Novel',
@@ -35,17 +36,25 @@ const uiText: Record<string, Record<string, string>> = {
     outline: 'Outline ready',
     selectChapter: 'Click a chapter to preview',
     stop: 'Stop',
+    chapterLabel: 'Chapter',
   },
 }
 
-const STYLES = ['轻小说', '严肃文学', '武侠', '科幻', '都市言情', '奇幻冒险']
+const STYLE_OPTIONS = [
+  { value: '轻小说', labels: { zh: '轻小说', en: 'Light Novel' } },
+  { value: '严肃文学', labels: { zh: '严肃文学', en: 'Literary Fiction' } },
+  { value: '武侠', labels: { zh: '武侠', en: 'Wuxia' } },
+  { value: '科幻', labels: { zh: '科幻', en: 'Science Fiction' } },
+  { value: '都市言情', labels: { zh: '都市言情', en: 'Urban Romance' } },
+  { value: '奇幻冒险', labels: { zh: '奇幻冒险', en: 'Fantasy Adventure' } },
+] as const
 
 export function NovelPanel() {
   const { currentSession } = useSessionStore()
   const { language } = useUiStore()
   const t = uiText[language] ?? uiText.en
 
-  const [style, setStyle] = useState(STYLES[0])
+  const [style, setStyle] = useState<string>(STYLE_OPTIONS[0].value)
   const [chapterCount, setChapterCount] = useState(5)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -55,6 +64,10 @@ export function NovelPanel() {
   const abortRef = useRef<AbortController | null>(null)
   // Use ref to accumulate streaming content to avoid stale closure
   const chaptersRef = useRef<ChapterData[]>([])
+
+  const formatChapterLabel = useCallback((index: number) => {
+    return language === 'zh' ? `第${index}${t.chapterLabel}` : `${t.chapterLabel} ${index}`
+  }, [language, t.chapterLabel])
 
   const handleGenerate = useCallback(async () => {
     if (!currentSession) return
@@ -128,7 +141,7 @@ export function NovelPanel() {
   const handleDownload = useCallback(() => {
     if (chapters.length === 0) return
     const md = chapters
-      .map((ch, i) => `# 第${i + 1}章 ${ch.title}\n\n${ch.content}`)
+      .map((ch, i) => `# ${formatChapterLabel(i + 1)} ${ch.title}\n\n${ch.content}`)
       .join('\n\n---\n\n')
     const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -137,7 +150,7 @@ export function NovelPanel() {
     a.download = 'novel.md'
     a.click()
     URL.revokeObjectURL(url)
-  }, [chapters])
+  }, [chapters, formatChapterLabel])
 
   if (!currentSession) {
     return (
@@ -159,8 +172,10 @@ export function NovelPanel() {
             className="text-xs bg-background text-foreground border border-input rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
             disabled={loading}
           >
-            {STYLES.map((s) => (
-              <option key={s} value={s}>{s}</option>
+            {STYLE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.labels[language === 'zh' ? 'zh' : 'en']}
+              </option>
             ))}
           </select>
           <label className="text-xs text-muted-foreground">{t.chapters}</label>
@@ -220,7 +235,7 @@ export function NovelPanel() {
                     : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                 }`}
               >
-                <span className="font-medium">第{i + 1}章</span>
+                <span className="font-medium">{formatChapterLabel(i + 1)}</span>
                 <span className="block truncate text-[11px] opacity-70">{ch.title}</span>
                 {streamingIdx === i && (
                   <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse ml-1" />
@@ -238,7 +253,7 @@ export function NovelPanel() {
           {chapters[activeIdx] && (
             <div className="prose prose-invert prose-sm max-w-none">
               <h2 className="text-base font-bold mb-3">
-                第{activeIdx + 1}章 {chapters[activeIdx].title}
+                {formatChapterLabel(activeIdx + 1)} {chapters[activeIdx].title}
               </h2>
               {chapters[activeIdx].summary && (
                 <p className="text-xs text-muted-foreground italic mb-3">

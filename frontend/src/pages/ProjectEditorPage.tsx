@@ -19,8 +19,30 @@ import { Button } from '@/components/ui/button'
 import { Loader2 } from 'lucide-react'
 
 const editorUiText: Record<string, Record<string, string>> = {
-  zh: { worldDoc: '世界文档', initPrompt: '初始提示', model: '模型', novel: '小说', status: '状态', loading: '加载项目中...' },
-  en: { worldDoc: 'World Doc', initPrompt: 'Init Prompt', model: 'Model', novel: 'Novel', status: 'Status', loading: 'Loading project...' },
+  zh: {
+    worldDoc: '世界文档',
+    initPrompt: '初始提示',
+    model: '模型',
+    novel: '小说',
+    status: '状态',
+    loading: '加载项目中...',
+    expandEditor: '展开编辑区',
+    collapseEditor: '收起编辑区',
+    expandStatus: '展开状态栏',
+    collapseStatus: '收起状态栏',
+  },
+  en: {
+    worldDoc: 'World Doc',
+    initPrompt: 'Init Prompt',
+    model: 'Model',
+    novel: 'Novel',
+    status: 'Status',
+    loading: 'Loading project...',
+    expandEditor: 'Expand editor',
+    collapseEditor: 'Collapse editor',
+    expandStatus: 'Expand status',
+    collapseStatus: 'Collapse status',
+  },
 }
 
 export function ProjectEditorPage() {
@@ -122,7 +144,7 @@ export function ProjectEditorPage() {
                 setLeftCollapsed(true)
               }
             }}
-            title={leftCollapsed ? "Expand editor" : "Collapse editor"}
+            title={leftCollapsed ? et.expandEditor : et.collapseEditor}
           >
             {leftCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           </Button>
@@ -146,7 +168,7 @@ export function ProjectEditorPage() {
                 setRightCollapsed(true)
               }
             }}
-            title={rightCollapsed ? "Expand status" : "Collapse status"}
+            title={rightCollapsed ? et.expandStatus : et.collapseStatus}
           >
             {rightCollapsed ? <PanelRightOpen className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
           </Button>

@@ -55,7 +55,9 @@ def templates_dir(tmp_path: Path):
 
     (d / "test-world.md").write_text(
         '---\nname: "Test World"\ndescription: A test world\n'
-        "genre: fantasy\ntags: [magic, adventure]\nlanguage: en\n---\n\n"
+        "genre: fantasy\ntags: [magic, adventure]\nlanguage: en\n"
+        'i18n:\n  zh:\n    name: "测试世界"\n    description: "一个测试世界"\n'
+        '  en:\n    name: "Test World"\n    description: "A test world"\n---\n\n'
         "# Test World\n\n## World Background\n\nA test world for testing.\n",
         encoding="utf-8",
     )
@@ -102,6 +104,36 @@ async def test_get_world_template(client: AsyncClient, templates_dir: Path):
     assert data["name"] == "Test World"
     assert "# Test World" in data["content"]
     assert "---" in data["raw"]  # raw includes frontmatter
+
+
+@pytest.mark.asyncio
+async def test_list_world_templates_localized_with_fallback(client: AsyncClient, templates_dir: Path):
+    with patch("backend.app.api.templates.settings") as mock_settings:
+        mock_settings.TEMPLATES_DIR = str(templates_dir)
+        resp = await client.get("/api/templates/worlds?lang=zh")
+
+    assert resp.status_code == 200
+    data = resp.json()
+
+    test_world = next(t for t in data if t["slug"] == "test-world")
+    assert test_world["name"] == "测试世界"
+    assert test_world["description"] == "一个测试世界"
+
+    another = next(t for t in data if t["slug"] == "another")
+    assert another["name"] == "Another World"
+    assert another["description"] == "Another test"
+
+
+@pytest.mark.asyncio
+async def test_get_world_template_localized_fallback_to_english(client: AsyncClient, templates_dir: Path):
+    with patch("backend.app.api.templates.settings") as mock_settings:
+        mock_settings.TEMPLATES_DIR = str(templates_dir)
+        resp = await client.get("/api/templates/worlds/test-world?lang=fr")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["name"] == "Test World"
+    assert data["description"] == "A test world"
 
 
 @pytest.mark.asyncio
