@@ -58,6 +58,8 @@ export function ProjectEditorPage() {
   
   const [sessionsFetched, setSessionsFetched] = useState(false)
   const [llmInfo, setLlmInfo] = useState<LlmInfo | null>(null)
+  const [compactEditorTabs, setCompactEditorTabs] = useState(false)
+  const editorTabsListRef = useRef<HTMLDivElement | null>(null)
   
   // Use ref to track if we've checked sessions
   const sessionsCheckedRef = useRef(false)
@@ -110,6 +112,23 @@ export function ProjectEditorPage() {
       fetchMessages(active.id)
     }
   }, [sessions, id, currentSession, setCurrentSession, fetchMessages, sessionsFetched])
+
+  useEffect(() => {
+    const listEl = editorTabsListRef.current
+    if (!listEl) return
+
+    const updateCompactState = () => {
+      const isSmallViewport = window.matchMedia('(max-width: 640px)').matches
+      const shouldCompact = isSmallViewport || listEl.scrollWidth > listEl.clientWidth + 4
+      setCompactEditorTabs((prev) => (prev === shouldCompact ? prev : shouldCompact))
+    }
+
+    updateCompactState()
+    const observer = new ResizeObserver(updateCompactState)
+    observer.observe(listEl)
+
+    return () => observer.disconnect()
+  }, [language])
 
   const handleLlmInfoChange = useCallback((info: LlmInfo | null) => setLlmInfo(info), [])
 
@@ -190,14 +209,24 @@ export function ProjectEditorPage() {
           <div className="h-full flex flex-col overflow-hidden">
             <Tabs defaultValue="world" className="flex-1 flex flex-col min-h-0">
               <div className="px-4 py-2 border-b bg-muted/10 shrink-0">
-                <TabsList className="w-full justify-start h-9 p-1">
-                  <TabsTrigger value="world" className="text-xs flex-1"><FileText className="w-3 h-3 mr-1.5 hidden sm:inline" />{et.worldDoc}</TabsTrigger>
-                  <TabsTrigger value="prompt" className="text-xs flex-1"><Terminal className="w-3 h-3 mr-1.5 hidden sm:inline" />{et.initPrompt}</TabsTrigger>
+                <TabsList ref={editorTabsListRef} className="w-full justify-start h-9 p-1">
+                  <TabsTrigger value="world" className="text-xs flex-1" title={et.worldDoc}>
+                    <FileText className={`w-3 h-3 ${compactEditorTabs ? '' : 'mr-1.5 hidden sm:inline'}`} />
+                    {!compactEditorTabs && et.worldDoc}
+                  </TabsTrigger>
+                  <TabsTrigger value="prompt" className="text-xs flex-1" title={et.initPrompt}>
+                    <Terminal className={`w-3 h-3 ${compactEditorTabs ? '' : 'mr-1.5 hidden sm:inline'}`} />
+                    {!compactEditorTabs && et.initPrompt}
+                  </TabsTrigger>
                   <TabsTrigger value="model" className="text-xs flex-1 relative">
-                    <Settings className="w-3 h-3 mr-1.5 hidden sm:inline" />{et.model}
+                    <Settings className={`w-3 h-3 ${compactEditorTabs ? '' : 'mr-1.5 hidden sm:inline'}`} />
+                    {!compactEditorTabs && et.model}
                     {llmInfo && <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-primary" title={llmInfo.model_name} />}
                   </TabsTrigger>
-                  <TabsTrigger value="novel" className="text-xs flex-1"><BookOpen className="w-3 h-3 mr-1.5 hidden sm:inline" />{et.novel}</TabsTrigger>
+                  <TabsTrigger value="novel" className="text-xs flex-1" title={et.novel}>
+                    <BookOpen className={`w-3 h-3 ${compactEditorTabs ? '' : 'mr-1.5 hidden sm:inline'}`} />
+                    {!compactEditorTabs && et.novel}
+                  </TabsTrigger>
                 </TabsList>
               </div>
               <div className="flex-1 overflow-hidden relative">

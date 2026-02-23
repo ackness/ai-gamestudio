@@ -230,14 +230,17 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
       </div>
 
       {wsStatus !== 'connected' && (
-        <Alert variant={wsStatus === 'reconnecting' ? "default" : "destructive"} className="rounded-none border-x-0 border-t-0 shrink-0 py-2 px-4 shadow-sm">
-          <div className="flex items-center gap-2 text-xs font-medium">
+        <Alert
+          variant={wsStatus === 'reconnecting' ? "default" : "destructive"}
+          className={`rounded-none border-x-0 border-t-0 shrink-0 py-2.5 px-4 shadow-sm ${wsStatus === 'disconnected' ? 'border-destructive/50 bg-destructive/10 text-destructive' : 'bg-muted/40'}`}
+        >
+          <div className="col-start-2 flex items-center gap-2.5 text-xs font-medium">
             {wsStatus === 'reconnecting' ? (
               <RefreshCcw className="w-3.5 h-3.5 animate-spin" />
             ) : (
-              <XCircle className="w-3.5 h-3.5" />
+              <XCircle className="w-4 h-4" />
             )}
-            <AlertDescription className="text-xs mt-0 leading-tight">
+            <AlertDescription className={`mt-0 text-[13px] leading-normal ${wsStatus === 'disconnected' ? 'font-semibold text-current' : 'text-xs'}`}>
               {wsStatus === 'reconnecting' ? '正在重连后端...' : '连接已断开，请检查后端服务是否运行'}
             </AlertDescription>
           </div>
