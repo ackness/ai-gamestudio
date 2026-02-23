@@ -6,6 +6,12 @@ import pathlib
 import socket
 from contextlib import asynccontextmanager
 
+# Ensure localhost connections bypass any system HTTP proxy (e.g. Clash, V2Ray).
+# Must be set before any library (litellm, httpx, etc.) reads proxy env vars.
+_no_proxy = set(filter(None, os.environ.get("NO_PROXY", os.environ.get("no_proxy", "")).split(",")))
+_no_proxy.update(["localhost", "127.0.0.1", "::1"])
+os.environ["NO_PROXY"] = ",".join(sorted(_no_proxy))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse

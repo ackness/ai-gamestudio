@@ -128,6 +128,44 @@ async def get_session_story_images_endpoint(session_id: str):
         ]
 
 
+@router.get("/api/sessions/{session_id}/debug-prompt")
+async def get_debug_prompt(session_id: str):
+    """Return the fully assembled prompt messages that would be sent to the LLM.
+
+    This builds the same TurnContext and runs the same assemble_prompt logic
+    as a real chat turn, but does NOT call the LLM.  Useful for debugging
+    prompt construction, language enforcement, plugin injections, etc.
+    """
+    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
+
+    from backend.app.core.game_state import GameStateManager
+    from backend.app.core.llm_config import resolve_llm_config
+    from backend.app.services.prompt_assembly import assemble_prompt
+    from backend.app.services.turn_context import build_turn_context
+
+    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+        state_mgr = GameStateManager(db, autocommit=False)
+        ctx = await build_turn_context(db, session_id, state_mgr)
+        if ctx is None:
+            return {"error": "Session or project not found"}
+
+        messages = assemble_prompt(ctx, "(debug preview — no user message)", save_user_msg=True)
+        config = resolve_llm_config(project=ctx.project)
+
+        return {
+            "model": config.model,
+            "api_base": config.api_base,
+            "source": config.source,
+            "enabled_plugins": ctx.enabled_names,
+            "messages": [
+                {"role": m["role"], "content": m["content"], "length": len(m["content"])}
+                for m in messages
+            ],
+            "total_chars": sum(len(m["content"]) for m in messages),
+            "message_count": len(messages),
+        }
+
+
 @router.websocket("/ws/debug-log/{session_id}")
 async def websocket_debug_log(websocket: WebSocket, session_id: str):
     """Stream debug log entries in real time."""

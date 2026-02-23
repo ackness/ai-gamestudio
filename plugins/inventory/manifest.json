@@ -24,14 +24,14 @@
   },
   "blocks": {
     "item_update": {
-      "instruction": "When a character gains, loses, uses, equips, or unequips an item, output:\n```json:item_update\n{\"action\": \"gain\", \"item_name\": \"Health Potion\", \"quantity\": 1, \"item_type\": \"consumable\", \"description\": \"A red potion that restores HP.\", \"stats\": {\"hp\": 20}}\n```\nValid actions: gain, lose, use, equip, unequip.\nValid item_type: weapon, armor, consumable, quest, misc.\nstats is optional, used for items with stat effects.",
+      "instruction": "When a character gains, loses, uses, equips, or unequips an item, output:\n```json:item_update\n{\"action\": \"gain\", \"item_name\": \"Health Potion\", \"quantity\": 1, \"item_type\": \"consumable\", \"description\": \"A red potion that restores HP.\", \"stats\": {\"hp\": 20}}\n```\nValid actions: gain, lose, use, equip, unequip.\nValid item_type: weapon, armor, consumable, quest, misc, currency, material, key.\nstats is optional, used for items with stat effects.",
       "schema": {
         "type": "object",
         "properties": {
           "action": { "type": "string", "enum": ["gain", "lose", "use", "equip", "unequip"] },
           "item_name": { "type": "string" },
           "quantity": { "type": "integer" },
-          "item_type": { "type": "string", "enum": ["weapon", "armor", "consumable", "quest", "misc"] },
+          "item_type": { "type": "string", "enum": ["weapon", "armor", "consumable", "quest", "misc", "currency", "material", "key"] },
           "description": { "type": "string" },
           "stats": { "type": "object" }
         },

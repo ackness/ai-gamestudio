@@ -20,10 +20,13 @@ interface StoryImageData {
   settings_applied?: Record<string, unknown>
   debug?: {
     generated_prompt?: string
+    enhanced_prompt?: string
     world_lore_excerpt?: string
     text_world_state?: string
     reference_images?: Array<{ image_id?: string; title?: string }>
     runtime_settings?: Record<string, unknown>
+    provider_model?: string
+    api_base?: string
   }
 }
 
@@ -41,7 +44,7 @@ function DebugModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <p className="text-sm font-medium">Story Image Debug</p>
+          <p className="text-sm font-medium">Image Details</p>
           <button onClick={onClose} className="text-xs px-2 py-1 bg-muted hover:bg-muted/80 rounded">
             Close
           </button>
@@ -55,7 +58,69 @@ function DebugModal({
           />
         )}
 
+        {/* Model & Generation Info */}
+        <div className="flex flex-wrap gap-2 text-xs">
+          {(payload.debug?.provider_model || payload.provider_model) && (
+            <span className="bg-blue-900/40 text-blue-300 px-2 py-0.5 rounded">
+              Model: {payload.debug?.provider_model || payload.provider_model}
+            </span>
+          )}
+          {payload.debug?.api_base && (
+            <span className="bg-violet-900/40 text-violet-300 px-2 py-0.5 rounded truncate max-w-[300px]" title={payload.debug.api_base}>
+              API: {payload.debug.api_base}
+            </span>
+          )}
+          {payload.debug?.enhanced_prompt && (
+            <span className="bg-amber-900/40 text-amber-300 px-2 py-0.5 rounded">
+              LLM Enhanced
+            </span>
+          )}
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          {/* Original Prompt (from LLM block) */}
+          <div className="bg-muted/50 border rounded p-2 space-y-1">
+            <p className="text-muted-foreground">Original Prompt</p>
+            <pre className="text-foreground/80 whitespace-pre-wrap break-words">
+              {payload.prompt || '(none)'}
+            </pre>
+            {payload.story_background && (
+              <>
+                <p className="text-muted-foreground mt-2">Story Background</p>
+                <pre className="text-foreground/80 whitespace-pre-wrap break-words">
+                  {payload.story_background}
+                </pre>
+              </>
+            )}
+            {payload.continuity_notes && (
+              <>
+                <p className="text-muted-foreground mt-2">Continuity Notes</p>
+                <pre className="text-foreground/80 whitespace-pre-wrap break-words">
+                  {payload.continuity_notes}
+                </pre>
+              </>
+            )}
+          </div>
+
+          {/* Final Generated Prompt (sent to image API) */}
+          <div className="bg-muted/50 border rounded p-2 space-y-1">
+            <p className="text-muted-foreground">
+              {payload.debug?.enhanced_prompt ? 'LLM Enhanced Prompt' : 'Generated Prompt'}
+            </p>
+            <pre className="text-foreground/80 whitespace-pre-wrap break-words">
+              {payload.debug?.enhanced_prompt || payload.debug?.generated_prompt || '(none)'}
+            </pre>
+            {payload.debug?.enhanced_prompt && payload.debug?.generated_prompt && (
+              <>
+                <p className="text-muted-foreground mt-2">Pre-Enhancement Prompt</p>
+                <pre className="text-foreground/60 whitespace-pre-wrap break-words">
+                  {payload.debug.generated_prompt}
+                </pre>
+              </>
+            )}
+          </div>
+
+          {/* Metadata */}
           <div className="bg-muted/50 border rounded p-2 space-y-1">
             <p className="text-muted-foreground">Metadata</p>
             <pre className="text-foreground/80 whitespace-pre-wrap break-words">
@@ -64,7 +129,7 @@ function DebugModal({
                   image_id: payload.image_id,
                   title: payload.title,
                   status: payload.status,
-                  provider_model: payload.provider_model,
+                  provider_model: payload.debug?.provider_model || payload.provider_model,
                   provider_note: payload.provider_note,
                   layout_preference: payload.layout_preference,
                   reference_image_ids: payload.reference_image_ids,
@@ -78,22 +143,13 @@ function DebugModal({
             </pre>
           </div>
 
-          <div className="bg-muted/50 border rounded p-2 space-y-1">
-            <p className="text-muted-foreground">Generated Prompt</p>
-            <pre className="text-foreground/80 whitespace-pre-wrap break-words">
-              {payload.debug?.generated_prompt || '(none)'}
-            </pre>
-          </div>
-
+          {/* World Context */}
           <div className="bg-muted/50 border rounded p-2 space-y-1">
             <p className="text-muted-foreground">World Lore Snapshot</p>
             <pre className="text-foreground/80 whitespace-pre-wrap break-words">
               {payload.debug?.world_lore_excerpt || '(none)'}
             </pre>
-          </div>
-
-          <div className="bg-muted/50 border rounded p-2 space-y-1">
-            <p className="text-muted-foreground">Current Text World State</p>
+            <p className="text-muted-foreground mt-2">Current Text World State</p>
             <pre className="text-foreground/80 whitespace-pre-wrap break-words">
               {payload.debug?.text_world_state || '(none)'}
             </pre>
@@ -212,7 +268,7 @@ export function StoryImageRenderer({ data, blockId, onAction, locked }: BlockRen
           onClick={() => setPreviewOpen(true)}
           className="text-xs px-3 py-1.5 bg-muted hover:bg-muted/80 text-foreground rounded transition-colors"
         >
-          Debug preview
+          Image details
         </button>
       </div>
 

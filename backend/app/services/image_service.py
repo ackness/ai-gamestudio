@@ -19,6 +19,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from backend.app.core.config import settings
 from backend.app.core.secret_store import get_secret_store
+from backend.app.core.llm_config import resolve_llm_config
+from backend.app.core.llm_gateway import completion_with_config
 from backend.app.models.project import Project
 from backend.app.services.plugin_service import storage_get, storage_set
 from backend.app.services.runtime_settings_service import (
@@ -28,7 +30,7 @@ from backend.app.services.runtime_settings_service import (
 
 STORY_IMAGE_PLUGIN = "story-image"
 _MAX_STORED_IMAGES = 60
-_DEFAULT_IMAGE_ENDPOINT = "https://api.whatai.cc/v1/chat/completions"
+_DEFAULT_IMAGE_ENDPOINT = ""
 _MAX_IMAGE_REFERENCE_INPUTS = 6
 _MAX_DATA_URL_CHARS = 4_500_000
 _URL_RE = re.compile(r"(https?://[^\s\"'<>]+)")
@@ -302,6 +304,56 @@ async def _build_text_world_state(
     if not parts:
         return "No explicit text world state available yet."
     return "\n\n".join(parts)
+
+
+_LLM_ENHANCE_SYSTEM_PROMPT = """\
+You are an expert image generation prompt engineer. Your task is to transform a raw scene description into an optimized, vivid prompt for an AI image generator.
+
+## Rules
+
+1. PRESERVE the original scene's core subject, characters, setting, and narrative intent exactly. Never add or remove primary subjects.
+2. ENRICH the description with specific visual details: lighting, camera angle, composition, color palette, textures, and atmosphere.
+3. USE concrete visual language. Replace abstract concepts with visual descriptions (e.g., "peaceful" → "soft golden light filtering through leaves, gentle mist").
+4. STRUCTURE the output: [style/medium], [subject with details], [action/pose], [environment], [lighting], [mood], [camera/composition], [quality modifiers].
+5. KEEP the output between 40-100 words. Be detailed but focused.
+6. ADD quality modifiers appropriate to the style:
+   - Photorealistic: "photorealistic, highly detailed, sharp focus, cinematic lighting, 8K, HDR"
+   - Illustration/painting: "highly detailed, vibrant colors, masterpiece, professional illustration"
+   - Fantasy/concept art: "epic concept art, dramatic lighting, highly detailed, masterpiece"
+   - Anime: "anime key visual, highly detailed, studio quality, vibrant"
+7. ALWAYS specify lighting explicitly (e.g., "golden hour sunlight", "dramatic side lighting", "volumetric fog", "cinematic rim lighting").
+8. INCLUDE a camera/composition term (e.g., "wide-angle shot", "close-up portrait", "bird's-eye view", "85mm lens").
+9. Use POSITIVE descriptions instead of negations.
+10. Output ONLY the optimized prompt text, nothing else. No explanations, no labels, no markdown.
+"""
+
+
+async def _llm_enhance_prompt(
+    raw_prompt: str,
+    style_preset: str,
+    *,
+    project: Project | None = None,
+    llm_overrides: dict[str, str] | None = None,
+) -> str:
+    """Use the main LLM to refine a raw image description into an optimized generation prompt."""
+    config = resolve_llm_config(project=project, overrides=llm_overrides)
+    user_msg = (
+        f"Style preset: {style_preset}\n\n"
+        f"Raw scene description:\n{raw_prompt}\n\n"
+        "Transform this into an optimized image generation prompt."
+    )
+    messages = [
+        {"role": "system", "content": _LLM_ENHANCE_SYSTEM_PROMPT},
+        {"role": "user", "content": user_msg},
+    ]
+    try:
+        result = await completion_with_config(messages, config, stream=False)
+        enhanced = str(result).strip()
+        if enhanced:
+            return enhanced
+    except Exception:
+        logger.warning("LLM prompt enhancement failed, falling back to raw prompt")
+    return raw_prompt
 
 
 def _build_generation_prompt(
@@ -884,6 +936,7 @@ async def generate_story_image(
     max_retries: int = 1,
     autocommit: bool = False,
     image_overrides: dict[str, str] | None = None,
+    llm_overrides: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     story_background = (story_background or "").strip()
     prompt = (prompt or "").strip()
@@ -988,6 +1041,29 @@ async def generate_story_image(
         layout_preference=layout_preference,
         runtime_settings=runtime_settings,
     )
+
+    # LLM prompt enhancement (if enabled)
+    enhanced_prompt: str | None = None
+    llm_enhance_enabled = bool(runtime_settings.get("llm_prompt_enhance", False))
+    if llm_enhance_enabled:
+        style_preset = str(runtime_settings.get("style_preset") or "cinematic").strip()
+        logger.info("[story-image] LLM prompt enhancement enabled, refining prompt...")
+        enhanced_prompt = await _llm_enhance_prompt(
+            final_prompt,
+            style_preset,
+            project=project,
+            llm_overrides=llm_overrides,
+        )
+        if enhanced_prompt and enhanced_prompt != final_prompt:
+            logger.info(
+                "[story-image] Prompt enhanced ({} → {} chars)",
+                len(final_prompt), len(enhanced_prompt),
+            )
+            final_prompt = enhanced_prompt
+        else:
+            logger.info("[story-image] Enhancement returned same prompt, using original")
+            enhanced_prompt = None
+
     api_messages, reference_input_count = _build_image_generation_messages(
         prompt=final_prompt,
         references=references,
@@ -1054,6 +1130,7 @@ async def generate_story_image(
         "provider_note": extracted.get("note"),
         "runtime_settings": runtime_settings,
         "generation_prompt": final_prompt,
+        "enhanced_prompt": enhanced_prompt,
         "reference_input_count": reference_input_count,
         "world_lore_excerpt": _truncate(world_lore, 2400),
         "text_world_state": _truncate(text_world_state, 2400),
@@ -1094,11 +1171,14 @@ async def generate_story_image(
         "settings_applied": runtime_settings,
         "debug": {
             "generated_prompt": final_prompt,
+            "enhanced_prompt": enhanced_prompt,
             "world_lore_excerpt": record["world_lore_excerpt"],
             "text_world_state": record["text_world_state"],
             "reference_images": reference_items,
             "reference_input_count": reference_input_count,
             "runtime_settings": runtime_settings,
+            "provider_model": config.model,
+            "api_base": config.api_base,
         },
         "created_at": created_at,
         "can_regenerate": True,
@@ -1115,6 +1195,7 @@ async def regenerate_story_image(
     turn_id: str | None = None,
     autocommit: bool = False,
     image_overrides: dict[str, str] | None = None,
+    llm_overrides: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     history_rows = await get_session_story_images(
         db,
@@ -1174,6 +1255,7 @@ async def regenerate_story_image(
         regenerated_from=image_id,
         autocommit=autocommit,
         image_overrides=image_overrides,
+        llm_overrides=llm_overrides,
     )
 
 
@@ -1187,6 +1269,7 @@ async def generate_message_image(
     context_messages: list[str],
     autocommit: bool = False,
     image_overrides: dict[str, str] | None = None,
+    llm_overrides: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Generate a story image for a specific message using its content as the prompt.
 
@@ -1235,6 +1318,7 @@ async def generate_message_image(
         message_id=message_id,
         autocommit=autocommit,
         image_overrides=image_overrides,
+        llm_overrides=llm_overrides,
     )
 
     # Ensure message_id is in the result

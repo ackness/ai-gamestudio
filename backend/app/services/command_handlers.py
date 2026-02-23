@@ -105,6 +105,7 @@ async def _handle_generate_message_image(
     session_id: str,
     data: dict,
     image_overrides: dict[str, str] | None = None,
+    llm_overrides: dict[str, str] | None = None,
 ) -> None:
     """Handle per-message image generation — no LLM round-trip."""
     from sqlmodel import select
@@ -177,6 +178,7 @@ async def _handle_generate_message_image(
                 context_messages=context_messages,
                 autocommit=True,
                 image_overrides=image_overrides,
+                llm_overrides=llm_overrides,
             )
 
             image_event = {
@@ -494,6 +496,7 @@ async def _handle_block_response(
         ):
             await _handle_story_image_regen(
                 sink, db, game_session, session_id, response_data, image_overrides,
+                llm_overrides=llm_overrides,
             )
             return
 
@@ -525,6 +528,7 @@ async def _handle_story_image_regen(
     session_id: str,
     response_data: dict,
     image_overrides: dict[str, str] | None = None,
+    llm_overrides: dict[str, str] | None = None,
 ) -> None:
     """Handle story image regeneration within a block_response."""
     from backend.app.services.image_service import (
@@ -546,6 +550,7 @@ async def _handle_story_image_regen(
             turn_id=turn_id,
             autocommit=False,
             image_overrides=image_overrides,
+            llm_overrides=llm_overrides,
         )
     else:
         title = str(response_data.get("title") or "Story Image (regen)")
@@ -584,6 +589,7 @@ async def _handle_story_image_regen(
             turn_id=turn_id,
             autocommit=False,
             image_overrides=image_overrides,
+            llm_overrides=llm_overrides,
         )
 
     state_mgr = GameStateManager(db)

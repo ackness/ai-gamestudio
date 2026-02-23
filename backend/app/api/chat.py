@@ -179,7 +179,7 @@ async def _dispatch_incoming_message(
         elif msg_type == "force_trigger":
             await _handle_force_trigger(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
         elif msg_type == "generate_message_image":
-            await _handle_generate_message_image(sink, session_id, data, image_overrides=image_overrides)
+            await _handle_generate_message_image(sink, session_id, data, image_overrides=image_overrides, llm_overrides=llm_overrides)
         else:
             await sink.send_json({"type": "error", "content": f"Unknown message type: {msg_type}"})
     except Exception:

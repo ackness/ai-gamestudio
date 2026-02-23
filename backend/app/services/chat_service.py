@@ -74,6 +74,7 @@ async def process_message(
             session_id=session_id, project_id=ctx.project.id, db=db,
             state_mgr=state_mgr, autocommit=False, turn_id=turn_id,
             image_overrides=image_overrides,
+            llm_overrides=llm_overrides,
         )
 
         clean_response = strip_blocks(full_response)

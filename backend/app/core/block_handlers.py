@@ -24,6 +24,7 @@ class BlockContext:
     autocommit: bool = True
     turn_id: str | None = None
     image_overrides: dict[str, str] | None = None
+    llm_overrides: dict[str, str] | None = None
 
 
 class BlockHandler(Protocol):
@@ -366,6 +367,7 @@ class StoryImageHandler:
                 turn_id=context.turn_id,
                 autocommit=context.autocommit,
                 image_overrides=context.image_overrides,
+                llm_overrides=context.llm_overrides,
             )
         except Exception as exc:
             logger.exception("story_image generation failed")

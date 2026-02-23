@@ -153,6 +153,7 @@ export function CreateProjectWizard({ open, onClose }: Props) {
   const [loadingTemplates, setLoadingTemplates] = useState(false)
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
   const [previewContent, setPreviewContent] = useState('')
+  const [rawTemplateContent, setRawTemplateContent] = useState('')
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [templateQuery, setTemplateQuery] = useState('')
   const [templateLanguageFilter, setTemplateLanguageFilter] = useState<'all' | 'zh' | 'en'>('all')
@@ -204,6 +205,7 @@ export function CreateProjectWizard({ open, onClose }: Props) {
     try {
       const detail = await api.getWorldTemplate(slug, language)
       setPreviewContent(detail.content)
+      setRawTemplateContent(detail.raw)
     } finally {
       setLoadingPreview(false)
     }
@@ -618,8 +620,8 @@ export function CreateProjectWizard({ open, onClose }: Props) {
             )}
 
             {step === 'world' && worldMode === 'template' && selectedSlug && previewContent && !loadingPreview && (
-              <Button 
-                onClick={() => handleCreate(previewContent)}
+              <Button
+                onClick={() => handleCreate(rawTemplateContent || previewContent)}
                 disabled={creating}
               >
                 {creating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t.creating}</> : t.useTemplate}

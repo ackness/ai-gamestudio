@@ -306,6 +306,22 @@
               "description": "强化角色与道具的视觉一致性。"
             }
           }
+        },
+        {
+          "key": "llm_prompt_enhance",
+          "type": "boolean",
+          "label": "LLM Prompt Enhancement",
+          "description": "Use the LLM to refine raw scene descriptions into optimized image generation prompts with cinematic lighting, composition, and quality modifiers before sending to the image API.",
+          "default": false,
+          "affects": [
+            "image"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "LLM 提示词优化",
+              "description": "使用 LLM 将原始场景描述优化为包含电影光影、构图和画质修饰词的专业图像生成提示词，再发送给图像 API。"
+            }
+          }
         }
       ]
     }
