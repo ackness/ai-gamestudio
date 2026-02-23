@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 type Step = 'info' | 'world'
 type WorldMode = null | 'blank' | 'template' | 'ai'
@@ -130,7 +131,7 @@ export function CreateProjectWizard({ open, onClose }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="sm:max-w-[600px] max-h-[85vh] flex flex-col p-0 gap-0">
+      <DialogContent className="sm:max-w-[600px] max-h-[85vh] flex flex-col overflow-hidden p-0 gap-0">
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="text-xl">
             {step === 'info' ? 'Create New World' : 'Choose World Setting'}
@@ -140,7 +141,7 @@ export function CreateProjectWizard({ open, onClose }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 px-6 py-4">
+        <ScrollArea className="min-h-0 flex-1 px-6 py-4">
           <div className="space-y-4 pb-2">
             {step === 'info' && (
               <div className="space-y-4">
@@ -268,9 +269,13 @@ export function CreateProjectWizard({ open, onClose }: Props) {
                         <span className="text-sm">Loading content...</span>
                       </div>
                     ) : (
-                      <pre className="bg-muted p-4 rounded-lg text-sm whitespace-pre-wrap font-mono">
-                        {previewContent}
-                      </pre>
+                      <div className="rounded-lg border bg-muted/30">
+                        <ScrollArea className="h-[42vh]">
+                          <pre className="p-4 text-sm leading-6 whitespace-pre-wrap break-words font-mono text-foreground">
+                            {previewContent}
+                          </pre>
+                        </ScrollArea>
+                      </div>
                     )}
                   </div>
                 )}
@@ -327,32 +332,32 @@ export function CreateProjectWizard({ open, onClose }: Props) {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="tone">Narrative Tone (Optional)</Label>
-                        <select
-                          id="tone"
-                          value={aiTone}
-                          onChange={(e) => setAiTone(e.target.value)}
-                          className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <option value="">Any</option>
-                          <option value="暗黑">Dark</option>
-                          <option value="轻松">Light-hearted</option>
-                          <option value="史诗">Epic</option>
-                          <option value="写实">Realistic</option>
-                        </select>
+                        <Select value={aiTone || '__any'} onValueChange={(value) => setAiTone(value === '__any' ? '' : value)}>
+                          <SelectTrigger id="tone" className="h-9">
+                            <SelectValue placeholder="Any" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__any">Any</SelectItem>
+                            <SelectItem value="暗黑">Dark</SelectItem>
+                            <SelectItem value="轻松">Light-hearted</SelectItem>
+                            <SelectItem value="史诗">Epic</SelectItem>
+                            <SelectItem value="写实">Realistic</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="lang">Generation Language</Label>
-                        <select
-                          id="lang"
-                          value={aiLang}
-                          onChange={(e) => setAiLang(e.target.value)}
-                          className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <option value="zh">中文</option>
-                          <option value="en">English</option>
-                          <option value="ja">日本語</option>
-                          <option value="ko">한국어</option>
-                        </select>
+                        <Select value={aiLang} onValueChange={setAiLang}>
+                          <SelectTrigger id="lang" className="h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="zh">中文</SelectItem>
+                            <SelectItem value="en">English</SelectItem>
+                            <SelectItem value="ja">日本語</SelectItem>
+                            <SelectItem value="ko">한국어</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -382,7 +387,7 @@ export function CreateProjectWizard({ open, onClose }: Props) {
           </div>
         </ScrollArea>
 
-        <DialogFooter className="px-6 py-4 border-t sm:justify-between shrink-0">
+        <DialogFooter className="relative z-10 px-6 py-4 border-t bg-background sm:justify-between shrink-0">
           <div className="flex-1">
             {step === 'world' && !worldMode && (
               <Button variant="ghost" onClick={() => setStep('info')}>
