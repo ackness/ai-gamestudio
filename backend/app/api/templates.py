@@ -76,14 +76,25 @@ def _lang_candidates(lang: str | None) -> list[str]:
 
 def _localized_text(metadata: dict, field: str, lang: str | None) -> str:
     i18n = metadata.get("i18n")
+    # 1. Try exact requested language in i18n
     if isinstance(i18n, dict):
-        for key in [*_lang_candidates(lang), "en"]:
+        for key in _lang_candidates(lang):
             payload = i18n.get(key)
             if isinstance(payload, dict):
                 value = payload.get(field)
                 if isinstance(value, str) and value.strip():
                     return value
+    # 2. Fall back to root-level field (template's native language)
     fallback = metadata.get(field, "")
+    if isinstance(fallback, str) and fallback.strip():
+        return fallback
+    # 3. Last resort: try English in i18n
+    if isinstance(i18n, dict):
+        en_payload = i18n.get("en")
+        if isinstance(en_payload, dict):
+            value = en_payload.get(field)
+            if isinstance(value, str) and value.strip():
+                return value
     return str(fallback) if fallback is not None else ""
 
 

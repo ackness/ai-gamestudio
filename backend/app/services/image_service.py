@@ -53,17 +53,20 @@ def _resolve_project_image_api_key(project: Project) -> str | None:
     return project.image_api_key
 
 
-def _normalize_image_api_base(raw_base: str | None) -> str:
+def _normalize_image_api_base(
+    raw_base: str | None, *, auto_suffix: bool = True
+) -> str:
     base = (raw_base or "").strip() or _DEFAULT_IMAGE_ENDPOINT
+    if not auto_suffix:
+        return base
     if base.endswith("/chat/completions"):
         return base
     if base.endswith("/v1"):
         return f"{base}/chat/completions"
     if base.endswith("/v1/"):
         return f"{base}chat/completions"
-    if base.endswith("/"):
-        return f"{base}chat/completions"
-    return f"{base}/chat/completions"
+    base = base.rstrip("/")
+    return f"{base}/v1/chat/completions"
 
 
 @dataclass(frozen=True)
@@ -94,6 +97,12 @@ def _normalize_image_overrides(
         normalized["api_key"] = api_key
     if api_base:
         normalized["api_base"] = api_base
+
+    # Pass through auto_suffix flag (bool stored as string for uniform dict)
+    auto_suffix = overrides.get("auto_suffix")
+    if auto_suffix is not None:
+        normalized["auto_suffix"] = str(auto_suffix)
+
     return normalized
 
 
@@ -131,11 +140,14 @@ def resolve_image_config(
 
     normalized_overrides = _normalize_image_overrides(overrides)
     if normalized_overrides:
+        auto_suffix_raw = normalized_overrides.pop("auto_suffix", None)
+        auto_suffix = auto_suffix_raw not in ("false", "False", "0", False) if auto_suffix_raw is not None else True
         return ResolvedImageConfig(
             model=normalized_overrides.get("model", base_config.model),
             api_key=normalized_overrides.get("api_key", base_config.api_key),
             api_base=_normalize_image_api_base(
-                normalized_overrides.get("api_base", base_config.api_base)
+                normalized_overrides.get("api_base", base_config.api_base),
+                auto_suffix=auto_suffix,
             ),
             source="browser",
         )

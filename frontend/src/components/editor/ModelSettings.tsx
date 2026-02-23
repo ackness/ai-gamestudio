@@ -43,6 +43,9 @@ const T = {
     imageModel: '图片模型',
     imageApiKey: '图片 API Key',
     imageApiBase: '图片 API Base',
+    imageApiBaseAutoSuffix: '自动补全 /v1/chat/completions',
+    imageApiBaseAutoSuffixHint: '将自动在 URL 末尾追加 /v1/chat/completions',
+    imageApiBaseManualHint: '请输入完整的 API 端点地址',
     save: '保存配置',
     saving: '保存中...',
     saved: '已保存',
@@ -76,6 +79,9 @@ const T = {
     imageModel: 'Image Model',
     imageApiKey: 'Image API Key',
     imageApiBase: 'Image API Base',
+    imageApiBaseAutoSuffix: 'Auto-append /v1/chat/completions',
+    imageApiBaseAutoSuffixHint: 'Will auto-append /v1/chat/completions to the URL',
+    imageApiBaseManualHint: 'Enter the full API endpoint URL',
     save: 'Save Config',
     saving: 'Saving...',
     saved: 'Saved',
@@ -121,6 +127,7 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
   const [imageModel, setImageModel] = useState('')
   const [imageApiKey, setImageApiKey] = useState('')
   const [imageApiBase, setImageApiBase] = useState('')
+  const [imageApiBaseAutoSuffix, setImageApiBaseAutoSuffix] = useState(true)
   const [showImage, setShowImage] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState(false)
@@ -151,6 +158,7 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
     setImageModel(local.imageModel || currentProject.image_model || '')
     setImageApiKey(local.imageApiKey || '')
     setImageApiBase(local.imageApiBase || currentProject.image_api_base || '')
+    setImageApiBaseAutoSuffix(local.imageApiBaseAutoSuffix !== false)
   }, [currentProject?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Determine where the current config comes from
@@ -199,6 +207,7 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
         imageModel: imageModel || undefined,
         imageApiKey: imageApiKey || undefined,
         imageApiBase: imageApiBase || undefined,
+        imageApiBaseAutoSuffix: imageApiBaseAutoSuffix,
       })
       setModel(effectiveModel)
       setApiBase(effectiveApiBase)
@@ -239,6 +248,7 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
       setImageModel('')
       setImageApiKey('')
       setImageApiBase('')
+      setImageApiBaseAutoSuffix(true)
       loadLlmInfo()
     } finally {
       setSaving(false)
@@ -461,14 +471,30 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="imageApiBase" className="text-xs text-muted-foreground">{t.imageApiBase}</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="imageApiBase" className="text-xs text-muted-foreground">{t.imageApiBase}</Label>
+                    <button
+                      type="button"
+                      onClick={() => setImageApiBaseAutoSuffix(!imageApiBaseAutoSuffix)}
+                      className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                        imageApiBaseAutoSuffix
+                          ? 'bg-primary/10 border-primary/30 text-primary'
+                          : 'bg-muted border-muted-foreground/20 text-muted-foreground'
+                      }`}
+                    >
+                      {imageApiBaseAutoSuffix ? t.imageApiBaseAutoSuffix : t.imageApiBaseAutoSuffix}
+                    </button>
+                  </div>
                   <Input
                     id="imageApiBase"
                     value={imageApiBase}
                     onChange={(e) => setImageApiBase(e.target.value)}
-                    placeholder={currentProject?.image_api_base || 'https://...'}
+                    placeholder={imageApiBaseAutoSuffix ? 'https://api.example.com' : 'https://api.example.com/v1/chat/completions'}
                     className="font-mono text-sm h-8"
                   />
+                  <p className="text-[10px] text-muted-foreground">
+                    {imageApiBaseAutoSuffix ? t.imageApiBaseAutoSuffixHint : t.imageApiBaseManualHint}
+                  </p>
                 </div>
               </div>
             )}
