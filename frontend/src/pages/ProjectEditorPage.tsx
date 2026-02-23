@@ -18,11 +18,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Loader2 } from 'lucide-react'
 
-const SUPPORTED_LANGS = [
-  { code: 'en', label: 'EN' },
-  { code: 'zh', label: '中文' },
-]
-
 const editorUiText: Record<string, Record<string, string>> = {
   zh: { worldDoc: '世界文档', initPrompt: '初始提示', model: '模型', novel: '小说', status: '状态', loading: '加载项目中...' },
   en: { worldDoc: 'World Doc', initPrompt: 'Init Prompt', model: 'Model', novel: 'Novel', status: 'Status', loading: 'Loading project...' },
@@ -46,7 +41,7 @@ export function ProjectEditorPage() {
   const sessionsCheckedRef = useRef(false)
   const [autoCreating, setAutoCreating] = useState(false)
 
-  const { language, setLanguage } = useUiStore()
+  const { language } = useUiStore()
   const et = editorUiText[language] ?? editorUiText.en
 
   useEffect(() => {
@@ -137,23 +132,7 @@ export function ProjectEditorPage() {
           </h2>
         </div>
         
-        <div className="flex items-center gap-2">
-          <div className="flex items-center bg-muted rounded-md p-1 border">
-            {SUPPORTED_LANGS.map((lang) => (
-              <button
-                key={lang.code}
-                onClick={() => setLanguage(lang.code)}
-                className={`text-xs px-2.5 py-1 rounded-sm font-medium transition-all ${
-                  language === lang.code
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {lang.label}
-              </button>
-            ))}
-          </div>
-          <div className="h-4 w-px bg-border mx-2" />
+        <div className="flex items-center">
           <Button 
             variant="ghost" 
             size="icon" 
