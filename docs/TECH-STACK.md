@@ -251,6 +251,14 @@ ai-gamestudio/
 │   ├── choices/
 │   ├── auto-guide/
 │   ├── dice-roll/
+│   ├── skill-check/
+│   ├── combat/
+│   ├── inventory/
+│   ├── quest/
+│   ├── faction/
+│   ├── relationship/
+│   ├── status-effect/
+│   ├── codex/
 │   └── story-image/
 │
 ├── templates/worlds/            # 世界观模板

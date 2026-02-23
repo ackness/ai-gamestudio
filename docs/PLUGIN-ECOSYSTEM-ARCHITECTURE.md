@@ -60,7 +60,7 @@
 | `GET /api/plugins/runtime/invocations/{id}` | 移除 |
 | 4 文件强制要求（含 README.md / schemas/） | 改为 builtin 2 文件，external 4 文件 |
 
-### 2.3 每个 V1 插件的迁移要点
+### 2.3 内置插件迁移与扩展要点
 
 | 插件 | 类型 | 迁移要点 |
 |------|------|---------|
@@ -73,6 +73,14 @@
 | auto-guide | gameplay/optional | blocks(guide) → manifest.json.blocks；prompt(pre-response, 90) → manifest.json.prompt；runtime_settings → manifest.json.extensions |
 | dice-roll | gameplay/optional | blocks(dice_result) → manifest.json.blocks；events(dice-rolled) → manifest.json.events；prompt(pre-response, 70) → manifest.json.prompt。V2 可选增加 capability `dice.roll`（implementation: script） |
 | story-image | gameplay/optional | blocks(story_image) → manifest.json.blocks；prompt(pre-response, 92) → manifest.json.prompt；dep(core-blocks, database) → manifest.json.dependencies；runtime_settings → manifest.json.extensions |
+| skill-check | gameplay/optional | V2 新增插件：blocks(skill_check / skill_check_result) + capability `skill_check.resolve`（script） |
+| combat | gameplay/optional | V2 新增插件：blocks(combat_start / combat_action / combat_round / combat_end) + capability `combat.resolve_action` |
+| inventory | gameplay/optional | V2 新增插件：blocks(item_update / loot) + capability `inventory.use_item` |
+| quest | gameplay/optional | V2 新增插件：block(quest_update) + storage/event 声明式动作 |
+| faction | gameplay/optional | V2 新增插件：block(reputation_change) |
+| relationship | gameplay/optional | V2 新增插件：block(relationship_change) |
+| status-effect | gameplay/optional | V2 新增插件：block(status_effect) + capability `status_effect.tick` |
+| codex | gameplay/optional | V2 新增插件：block(codex_entry) |
 
 ---
 
@@ -206,6 +214,19 @@ LLM 在叙事文本中直接输出 `` ```json:<type> `` 格式。后端 `block_p
 | choices | choices | 无（pass-through） | custom: choices |
 | guide | auto-guide | 无（pass-through） | custom: guide |
 | dice_result | dice-roll | DeclarativeBlockHandler (storage_write + emit_event) | card (schema UI) |
+| skill_check | skill-check | 无（触发后续 capability） | 无（静默应用） |
+| skill_check_result | skill-check | DeclarativeBlockHandler (storage_write + emit_event) | custom: skill_check_result |
+| combat_start | combat | DeclarativeBlockHandler (storage_write + emit_event) | custom: combat_start |
+| combat_action | combat | 无（触发后续 capability） | 无（静默应用） |
+| combat_round | combat | DeclarativeBlockHandler (storage_write) | custom: combat_round |
+| combat_end | combat | DeclarativeBlockHandler (storage_write + emit_event) | custom: combat_end |
+| item_update | inventory | DeclarativeBlockHandler (storage_write + emit_event) | card (schema UI) |
+| loot | inventory | DeclarativeBlockHandler (storage_write + emit_event) | custom: loot |
+| quest_update | quest | DeclarativeBlockHandler (storage_write + emit_event) | custom: quest_update |
+| reputation_change | faction | DeclarativeBlockHandler (storage_write + emit_event) | custom: reputation_change |
+| relationship_change | relationship | DeclarativeBlockHandler (storage_write + emit_event) | custom: relationship_change |
+| status_effect | status-effect | DeclarativeBlockHandler (storage_write + emit_event) | custom: status_effect |
+| codex_entry | codex | DeclarativeBlockHandler (storage_write + emit_event) | custom: codex_entry |
 | story_image | story-image | StoryImageHandler (builtin) | custom: story_image |
 
 ### 5.2 Capability Invocation Blocks（`json:plugin_use`）
@@ -299,7 +320,7 @@ manifest.json 的 `permissions.network` 可显式覆盖默认值。
 
 - WebSocket 事件协议不变：`chunk` / `done` / `state_update` / `error` / 自定义 block type
 - Block renderer 注册系统不变：`registerBlockRenderer(type, Component)`
-- 现有 custom renderers（choices / guide / notification / character_sheet / scene_update / story_image）不变
+- 当前 custom renderers 包括：`choices` / `guide` / `notification` / `character_sheet` / `scene_update` / `story_image` / `skill_check_result` / `combat_start` / `combat_round` / `combat_end` / `loot` / `quest_update` / `reputation_change` / `relationship_change` / `status_effect` / `codex_entry`
 - sessionStore 的 pendingBlocks 机制不变
 
 ### 8.2 需更新
@@ -321,7 +342,7 @@ manifest.json 的 `permissions.network` 可显式覆盖默认值。
 
 1. ManifestLoader 实现（解析 manifest.json + schemas/ 目录）
 2. PluginEngine 增强：优先读 manifest，无 manifest 回退 V1
-3. 9 个内置插件全部完成 manifest.json 迁移
+3. 17 个内置插件全部完成 manifest.json 迁移
 4. PLUGIN.md frontmatter 精简为 LLM 专有字段
 5. `GET /api/plugins` 返回 manifest 级元数据（含 i18n、default_enabled、supersedes）
 
@@ -330,7 +351,7 @@ manifest.json 的 `permissions.network` 可显式覆盖默认值。
 1. CapabilityExecutor + ScriptRunner + AuditLogger 全部实现
 2. dispatch_block 支持 plugin_use 分支
 3. pre-response 指令注入 capability 列表和 plugin_use 格式说明
-4. dice-roll 实现 V2 capability（dice.roll → scripts/roll.py）端到端验证通过
+4. 已实现 capability：`dice.roll` / `skill_check.resolve` / `combat.resolve_action` / `inventory.use_item` / `status_effect.tick`
 
 ### Phase C：导入与审计 ✅
 
@@ -395,5 +416,5 @@ manifest.json 的 `permissions.network` 可显式覆盖默认值。
 
 ---
 
-文档版本：v2.1
-更新日期：2026-02-19
+文档版本：v2.2
+更新日期：2026-02-22

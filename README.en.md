@@ -28,13 +28,18 @@ AI GameStudio is an **LLM-native low-code RPG engine**. You don't write any game
 ### Plugin System
 - Plugins described by `plugins/<name>/manifest.json` plus Markdown — zero code to extend
 - Topological dependency resolution between plugins
-- Each plugin can inject into the prompt, define custom block types, and write to game state
-- 9 built-in plugins included (see table below)
+- Each plugin can inject prompt context, define custom block types, and declare `json:plugin_use` capabilities
+- 17 built-in plugins included (4 global + 13 gameplay, see table below)
 
 ### World Editor
 - Left-panel Markdown editor for live world document editing
-- Create from templates with one click (cyberpunk, dark fantasy, wuxia, epoch…)
+- Create from templates with one click (cyberpunk, dark fantasy, urban xianxia, wuxia, epoch…)
 - AI-assisted world document generation
+
+### Novel Generation
+- New `Novel` panel turns session materials (world doc/characters/events/messages) into chaptered prose
+- Backend streams `outline` / `chapter_chunk` / `chapter` / `done` events
+- Supports canceling generation mid-stream and exporting Markdown
 
 ### Story Images
 - `story-image` plugin triggers image generation at key scenes automatically
@@ -67,7 +72,15 @@ AI GameStudio is an **LLM-native low-code RPG engine**. You don't write any game
 | `character` | Gameplay | Player/NPC state injection and character output guidance |
 | `choices` | Gameplay | Interactive choice blocks (single / multi-select) |
 | `auto-guide` | Gameplay | AI-suggested action options — supersedes `choices` when enabled |
-| `dice-roll` | Gameplay | Dice result blocks with state write and event emission |
+| `dice-roll` | Gameplay | Dice result blocks + `dice.roll` capability |
+| `skill-check` | Gameplay | Skill check request/result blocks + `skill_check.resolve` |
+| `combat` | Gameplay | Combat start/round/end blocks + `combat.resolve_action` |
+| `inventory` | Gameplay | Item update/loot blocks + `inventory.use_item` |
+| `quest` | Gameplay | Quest lifecycle update blocks |
+| `faction` | Gameplay | Faction reputation change blocks |
+| `relationship` | Gameplay | NPC relationship change blocks |
+| `status-effect` | Gameplay | Status effect blocks + `status_effect.tick` |
+| `codex` | Gameplay | Codex/encyclopedia entry blocks |
 | `story-image` | Gameplay | Structured prompt → generated scene image with continuity support |
 
 ---
@@ -78,6 +91,7 @@ AI GameStudio is an **LLM-native low-code RPG engine**. You don't write any game
 |----------|-------|
 | `cyberpunk` | Corporate dystopia, hackers, augmented humans |
 | `dark-fantasy` | Corrupted gods, survival in a dying world |
+| `urban-xianxia` | Modern city xianxia, spiritual revival, sect factions |
 | `wuxia` | Martial arts, clan conflicts, inner power and honor |
 | `epoch` | Historical narrative, social change, personal fate |
 
@@ -301,16 +315,16 @@ mise run db:reset         # Drop and recreate the database
 ```
 ├── backend/
 │   └── app/
-│       ├── api/           # FastAPI routers (projects, sessions, chat, plugins, templates)
-│       ├── core/          # Framework internals (plugin_engine, prompt_builder, llm_gateway, block_parser)
-│       ├── services/      # Business logic (chat_service, plugin_service, runtime_settings_service)
+│       ├── api/           # FastAPI routers (chat, novel, projects, sessions, plugins, templates...)
+│       ├── core/          # Framework internals (plugin_engine, capability_executor, prompt_builder, block_parser)
+│       ├── services/      # Business logic (chat_service, novel_service, plugin_service, archive_service...)
 │       └── models/        # SQLModel ORM models
 ├── frontend/
 │   └── src/
 │       ├── pages/         # ProjectListPage, ProjectEditorPage
-│       ├── components/    # game/, editor/, plugins/, status/
+│       ├── components/    # game/, editor/(incl. NovelPanel), plugins/, status/, ui/
 │       ├── stores/        # Zustand stores (session, gameState, project, plugin, ui)
-│       └── services/      # api.ts, websocket.ts, settingsStorage.ts, localDb.ts
+│       └── services/      # api.ts (incl. novel stream), websocket.ts, settingsStorage.ts, localDb.ts
 ├── plugins/               # Built-in plugins
 ├── templates/worlds/      # World templates
 └── docs/                  # Detailed documentation
@@ -331,7 +345,7 @@ mise run db:reset         # Drop and recreate the database
 | Layer | Technology |
 |-------|-----------|
 | Backend | FastAPI · SQLModel · LiteLLM · SQLite / PostgreSQL |
-| Frontend | React · Vite · Zustand · TypeScript |
+| Frontend | React · Vite · Zustand · TypeScript · Tailwind CSS v4 · shadcn/ui (Radix) |
 | Storage | SQLite (local) · PostgreSQL (production) · IndexedDB (browser offline) |
 | AI | Any LiteLLM-compatible LLM · Separate image generation API |
 | Toolchain | mise · uv · ruff |
