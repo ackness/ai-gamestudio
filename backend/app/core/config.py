@@ -32,7 +32,6 @@ class Settings(BaseSettings):
     PLUGINS_DIR: str = "plugins"
     TEMPLATES_DIR: str = "templates/worlds"
     SECRET_STORE_DIR: str | None = None
-    PLUGIN_PIPELINE: str = "v1"  # "v1" (legacy blocks) or "v3" (narrative + plugin agent)
     PLUGIN_BLOCK_STRICT_CONFLICTS: bool = False
     MAX_LOG_SESSIONS: int = 200
     LOG_TTL_MINUTES: int = 30

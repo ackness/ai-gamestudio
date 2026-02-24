@@ -39,3 +39,4 @@ Thumbs.db
 .vercel
 audit/
 plans/
+plugins/backup/

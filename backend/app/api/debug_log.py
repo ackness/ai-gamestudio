@@ -152,15 +152,15 @@ async def get_session_story_images_endpoint(session_id: str):
 async def get_debug_prompt(session_id: str):
     """Return the fully assembled prompt messages that would be sent to the LLM.
 
-    This builds the same TurnContext and runs the same assemble_prompt logic
+    This builds the same TurnContext and runs assemble_narrative_prompt
     as a real chat turn, but does NOT call the LLM.  Useful for debugging
-    prompt construction, language enforcement, plugin injections, etc.
+    prompt construction and language enforcement.
     """
     from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
     from backend.app.core.game_state import GameStateManager
     from backend.app.core.llm_config import resolve_llm_config
-    from backend.app.services.prompt_assembly import assemble_prompt
+    from backend.app.services.prompt_assembly import assemble_narrative_prompt
     from backend.app.services.turn_context import build_turn_context
 
     async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
@@ -169,7 +169,7 @@ async def get_debug_prompt(session_id: str):
         if ctx is None:
             return {"error": "Session or project not found"}
 
-        messages = assemble_prompt(ctx, "(debug preview — no user message)", save_user_msg=True)
+        messages = assemble_narrative_prompt(ctx, "(debug preview — no user message)", save_user_msg=True)
         config = resolve_llm_config(project=ctx.project)
 
         return {

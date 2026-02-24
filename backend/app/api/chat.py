@@ -10,11 +10,9 @@ from loguru import logger
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from backend.app.core.access_key import is_request_authorized
-from backend.app.core.block_parser import strip_blocks
 from backend.app.db.engine import engine
 from backend.app.models.session import GameSession
-from backend.app.core.config import settings
-from backend.app.services.chat_service import process_message, process_message_v3
+from backend.app.services.chat_service import process_message
 
 from backend.app.api.debug_log import _add_log, _touch_log_session, _cleanup_log_sessions
 from backend.app.services.command_handlers import (
@@ -133,7 +131,7 @@ async def _background_generate_image(
             logger.warning("Failed to send image error event (WebSocket likely closed)")
 
 
-async def _stream_process_message_v3(
+async def _stream_process_message(
     sink: EventSink,
     session_id: str,
     content: str,
@@ -143,8 +141,8 @@ async def _stream_process_message_v3(
     llm_overrides: dict[str, str] | None = None,
     image_overrides: dict[str, str] | None = None,
 ) -> None:
-    """Stream process_message_v3 events (narrative + plugin agent) to sink."""
-    async for event in process_message_v3(
+    """Stream process_message events (narrative + plugin agent) to sink."""
+    async for event in process_message(
         session_id, content,
         save_user_msg=save_user_msg,
         save_assistant_msg=save_assistant_msg,
@@ -156,120 +154,6 @@ async def _stream_process_message_v3(
             continue  # internal event, don't forward
         _add_log(session_id, "send", event)
         await sink.send_json(event)
-
-
-async def _stream_process_message(
-    sink: EventSink,
-    session_id: str,
-    content: str,
-    *,
-    save_user_msg: bool = True,
-    save_assistant_msg: bool = True,
-    llm_overrides: dict[str, str] | None = None,
-    image_overrides: dict[str, str] | None = None,
-) -> None:
-    """Run process_message and stream results to a transport sink."""
-    if settings.PLUGIN_PIPELINE == "v3":
-        return await _stream_process_message_v3(
-            sink, session_id, content,
-            save_user_msg=save_user_msg,
-            save_assistant_msg=save_assistant_msg,
-            llm_overrides=llm_overrides,
-            image_overrides=image_overrides,
-        )
-    full_response = ""
-    pending_blocks: list[dict] = []
-    turn_id: str | None = None
-    saved_message_id: str | None = None
-
-    async for event in process_message(
-        session_id, content,
-        save_user_msg=save_user_msg,
-        save_assistant_msg=save_assistant_msg,
-        llm_overrides=llm_overrides,
-        image_overrides=image_overrides,
-    ):
-        event_turn_id = event.get("turn_id")
-        if isinstance(event_turn_id, str) and event_turn_id:
-            turn_id = event_turn_id
-
-        if event["type"] == "chunk":
-            full_response += event["content"]
-            await sink.send_json(
-                {"type": "chunk", "content": event["content"], "turn_id": turn_id}
-            )
-        elif event["type"] == "error":
-            _add_log(session_id, "send", event)
-            await sink.send_json(event)
-            return
-        elif event["type"] == "_message_saved":
-            saved_message_id = event.get("message_id")
-        elif event["type"] == "token_usage":
-            # Forward token_usage immediately — don't defer to pending_blocks
-            token_event = {
-                "type": "token_usage",
-                "data": event.get("data", {}),
-                "turn_id": turn_id,
-            }
-            _add_log(session_id, "send", token_event)
-            await sink.send_json(token_event)
-        else:
-            pending_blocks.append(event)
-
-    if turn_id is None:
-        turn_id = str(uuid.uuid4())
-
-    clean_content = strip_blocks(full_response)
-    done_event: dict[str, Any] = {
-        "type": "done", "content": clean_content,
-        "raw_content": full_response,
-        "turn_id": turn_id, "has_blocks": bool(pending_blocks),
-    }
-    if saved_message_id:
-        done_event["message_id"] = saved_message_id
-    _add_log(session_id, "send", {
-        "type": "done", "turn_id": turn_id,
-        "content_length": len(full_response), "preview": full_response[:300],
-    })
-    await sink.send_json(done_event)
-
-    for block in pending_blocks:
-        block_data = block.get("data")
-        block_id = block.get("block_id") or f"{turn_id}:{uuid.uuid4()}"
-        block_turn_id = block.get("turn_id", turn_id)
-
-        # Detect deferred story_image blocks — spawn background generation
-        if (
-            isinstance(block_data, dict)
-            and block_data.get("_deferred")
-            and block_data.get("_generation_params")
-        ):
-            gen_params = block_data.pop("_generation_params")
-            block_data.pop("_deferred", None)
-            # Send "generating" placeholder to the frontend immediately
-            block_event = {
-                "type": block["type"], "data": block_data,
-                "block_id": block_id, "turn_id": block_turn_id,
-            }
-            _add_log(session_id, "send", block_event)
-            await sink.send_json(block_event)
-            # Spawn actual generation as a background task
-            asyncio.create_task(
-                _background_generate_image(
-                    sink, session_id, block_id, block_turn_id, gen_params,
-                )
-            )
-        else:
-            block_event = {
-                "type": block["type"], "data": block_data,
-                "block_id": block_id, "turn_id": block_turn_id,
-            }
-            _add_log(session_id, "send", block_event)
-            await sink.send_json(block_event)
-
-    turn_end_event = {"type": "turn_end", "turn_id": turn_id}
-    _add_log(session_id, "send", turn_end_event)
-    await sink.send_json(turn_end_event)
 
 
 async def _session_exists(session_id: str) -> bool:

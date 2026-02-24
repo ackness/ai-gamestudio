@@ -12,8 +12,6 @@ from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from backend.app.core.block_parser import extract_blocks, strip_blocks
-from backend.app.core.plugin_engine import BlockDeclaration
-from backend.app.services.chat_service import _build_pre_response_instructions
 
 
 class TestExtractBlocks:
@@ -471,38 +469,6 @@ async def test_process_message_rolls_back_stage_b_when_block_handler_fails():
 
     await test_engine.dispose()
 
-
-class TestBuildPreResponseInstructions:
-    def test_dynamic_with_declarations(self):
-        declarations = {
-            "test_block": BlockDeclaration(
-                block_type="test_block",
-                plugin_name="test-plugin",
-                instruction='Output a test block:\n```json:test_block\n{"value": 42}\n```',
-            ),
-        }
-        result = _build_pre_response_instructions(declarations)
-        assert "test_block" in result
-        assert "42" in result
-        assert "Respond in character as the DM" in result
-
-    def test_fallback_without_declarations(self):
-        result = _build_pre_response_instructions(None)
-        assert "Respond in character as the DM" in result
-
-    def test_empty_declarations(self):
-        result = _build_pre_response_instructions({})
-        assert "Respond in character as the DM" in result
-
-    def test_skips_declarations_without_instruction(self):
-        declarations = {
-            "no_instruction": BlockDeclaration(
-                block_type="no_instruction",
-                plugin_name="test",
-            ),
-        }
-        result = _build_pre_response_instructions(declarations)
-        assert "no_instruction" not in result
 
 
 @pytest.mark.asyncio

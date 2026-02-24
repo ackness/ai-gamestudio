@@ -9,23 +9,18 @@ from loguru import logger
 from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
 from backend.app.core.block_handlers import BlockContext, dispatch_block  # noqa: F401 — tests patch this
-from backend.app.core.block_parser import strip_blocks
 from backend.app.core.game_state import GameStateManager
 from backend.app.core.llm_config import resolve_llm_config
 from backend.app.core.llm_gateway import completion_with_config, create_stream_result  # noqa: F401 — tests patch this
 from backend.app.db.engine import engine  # noqa: F401 — tests patch this
 from backend.app.services.archive_service import ARCHIVE_PLUGIN_NAME, maybe_auto_archive_summary
-from backend.app.services.block_processing import process_blocks
-from backend.app.services.plugin_service import get_enabled_plugins, storage_get as _storage_get, storage_set  # noqa: F401 — tests patch this
-from backend.app.services.prompt_assembly import _build_pre_response_instructions  # noqa: F401 — tests import this
+from backend.app.services.plugin_service import storage_get as _storage_get, storage_set  # noqa: F401 — tests patch this
 from backend.app.services.token_service import (
     calculate_turn_cost,
     count_message_tokens,
     get_model_context_window,
 )
 from backend.app.services.turn_context import build_turn_context
-
-# V3 imports (Plugin Agent mode)
 from backend.app.core.game_db import GameDB
 from backend.app.services.plugin_agent import run_plugin_agent
 
@@ -39,13 +34,13 @@ async def process_message(
     llm_overrides: dict[str, str] | None = None,
     image_overrides: dict[str, str] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
-    """Process a user message end-to-end and yield streaming events."""
+    """Process a user message: narrative LLM + Plugin Agent post-processing."""
     turn_id = str(uuid.uuid4())
 
     async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
         state_mgr = GameStateManager(db, autocommit=False)
 
-        # 1. Build turn context (loads session, project, characters, plugins, etc.)
+        # 1. Build turn context
         ctx = await build_turn_context(db, session_id, state_mgr)
         if ctx is None:
             yield {"type": "error", "content": "Session or project not found", "turn_id": turn_id}
@@ -53,31 +48,22 @@ async def process_message(
 
         # 2. Save user message
         if save_user_msg:
-            await state_mgr.add_message(
-                session_id, "user", user_content, scene_id=ctx.current_scene_id
-            )
+            await state_mgr.add_message(session_id, "user", user_content, scene_id=ctx.current_scene_id)
             await db.commit()
 
-        # 3. Assemble prompt and call LLM
-        from backend.app.services.prompt_assembly import assemble_prompt
-
-        messages = assemble_prompt(ctx, user_content, save_user_msg)
+        # 3. Assemble narrative-only prompt (no block instructions)
+        from backend.app.services.prompt_assembly import assemble_narrative_prompt
+        messages = assemble_narrative_prompt(ctx, user_content, save_user_msg)
         config = resolve_llm_config(project=ctx.project, overrides=llm_overrides)
-        logger.info(f"Using LLM: model={config.model}, source={config.source}")
+        logger.info("Narrative LLM: model={}, source={}", config.model, config.source)
 
-        # Estimate prompt tokens before sending
+        # Token tracking
         estimated_prompt_tokens = count_message_tokens(config.model, messages)
         context_window = get_model_context_window(config.model)
         max_input = context_window["max_input_tokens"]
-
-        # Prepare variables for token tracking (populated after streaming)
-        prompt_tokens = 0
-        completion_tokens = 0
-        turn_cost = 0.0
-        context_usage = 0.0
-        token_state: dict[str, Any] = {}
-
         result_acc = create_stream_result()
+
+        # 4. Stream narrative (no tools, no blocks)
         try:
             full_response = ""
             stream = await completion_with_config(messages, config, stream=True, result_acc=result_acc)
@@ -85,119 +71,98 @@ async def process_message(
                 full_response += chunk
                 yield {"type": "chunk", "content": chunk, "turn_id": turn_id}
         except Exception as exc:
-            logger.exception("LLM call failed")
+            logger.exception("Narrative LLM call failed")
             yield {"type": "error", "content": _format_llm_error(exc, config.model), "turn_id": turn_id}
             return
 
-        logger.info("LLM response ({} chars): {}", len(full_response), full_response)
+        yield {"type": "done", "content": full_response, "turn_id": turn_id}
 
-        # Use actual tokens if available, otherwise use estimates
+        # 5. Save narrative message + update turn count
         prompt_tokens = result_acc.prompt_tokens or estimated_prompt_tokens
         completion_tokens = result_acc.completion_tokens or max(1, len(full_response) // 4)
-
-        # Calculate cost
         turn_cost = calculate_turn_cost(config.model, prompt_tokens, completion_tokens)
-
-        # Context usage ratio
         context_usage = prompt_tokens / max_input if max_input > 0 else 0.0
 
-        # 4. Process blocks
-        block_context = BlockContext(
-            session_id=session_id, project_id=ctx.project.id, db=db,
-            state_mgr=state_mgr, autocommit=False, turn_id=turn_id,
-            image_overrides=image_overrides,
-            llm_overrides=llm_overrides,
-        )
-
-        clean_response = strip_blocks(full_response)
-        has_content = clean_response.strip() or bool(extract_blocks_check(full_response))
-        should_increment_turn = bool(save_assistant_msg and has_content)
         saved_message_id: str | None = None
+        should_increment_turn = bool(save_assistant_msg and full_response.strip())
 
-        try:
-            processed_blocks, event_bus = await process_blocks(
-                full_response, block_context, ctx.block_declarations,
-                ctx.capability_declarations, ctx.pe, ctx.enabled_names,
-                dispatch_fn=dispatch_block,
+        if save_assistant_msg and full_response.strip():
+            saved_msg = await state_mgr.add_message(
+                session_id, "assistant", full_response,
+                message_type="narration", scene_id=ctx.current_scene_id,
             )
-            block_context.event_bus = event_bus
+            saved_message_id = saved_msg.id
 
-            # 5. Save assistant message
-            updated_scene = await state_mgr.get_current_scene(session_id)
-            updated_scene_id = updated_scene.id if updated_scene else ctx.current_scene_id
+        token_state: dict[str, Any] = {}
+        if should_increment_turn:
+            game_state = json.loads(ctx.session.game_state_json or "{}")
+            game_state["turn_count"] = game_state.get("turn_count", 0) + 1
+            token_state = game_state.setdefault("token_usage", {
+                "total_prompt_tokens": 0, "total_completion_tokens": 0, "total_cost": 0.0,
+            })
+            token_state["total_prompt_tokens"] += prompt_tokens
+            token_state["total_completion_tokens"] += completion_tokens
+            token_state["total_cost"] += turn_cost
+            ctx.session.game_state_json = json.dumps(game_state)
+            db.add(ctx.session)
 
-            stage_b_has_writes = bool(processed_blocks)
-            if save_assistant_msg and has_content:
-                block_summary = [
-                    {"type": b["type"], "data": b["data"], "block_id": b.get("block_id")}
-                    for b in processed_blocks
-                ]
-                saved_msg = await state_mgr.add_message(
-                    session_id, "assistant", clean_response,
-                    message_type="narration",
-                    metadata={"blocks": block_summary} if block_summary else None,
-                    raw_content=full_response, scene_id=updated_scene_id,
-                )
-                saved_message_id = saved_msg.id
-                stage_b_has_writes = True
+        await db.commit()
 
-            # 6. Increment turn count
-            if should_increment_turn:
-                game_state = json.loads(ctx.session.game_state_json or "{}")
-                game_state["turn_count"] = game_state.get("turn_count", 0) + 1
-
-                # Update cumulative token usage in game_state
-                token_state = game_state.setdefault("token_usage", {
-                    "total_prompt_tokens": 0,
-                    "total_completion_tokens": 0,
-                    "total_cost": 0.0,
-                })
-                token_state["total_prompt_tokens"] += prompt_tokens
-                token_state["total_completion_tokens"] += completion_tokens
-                token_state["total_cost"] += turn_cost
-
-                ctx.session.game_state_json = json.dumps(game_state)
-                db.add(ctx.session)
-                stage_b_has_writes = True
-
-            if stage_b_has_writes:
-                await db.commit()
-
-        except Exception:
-            await db.rollback()
-            logger.exception("Failed to finalize turn {}", turn_id)
-            yield {"type": "error", "content": "回合状态保存失败，请重试", "turn_id": turn_id}
-            return
-
-        # 7. Yield token_usage event
         yield {
-            "type": "token_usage",
-            "turn_id": turn_id,
+            "type": "token_usage", "turn_id": turn_id,
             "data": {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
+                "prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
                 "total_tokens": prompt_tokens + completion_tokens,
-                "turn_cost": turn_cost,
+                "turn_cost": turn_cost, "context_usage": round(context_usage, 4),
                 "total_cost": token_state.get("total_cost", turn_cost),
                 "total_prompt_tokens": token_state.get("total_prompt_tokens", prompt_tokens),
                 "total_completion_tokens": token_state.get("total_completion_tokens", completion_tokens),
-                "context_usage": round(context_usage, 4),
-                "max_input_tokens": max_input,
-                "model": config.model,
+                "max_input_tokens": max_input, "model": config.model,
             },
         }
 
-        # 8. Yield block events
-        for block in processed_blocks:
-            yield {
-                "type": block["type"], "data": block["data"],
-                "block_id": block.get("block_id"), "turn_id": turn_id,
-            }
+        # 6. Run Plugin Agent (post-processing)
+        game_db = GameDB(db, session_id)
+        state_snapshot = await game_db.build_state_snapshot()
+        try:
+            blocks = await run_plugin_agent(
+                narrative=full_response,
+                game_state=state_snapshot,
+                enabled_plugins=ctx.enabled_names,
+                session_id=session_id,
+                game_db=game_db,
+                pe=ctx.pe,
+                config=config,
+            )
+        except Exception:
+            logger.exception("Plugin Agent failed for session {}", session_id)
+            blocks = []
+
+        # 7. Dispatch blocks
+        block_context = BlockContext(
+            session_id=session_id, project_id=ctx.project.id, db=db,
+            state_mgr=state_mgr, autocommit=False, turn_id=turn_id,
+            image_overrides=image_overrides, llm_overrides=llm_overrides,
+        )
+        for block in blocks:
+            try:
+                result = await dispatch_block(
+                    block, block_context, ctx.block_declarations, None,
+                )
+                if isinstance(result, list):
+                    for r in result:
+                        yield {"type": r["type"], "data": r["data"], "turn_id": turn_id}
+                else:
+                    yield {"type": block["type"], "data": block["data"], "turn_id": turn_id}
+            except Exception:
+                logger.exception("Block dispatch failed: {}", block.get("type"))
+
+        await db.commit()
 
         if saved_message_id:
             yield {"type": "_message_saved", "message_id": saved_message_id, "turn_id": turn_id}
 
-        # 9. Auto archive
+        # 8. Auto archive
         if should_increment_turn and ARCHIVE_PLUGIN_NAME in ctx.enabled_names:
             try:
                 created = await maybe_auto_archive_summary(db, ctx.project, ctx.session)
@@ -210,11 +175,8 @@ async def process_message(
             except Exception:
                 logger.exception("Auto archive summary failed")
 
-        # 10. Auto compress check
-        if (
-            "auto-compress" in ctx.enabled_names
-            and context_usage > 0
-        ):
+        # 9. Auto compress check
+        if "auto-compress" in ctx.enabled_names and context_usage > 0:
             from backend.app.services.compress_service import should_compress, compress_history
 
             ac_settings = ctx.runtime_settings_by_plugin.get("auto-compress", {})
@@ -228,7 +190,7 @@ async def process_message(
                         messages_to_compress = all_messages[:-keep_recent]
                         existing_summary = ctx.compression_summary
 
-                        result = await compress_history(
+                        compress_result = await compress_history(
                             messages_to_compress,
                             existing_summary,
                             model=config.model,
@@ -238,11 +200,10 @@ async def process_message(
                         await storage_set(
                             db, ctx.project.id, "auto-compress",
                             "compression-summary",
-                            {"summary": result["summary"]},
+                            {"summary": compress_result["summary"]},
                             autocommit=True,
                         )
 
-                        # Update compression state
                         prev_state = await _storage_get(db, ctx.project.id, "auto-compress", "compression-state")
                         prev_count = (prev_state or {}).get("total_compressions", 0) if isinstance(prev_state, dict) else 0
                         await storage_set(
@@ -268,11 +229,7 @@ async def process_message(
                 except Exception:
                     logger.exception("Auto-compress failed for session {}", session_id)
 
-
-def extract_blocks_check(text: str) -> bool:
-    """Quick check if text contains any blocks."""
-    from backend.app.core.block_parser import extract_blocks
-    return bool(extract_blocks(text))
+        yield {"type": "turn_end", "turn_id": turn_id}
 
 
 def _format_llm_error(exc: Exception, model: str) -> str:
@@ -297,135 +254,3 @@ def _format_llm_error(exc: Exception, model: str) -> str:
     return f"LLM 调用失败 ({exc_type}): {exc}"
 
 
-async def process_message_v3(
-    session_id: str,
-    user_content: str,
-    *,
-    save_user_msg: bool = True,
-    save_assistant_msg: bool = True,
-    llm_overrides: dict[str, str] | None = None,
-    image_overrides: dict[str, str] | None = None,
-) -> AsyncIterator[dict[str, Any]]:
-    """V3: Narrative-only LLM + Plugin Agent post-processing."""
-    turn_id = str(uuid.uuid4())
-
-    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
-        state_mgr = GameStateManager(db, autocommit=False)
-
-        # 1. Build turn context
-        ctx = await build_turn_context(db, session_id, state_mgr)
-        if ctx is None:
-            yield {"type": "error", "content": "Session or project not found", "turn_id": turn_id}
-            return
-
-        # 2. Save user message
-        if save_user_msg:
-            await state_mgr.add_message(session_id, "user", user_content, scene_id=ctx.current_scene_id)
-            await db.commit()
-
-        # 3. Assemble narrative-only prompt (no block instructions)
-        from backend.app.services.prompt_assembly import assemble_narrative_prompt
-        messages = assemble_narrative_prompt(ctx, user_content, save_user_msg)
-        config = resolve_llm_config(project=ctx.project, overrides=llm_overrides)
-        logger.info("V3 narrative LLM: model={}, source={}", config.model, config.source)
-
-        # Token tracking
-        estimated_prompt_tokens = count_message_tokens(config.model, messages)
-        context_window = get_model_context_window(config.model)
-        max_input = context_window["max_input_tokens"]
-        result_acc = create_stream_result()
-
-        # 4. Stream narrative (no tools, no blocks)
-        try:
-            full_response = ""
-            stream = await completion_with_config(messages, config, stream=True, result_acc=result_acc)
-            async for chunk in stream:
-                full_response += chunk
-                yield {"type": "chunk", "content": chunk, "turn_id": turn_id}
-        except Exception as exc:
-            logger.exception("V3 narrative LLM call failed")
-            yield {"type": "error", "content": _format_llm_error(exc, config.model), "turn_id": turn_id}
-            return
-
-        yield {"type": "done", "content": full_response, "turn_id": turn_id}
-
-        # 5. Save narrative message
-        prompt_tokens = result_acc.prompt_tokens or estimated_prompt_tokens
-        completion_tokens = result_acc.completion_tokens or max(1, len(full_response) // 4)
-        turn_cost = calculate_turn_cost(config.model, prompt_tokens, completion_tokens)
-        context_usage = prompt_tokens / max_input if max_input > 0 else 0.0
-
-        saved_message_id: str | None = None
-        if save_assistant_msg and full_response.strip():
-            saved_msg = await state_mgr.add_message(
-                session_id, "assistant", full_response,
-                message_type="narration", scene_id=ctx.current_scene_id,
-            )
-            saved_message_id = saved_msg.id
-
-        # Update turn count + token usage
-        game_state = json.loads(ctx.session.game_state_json or "{}")
-        game_state["turn_count"] = game_state.get("turn_count", 0) + 1
-        token_state = game_state.setdefault("token_usage", {
-            "total_prompt_tokens": 0, "total_completion_tokens": 0, "total_cost": 0.0,
-        })
-        token_state["total_prompt_tokens"] += prompt_tokens
-        token_state["total_completion_tokens"] += completion_tokens
-        token_state["total_cost"] += turn_cost
-        ctx.session.game_state_json = json.dumps(game_state)
-        db.add(ctx.session)
-        await db.commit()
-
-        yield {
-            "type": "token_usage", "turn_id": turn_id,
-            "data": {
-                "prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens,
-                "turn_cost": turn_cost, "context_usage": round(context_usage, 4),
-                "total_cost": token_state.get("total_cost", turn_cost),
-                "max_input_tokens": max_input, "model": config.model,
-            },
-        }
-
-        # 6. Run Plugin Agent (post-processing)
-        game_db = GameDB(db, session_id)
-        state_snapshot = await game_db.build_state_snapshot()
-        try:
-            blocks = await run_plugin_agent(
-                narrative=full_response,
-                game_state=state_snapshot,
-                enabled_plugins=ctx.enabled_names,
-                session_id=session_id,
-                game_db=game_db,
-                pe=ctx.pe,
-                config=config,
-            )
-        except Exception:
-            logger.exception("Plugin Agent failed for session {}", session_id)
-            blocks = []
-
-        # 7. Dispatch blocks (backend handlers: state_update writes DB, etc.)
-        block_context = BlockContext(
-            session_id=session_id, project_id=ctx.project.id, db=db,
-            state_mgr=state_mgr, autocommit=False, turn_id=turn_id,
-            image_overrides=image_overrides, llm_overrides=llm_overrides,
-        )
-        for block in blocks:
-            try:
-                result = await dispatch_block(
-                    block, block_context, ctx.block_declarations, None,
-                )
-                if isinstance(result, list):
-                    for r in result:
-                        yield {"type": r["type"], "data": r["data"], "turn_id": turn_id}
-                else:
-                    yield {"type": block["type"], "data": block["data"], "turn_id": turn_id}
-            except Exception:
-                logger.exception("Block dispatch failed: {}", block.get("type"))
-
-        await db.commit()
-
-        if saved_message_id:
-            yield {"type": "_message_saved", "message_id": saved_message_id, "turn_id": turn_id}
-
-        yield {"type": "turn_end", "turn_id": turn_id}
