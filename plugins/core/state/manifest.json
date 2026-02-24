@@ -25,7 +25,7 @@
       "requires_response": false
     },
     "character_sheet": {
-      "instruction": "When creating or editing a character card:\n```json:character_sheet\n{\"character_id\": \"new\", \"name\": \"待定\", \"editable_fields\": [\"name\"], \"attributes\": {\"气血\": 100}, \"inventory\": [\"长剑\"]}\n```",
+      "instruction": "When creating or editing a character card, include as much detail as possible:\n```json:character_sheet\n{\"character_id\": \"new\", \"name\": \"待定\", \"editable_fields\": [\"name\"], \"role\": \"武者\", \"description\": \"一名年轻的江湖游侠，身着青衫，腰佩长剑，眉宇间透着一股英气。\", \"background\": \"出身没落武林世家，自幼习武，立志行侠仗义。\", \"attributes\": {\"气血\": 100, \"内力\": 50, \"体力\": 80}, \"inventory\": [\"长剑\", \"干粮\", \"银两×20\"]}\n```\nFields: name (editable), role (character archetype), description (appearance & personality), background (origin story), attributes (numeric stats relevant to the world), inventory (starting items). Always provide description and background for immersion.",
       "handler": {
         "actions": [
           { "type": "builtin", "handler_name": "character_sheet" }

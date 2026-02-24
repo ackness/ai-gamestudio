@@ -273,7 +273,7 @@ function RawMessageViewer({ msg, onClose, t }: { msg: Message; onClose: () => vo
 }
 
 export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
-  const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom, messageImages, imageLoadingMessages } = useSessionStore()
+  const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom, messageImages, imageLoadingMessages, phase } = useSessionStore()
   const language = useUiStore((s) => s.language)
   const t = chatText[language] ?? chatText.en
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -483,6 +483,17 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
                 <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                 <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                 <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {phase === 'plugins' && !isStreaming && (
+          <div className="flex justify-start">
+            <div className="px-4 py-2.5 rounded-2xl rounded-tl-sm bg-muted/20 border border-dashed border-primary/30 shadow-sm">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="w-2 h-2 bg-primary/50 rounded-full animate-pulse" />
+                <span>插件处理中，请稍候…</span>
               </div>
             </div>
           </div>

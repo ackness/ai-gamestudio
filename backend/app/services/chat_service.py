@@ -143,6 +143,8 @@ async def process_message(
         }
 
         # 6. Run Plugin Agent (post-processing)
+        yield {"type": "phase_change", "phase": "plugins", "turn_id": turn_id}
+
         game_db = GameDB(db, session_id)
         state_snapshot = await game_db.build_state_snapshot()
         try:
@@ -159,6 +161,15 @@ async def process_message(
             logger.exception("Plugin Agent failed for session {}", session_id)
             blocks = []
 
+        # Filter conflicting blocks: suppress guide/choices when character_sheet is present
+        block_types = {b.get("type") for b in blocks}
+        if "character_sheet" in block_types:
+            suppressed = {"guide", "choices", "auto_guide"}
+            before_count = len(blocks)
+            blocks = [b for b in blocks if b.get("type") not in suppressed]
+            if len(blocks) < before_count:
+                logger.debug("Suppressed guide/choices blocks due to character_sheet presence")
+
         # Debug: log Plugin Agent results
         logger.debug(
             "Plugin Agent: {} blocks emitted: {}",
@@ -170,6 +181,8 @@ async def process_message(
             "block_count": len(blocks),
             "blocks": [{"type": b.get("type"), "data_keys": list(b.get("data", {}).keys()) if isinstance(b.get("data"), dict) else None} for b in blocks],
         })
+
+        yield {"type": "phase_change", "phase": "complete", "turn_id": turn_id}
 
         # 7. Dispatch blocks
         block_context = BlockContext(

@@ -21,6 +21,7 @@ export function DebugLogPanel({ sessionId, onClose }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const [autoScroll, setAutoScroll] = useState(true)
+  const [showChunks, setShowChunks] = useState(false)
   const [activeTab, setActiveTab] = useState<TabView>('log')
   const [promptData, setPromptData] = useState<DebugPromptResponse | null>(null)
   const [promptLoading, setPromptLoading] = useState(false)
@@ -191,6 +192,15 @@ export function DebugLogPanel({ sessionId, onClose }: Props) {
               <label className="flex items-center gap-1 text-muted-foreground cursor-pointer">
                 <input
                   type="checkbox"
+                  checked={showChunks}
+                  onChange={(e) => setShowChunks(e.target.checked)}
+                  className="accent-emerald-500"
+                />
+                Chunks
+              </label>
+              <label className="flex items-center gap-1 text-muted-foreground cursor-pointer">
+                <input
+                  type="checkbox"
                   checked={autoScroll}
                   onChange={(e) => setAutoScroll(e.target.checked)}
                   className="accent-emerald-500"
@@ -224,7 +234,7 @@ export function DebugLogPanel({ sessionId, onClose }: Props) {
           {logs.length === 0 && (
             <div className="text-muted-foreground/50 text-center py-4">No log entries yet. Send a message to see events.</div>
           )}
-          {logs.map((entry, i) => {
+          {logs.filter((entry) => showChunks || (entry.payload?.type as string) !== 'chunk').map((entry, i) => {
             const isSend = entry.dir === 'send'
             const type = (entry.payload?.type as string) || '?'
             const preview = entry.payload?.preview

@@ -290,8 +290,8 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
               <SceneBar currentScene={currentScene} scenes={scenes} onSceneSwitch={handleSceneSwitch} />
             )}
             <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} />
-            <QuickActions onTrigger={handleForceTrigger} disabled={isStreaming} />
-            <ChatInput onSend={handleSend} disabled={isStreaming} />
+            <QuickActions onTrigger={handleForceTrigger} disabled={isStreaming || phase === 'plugins'} />
+            <ChatInput onSend={handleSend} disabled={isStreaming || phase === 'plugins'} />
           </div>
         )}
 

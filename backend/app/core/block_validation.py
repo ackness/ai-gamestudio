@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from loguru import logger
+
 if TYPE_CHECKING:
     from backend.app.core.plugin_engine import BlockDeclaration
 
@@ -214,7 +216,10 @@ def _validate_builtin_semantics(block_type: str, data: Any) -> list[str]:
     elif block_type == "scene_update":
         action = data.get("action", "move")
         if action not in {"move", "update"}:
-            errors.append("$.scene_update.action: must be 'move' or 'update'")
+            # Auto-normalize unknown action to "move" (matches handler behavior)
+            logger.warning("scene_update: unknown action '{}', normalizing to 'move'", action)
+            data["action"] = "move"
+            action = "move"
         if action == "move" and not str(data.get("name", "")).strip():
             errors.append("$.scene_update.name: required when action=move")
 
