@@ -42,7 +42,7 @@ depends = ["dev:backend", "dev:frontend"]
 
 [tasks."dev:backend"]
 description = "启动 FastAPI 开发服务器"
-run = "uv run uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000"
+run = "uv run uvicorn backend.app.main:app --reload --reload-delay 1 --reload-include '*.py' --reload-dir backend --reload-dir plugins --host 0.0.0.0 --port 8000"
 
 [tasks."dev:frontend"]
 description = "启动 Vite 前端开发服务器"
