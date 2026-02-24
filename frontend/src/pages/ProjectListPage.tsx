@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Globe, Sparkles, ArrowRight, Loader2, Info } from 'lucide-react'
+import { Plus, Globe, Sparkles, ArrowRight, Loader2, Info, Trash2 } from 'lucide-react'
 import { useProjectStore } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { CreateProjectWizard } from '../components/editor/CreateProjectWizard'
@@ -22,6 +22,9 @@ const listPageText: Record<string, Record<string, string>> = {
     emptyDesc: '创建第一个世界，开始你的冒险',
     createWorld: '创建世界',
     open: '打开',
+    delete: '删除',
+    confirmDelete: '确认删除？',
+    cancel: '取消',
   },
   en: {
     bannerTitle: 'Data is not persistent',
@@ -36,13 +39,17 @@ const listPageText: Record<string, Record<string, string>> = {
     emptyDesc: 'Create your first world to begin your adventure',
     createWorld: 'Create World',
     open: 'Open',
+    delete: 'Delete',
+    confirmDelete: 'Confirm delete?',
+    cancel: 'Cancel',
   },
 }
 
 export function ProjectListPage() {
-  const { projects, loading, fetchProjects } = useProjectStore()
+  const { projects, loading, fetchProjects, deleteProject } = useProjectStore()
   const navigate = useNavigate()
   const [showWizard, setShowWizard] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const language = useUiStore((s) => s.language)
   const storagePersistent = useUiStore((s) => s.storagePersistent)
   const t = listPageText[language] ?? listPageText.en
@@ -133,14 +140,24 @@ export function ProjectListPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {projects.map((project) => (
-              <Card 
+              <Card
                 key={project.id}
-                className="group cursor-pointer hover:border-primary/50 transition-all duration-300 hover:shadow-md overflow-hidden"
-                onClick={() => navigate(`/projects/${project.id}`)}
+                className="group cursor-pointer hover:border-primary/50 transition-all duration-300 hover:shadow-md overflow-hidden relative"
+                onClick={() => confirmDeleteId !== project.id && navigate(`/projects/${project.id}`)}
               >
                 <CardHeader>
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4 text-primary">
-                    <Globe className="w-5 h-5" />
+                  <div className="flex items-start justify-between">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4 text-primary">
+                      <Globe className="w-5 h-5" />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                      onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(project.id) }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
                   <CardTitle className="line-clamp-1">{project.name}</CardTitle>
                   {project.description && (
@@ -155,6 +172,26 @@ export function ProjectListPage() {
                     {t.open} <ArrowRight className="w-3 h-3" />
                   </div>
                 </CardFooter>
+                {confirmDeleteId === project.id && (
+                  <div
+                    className="absolute inset-0 bg-background/90 backdrop-blur-sm flex flex-col items-center justify-center gap-3 z-10"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <p className="text-sm font-medium">{t.confirmDelete}</p>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setConfirmDeleteId(null)}>
+                        {t.cancel}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => { deleteProject(project.id); setConfirmDeleteId(null) }}
+                      >
+                        {t.delete}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </Card>
             ))}
           </div>
