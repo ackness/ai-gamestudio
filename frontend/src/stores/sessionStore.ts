@@ -23,6 +23,7 @@ interface SessionStore {
   pendingBlocks: PendingBlock[]
   phase: string
   pluginProcessing: boolean
+  lastPluginSummary: { rounds: number; tool_calls: string[]; blocks_emitted: string[] } | null
   currentScene: Scene | null
   scenes: Scene[]
   messageImages: Record<string, StoryImageData[]>
@@ -43,6 +44,7 @@ interface SessionStore {
   clearPendingBlocks: () => void
   setPhase: (phase: string) => void
   setPluginProcessing: (processing: boolean) => void
+  setLastPluginSummary: (summary: { rounds: number; tool_calls: string[]; blocks_emitted: string[] } | null) => void
   setCurrentScene: (scene: Scene | null) => void
   setScenes: (scenes: Scene[]) => void
   addScene: (scene: Scene) => void
@@ -54,6 +56,7 @@ interface SessionStore {
   clearMessageImages: () => void
   hydrateMessageImages: (sessionId: string) => Promise<void>
   updateBlockData: (blockId: string, data: unknown) => void
+  updateMessageBlocks: (messageId: string, blocks: { type: string; data: unknown; block_id?: string }[]) => void
 }
 
 export const useSessionStore = create<SessionStore>((set) => ({
@@ -66,6 +69,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   pendingBlocks: [],
   phase: 'init',
   pluginProcessing: false,
+  lastPluginSummary: null,
   currentScene: null,
   scenes: [],
   messageImages: {},
@@ -235,6 +239,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   setPluginProcessing: (pluginProcessing) => set({ pluginProcessing }),
 
+  setLastPluginSummary: (lastPluginSummary) => set({ lastPluginSummary }),
+
   setCurrentScene: (currentScene) => set({ currentScene }),
 
   setScenes: (scenes) => {
@@ -344,4 +350,11 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
       return state
     }),
+
+  updateMessageBlocks: (messageId, blocks) =>
+    set((state) => ({
+      messages: state.messages.map((msg) =>
+        msg.id === messageId ? { ...msg, blocks } : msg,
+      ),
+    })),
 }))

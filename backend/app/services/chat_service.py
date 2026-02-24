@@ -147,8 +147,9 @@ async def process_message(
 
         game_db = GameDB(db, session_id)
         state_snapshot = await game_db.build_state_snapshot()
+        plugin_summary: dict[str, Any] = {}
         try:
-            blocks = await run_plugin_agent(
+            blocks, plugin_summary = await run_plugin_agent(
                 narrative=full_response,
                 game_state=state_snapshot,
                 enabled_plugins=ctx.enabled_names,
@@ -183,6 +184,9 @@ async def process_message(
         })
 
         yield {"type": "phase_change", "phase": "complete", "turn_id": turn_id}
+
+        if plugin_summary:
+            yield {"type": "plugin_summary", "data": plugin_summary, "turn_id": turn_id}
 
         # 7. Dispatch blocks
         block_context = BlockContext(
@@ -374,8 +378,9 @@ async def retrigger_plugins(
 
         game_db = GameDB(db, session_id)
         state_snapshot = await game_db.build_state_snapshot()
+        plugin_summary: dict[str, Any] = {}
         try:
-            blocks = await run_plugin_agent(
+            blocks, plugin_summary = await run_plugin_agent(
                 narrative=narrative,
                 game_state=state_snapshot,
                 enabled_plugins=ctx.enabled_names,
@@ -398,13 +403,17 @@ async def retrigger_plugins(
 
         yield {"type": "phase_change", "phase": "complete", "turn_id": turn_id}
 
-        # Dispatch blocks
+        if plugin_summary:
+            yield {"type": "plugin_summary", "data": plugin_summary, "turn_id": turn_id}
+
+        # Dispatch blocks (side effects like DB writes) but collect for batch update
         block_context = BlockContext(
             session_id=session_id, project_id=ctx.project.id, db=db,
             state_mgr=state_mgr, autocommit=False, turn_id=turn_id,
             image_overrides=image_overrides, llm_overrides=llm_overrides,
         )
-        for block in blocks:
+        dispatched_blocks: list[dict] = []
+        for i, block in enumerate(blocks):
             block_type = str(block.get("type", "unknown"))
             block_data = block.get("data")
             declaration = ctx.block_declarations.get(block_type) if ctx.block_declarations else None
@@ -415,27 +424,32 @@ async def retrigger_plugins(
                 continue
 
             try:
-                result = await dispatch_block(block, block_context, ctx.block_declarations, None)
-                if isinstance(result, list):
-                    for r in result:
-                        yield {"type": r["type"], "data": r["data"], "turn_id": turn_id}
-                else:
-                    yield {"type": block["type"], "data": block["data"], "turn_id": turn_id}
+                await dispatch_block(block, block_context, ctx.block_declarations, None)
             except Exception:
                 logger.exception("Block dispatch failed on retrigger: {}", block.get("type"))
+                continue
+
+            if block_type not in {"state_update"}:
+                dispatched_blocks.append({
+                    "type": block_type,
+                    "data": block_data,
+                    "block_id": f"{message_id}:{i}",
+                })
 
         # Persist blocks to message metadata
-        if blocks:
-            dispatched_blocks = [
-                {"type": b.get("type"), "data": b.get("data"), "block_id": f"{message_id}:{i}"}
-                for i, b in enumerate(blocks)
-                if b.get("type") not in {"state_update"}
-            ]
-            if dispatched_blocks:
-                existing_meta = json.loads(msg_obj.metadata_json or "{}") if msg_obj.metadata_json else {}
-                existing_meta["blocks"] = dispatched_blocks
-                msg_obj.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
-                db.add(msg_obj)
+        if dispatched_blocks:
+            existing_meta = json.loads(msg_obj.metadata_json or "{}") if msg_obj.metadata_json else {}
+            existing_meta["blocks"] = dispatched_blocks
+            msg_obj.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
+            db.add(msg_obj)
 
         await db.commit()
+
+        # Send a single event so the frontend can update the message's blocks in-place
+        yield {
+            "type": "message_blocks_updated",
+            "message_id": message_id,
+            "blocks": dispatched_blocks,
+            "turn_id": turn_id,
+        }
         yield {"type": "turn_end", "turn_id": turn_id}

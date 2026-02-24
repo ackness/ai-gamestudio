@@ -48,12 +48,14 @@ export function useGameWebSocket(currentSession: Session | null) {
     addPendingBlock,
     setPhase,
     setPluginProcessing,
+    setLastPluginSummary,
     setCurrentScene,
     setScenes,
     flushPendingBlocksForTurn,
     setMessageImage,
     setImageLoading,
     hydrateMessageImages,
+    updateMessageBlocks,
   } = useSessionStore()
   const { setCharacters, mergeCharacters, setWorldState, addEvent, setEvents } = useGameStateStore()
 
@@ -124,10 +126,15 @@ export function useGameWebSocket(currentSession: Session | null) {
       if (isRecord(world)) setWorldState(world)
     }
 
+    ws.onPluginSummary = (data) => {
+      setLastPluginSummary(data)
+    }
+
     ws.onPhaseChange = (newPhase) => {
       // Transient processing phases — don't override game phase
       if (newPhase === 'plugins') {
         setPluginProcessing(true)
+        setLastPluginSummary(null)
         return
       }
       if (newPhase === 'complete') {
@@ -218,6 +225,10 @@ export function useGameWebSocket(currentSession: Session | null) {
       }
 
       addPendingBlock({ type, data: enrichedData, turnId: turnId || undefined, blockId: resolvedBlockId })
+    }
+
+    ws.onMessageBlocksUpdated = (messageId, blocks) => {
+      if (messageId && blocks) updateMessageBlocks(messageId, blocks)
     }
 
     ws.onTurnEnd = (turnId) => {

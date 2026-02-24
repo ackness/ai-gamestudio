@@ -24,6 +24,8 @@ type NotificationCallback = (
   blockId: string,
 ) => void
 type TurnEndCallback = (turnId: string) => void
+type MessageBlocksUpdatedCallback = (messageId: string, blocks: { type: string; data: unknown; block_id?: string }[]) => void
+type PluginSummaryCallback = (data: { rounds: number; tool_calls: string[]; blocks_emitted: string[] }) => void
 type MessageImageCallback = (messageId: string, data: Record<string, unknown>) => void
 type MessageImageLoadingCallback = (messageId: string) => void
 type ConnectedCallback = () => void
@@ -89,6 +91,8 @@ export class GameWebSocket {
   onSceneUpdate: SceneUpdateCallback = () => {}
   onNotification: NotificationCallback = () => {}
   onTurnEnd: TurnEndCallback = () => {}
+  onMessageBlocksUpdated: MessageBlocksUpdatedCallback = () => {}
+  onPluginSummary: PluginSummaryCallback = () => {}
   onMessageImage: MessageImageCallback = () => {}
   onMessageImageLoading: MessageImageLoadingCallback = () => {}
   onConnected: ConnectedCallback = () => {}
@@ -299,6 +303,17 @@ export class GameWebSocket {
           String(data.block_id || ''),
         )
         this.onBlock('notification', data.data, String(data.turn_id || ''), String(data.block_id || ''))
+        break
+      case 'plugin_summary': {
+        const summaryData = (data.data || {}) as { rounds: number; tool_calls: string[]; blocks_emitted: string[] }
+        this.onPluginSummary(summaryData)
+        break
+      }
+      case 'message_blocks_updated':
+        this.onMessageBlocksUpdated(
+          String(data.message_id || ''),
+          Array.isArray(data.blocks) ? (data.blocks as { type: string; data: unknown; block_id?: string }[]) : [],
+        )
         break
       case 'turn_end':
         this.onTurnEnd(String(data.turn_id || ''))

@@ -287,7 +287,7 @@ function RawMessageViewer({ msg, onClose, t }: { msg: Message; onClose: () => vo
 }
 
 export function ChatMessages({ onAction, onRetry, onGenerateImage, onRetriggerPlugins }: Props) {
-  const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom, messageImages, imageLoadingMessages, pluginProcessing } = useSessionStore()
+  const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom, messageImages, imageLoadingMessages, pluginProcessing, lastPluginSummary } = useSessionStore()
   const language = useUiStore((s) => s.language)
   const t = chatText[language] ?? chatText.en
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -523,6 +523,25 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage, onRetriggerPl
                 <span>插件处理中，请稍候…</span>
               </div>
             </div>
+          </div>
+        )}
+
+        {lastPluginSummary && !pluginProcessing && !isStreaming && (
+          <div className="flex justify-start">
+            <details className="px-3 py-1.5 rounded-lg bg-muted/20 border border-muted-foreground/20 text-[11px] text-muted-foreground max-w-[80%]">
+              <summary className="cursor-pointer select-none flex items-center gap-1.5">
+                <Plug className="w-3 h-3 text-cyan-400" />
+                <span>插件执行完成 · {lastPluginSummary.rounds} 轮 · {lastPluginSummary.tool_calls.length} 次调用 · {lastPluginSummary.blocks_emitted.length} 个 block</span>
+              </summary>
+              <div className="mt-1 pl-4 space-y-0.5">
+                {lastPluginSummary.tool_calls.length > 0 && (
+                  <div><span className="text-muted-foreground/70">工具: </span>{[...new Set(lastPluginSummary.tool_calls)].join(', ')}</div>
+                )}
+                {lastPluginSummary.blocks_emitted.length > 0 && (
+                  <div><span className="text-muted-foreground/70">Blocks: </span>{lastPluginSummary.blocks_emitted.join(', ')}</div>
+                )}
+              </div>
+            </details>
           </div>
         )}
 

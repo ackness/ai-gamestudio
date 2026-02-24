@@ -46,8 +46,12 @@ async def run_plugin_agent(
     pe: PluginEngine,
     config: ResolvedLlmConfig,
     plugins_dir: str = "plugins",
-) -> list[dict]:
-    """Run the Plugin Agent after narrative completes. Returns emitted blocks."""
+) -> tuple[list[dict], dict[str, Any]]:
+    """Run the Plugin Agent after narrative completes.
+
+    Returns ``(blocks, summary)`` where *summary* is a dict describing the
+    execution for progress reporting.
+    """
 
     state_json = json.dumps(game_state, ensure_ascii=False, default=str)
     messages: list[dict[str, Any]] = [
@@ -68,6 +72,7 @@ async def run_plugin_agent(
     )
 
     total_rounds = 0
+    all_tool_calls: list[dict[str, str]] = []
     for round_idx in range(MAX_TOOL_ROUNDS):
         total_rounds = round_idx + 1
         call_kwargs = _build_call_kwargs(config, messages, tools)
@@ -87,7 +92,9 @@ async def run_plugin_agent(
         round_calls = []
         for tc in message.tool_calls:
             result = await _execute_tool(tc, ctx)
-            round_calls.append({"tool": tc.function.name, "args_preview": tc.function.arguments[:200]})
+            call_info = {"tool": tc.function.name, "args_preview": tc.function.arguments[:200]}
+            round_calls.append(call_info)
+            all_tool_calls.append(call_info)
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
@@ -112,7 +119,12 @@ async def run_plugin_agent(
         ],
     })
 
-    return blocks
+    summary: dict[str, Any] = {
+        "rounds": total_rounds,
+        "tool_calls": [c["tool"] for c in all_tool_calls],
+        "blocks_emitted": [b.get("type") for b in blocks],
+    }
+    return blocks, summary
 
 
 async def invoke_single_plugin(
