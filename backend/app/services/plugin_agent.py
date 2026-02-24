@@ -14,6 +14,7 @@ from backend.app.core.network_safety import ensure_safe_api_base
 from backend.app.core.plugin_engine import PluginEngine
 from backend.app.core.plugin_tools import get_all_tools
 from backend.app.core.script_runner import PythonScriptRunner
+from backend.app.api.debug_log import _add_log
 
 MAX_TOOL_ROUNDS = 10
 
@@ -66,7 +67,9 @@ async def run_plugin_agent(
         blocks=blocks,
     )
 
+    total_rounds = 0
     for round_idx in range(MAX_TOOL_ROUNDS):
+        total_rounds = round_idx + 1
         call_kwargs = _build_call_kwargs(config, messages, tools)
         try:
             response = await litellm.acompletion(**call_kwargs)
@@ -76,18 +79,38 @@ async def run_plugin_agent(
 
         message = response.choices[0].message
         if not message.tool_calls:
+            logger.debug("Plugin Agent round {}: no tool calls, finishing", round_idx)
             break
 
         messages.append(message.model_dump(exclude_none=True))
 
+        round_calls = []
         for tc in message.tool_calls:
             result = await _execute_tool(tc, ctx)
+            round_calls.append({"tool": tc.function.name, "args_preview": tc.function.arguments[:200]})
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
                 "name": tc.function.name,
                 "content": json.dumps(result, ensure_ascii=False, default=str),
             })
+
+        logger.debug(
+            "Plugin Agent round {}: {} tool calls: {}",
+            round_idx, len(round_calls), [c["tool"] for c in round_calls],
+        )
+
+    # Debug: log full agent summary to debug panel
+    _add_log(session_id, "debug", {
+        "type": "plugin_agent_trace",
+        "enabled_plugins": enabled_plugins,
+        "rounds": total_rounds,
+        "blocks_emitted": [{"type": b["type"], "data_keys": list(b.get("data", {}).keys()) if isinstance(b.get("data"), dict) else None} for b in blocks],
+        "tool_calls": [
+            {"role": m["role"], "name": m.get("name", ""), "content_preview": str(m.get("content", ""))[:150]}
+            for m in messages if m.get("role") in ("tool",)
+        ],
+    })
 
     return blocks
 

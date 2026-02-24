@@ -172,6 +172,13 @@ async def get_debug_prompt(session_id: str):
         messages = assemble_narrative_prompt(ctx, "(debug preview — no user message)", save_user_msg=True)
         config = resolve_llm_config(project=ctx.project)
 
+        # Plugin Agent info
+        from backend.app.core.plugin_tools import get_all_tools
+        from backend.app.services.plugin_agent import PLUGIN_AGENT_SYSTEM_PROMPT
+
+        agent_tools = get_all_tools()
+        block_decls = ctx.block_declarations or {}
+
         return {
             "model": config.model,
             "api_base": config.api_base,
@@ -183,6 +190,17 @@ async def get_debug_prompt(session_id: str):
             ],
             "total_chars": sum(len(m["content"]) for m in messages),
             "message_count": len(messages),
+            "plugin_agent": {
+                "system_prompt": PLUGIN_AGENT_SYSTEM_PROMPT,
+                "tools": [
+                    {"name": t["function"]["name"], "description": t["function"].get("description", "")}
+                    for t in agent_tools
+                ],
+                "block_declarations": {
+                    name: {"plugin": d.plugin_name, "schema": d.schema}
+                    for name, d in block_decls.items()
+                },
+            },
         }
 
 

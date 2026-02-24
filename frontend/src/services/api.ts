@@ -399,6 +399,12 @@ export interface DebugPromptMessage {
   length: number
 }
 
+export interface DebugPluginAgentInfo {
+  system_prompt: string
+  tools: { name: string; description: string }[]
+  block_declarations: Record<string, { plugin: string; schema: Record<string, unknown> | null }>
+}
+
 export interface DebugPromptResponse {
   model: string
   api_base: string | null
@@ -407,6 +413,7 @@ export interface DebugPromptResponse {
   messages: DebugPromptMessage[]
   total_chars: number
   message_count: number
+  plugin_agent?: DebugPluginAgentInfo
   error?: string
 }
 

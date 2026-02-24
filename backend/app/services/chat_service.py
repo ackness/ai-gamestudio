@@ -24,6 +24,7 @@ from backend.app.services.token_service import (
 from backend.app.services.turn_context import build_turn_context
 from backend.app.core.game_db import GameDB
 from backend.app.services.plugin_agent import run_plugin_agent
+from backend.app.api.debug_log import _add_log
 
 
 async def process_message(
@@ -57,6 +58,25 @@ async def process_message(
         messages = assemble_narrative_prompt(ctx, user_content, save_user_msg)
         config = resolve_llm_config(project=ctx.project, overrides=llm_overrides)
         logger.info("Narrative LLM: model={}, source={}", config.model, config.source)
+
+        # Debug: log prompt summary
+        logger.debug(
+            "Prompt: {} messages, {} chars, enabled_plugins={}",
+            len(messages), sum(len(m["content"]) for m in messages), ctx.enabled_names,
+        )
+        _add_log(session_id, "debug", {
+            "type": "narrative_prompt",
+            "turn_id": turn_id,
+            "model": config.model,
+            "source": config.source,
+            "enabled_plugins": ctx.enabled_names,
+            "message_count": len(messages),
+            "total_chars": sum(len(m["content"]) for m in messages),
+            "messages": [
+                {"role": m["role"], "length": len(m["content"]), "preview": m["content"][:200]}
+                for m in messages
+            ],
+        })
 
         # Token tracking
         estimated_prompt_tokens = count_message_tokens(config.model, messages)
@@ -138,6 +158,18 @@ async def process_message(
         except Exception:
             logger.exception("Plugin Agent failed for session {}", session_id)
             blocks = []
+
+        # Debug: log Plugin Agent results
+        logger.debug(
+            "Plugin Agent: {} blocks emitted: {}",
+            len(blocks), [b.get("type") for b in blocks],
+        )
+        _add_log(session_id, "debug", {
+            "type": "plugin_agent_result",
+            "turn_id": turn_id,
+            "block_count": len(blocks),
+            "blocks": [{"type": b.get("type"), "data_keys": list(b.get("data", {}).keys()) if isinstance(b.get("data"), dict) else None} for b in blocks],
+        })
 
         # 7. Dispatch blocks
         block_context = BlockContext(
