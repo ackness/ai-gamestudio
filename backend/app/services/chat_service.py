@@ -9,11 +9,12 @@ from loguru import logger
 from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
 from backend.app.core.block_handlers import BlockContext, dispatch_block  # noqa: F401 — tests patch this
+from backend.app.core.block_validation import validate_block_data
 from backend.app.core.game_state import GameStateManager
 from backend.app.core.llm_config import resolve_llm_config
 from backend.app.core.llm_gateway import completion_with_config, create_stream_result  # noqa: F401 — tests patch this
 from backend.app.db.engine import engine  # noqa: F401 — tests patch this
-from backend.app.services.archive_service import ARCHIVE_PLUGIN_NAME, maybe_auto_archive_summary
+from backend.app.services.archive_service import maybe_auto_archive_summary
 from backend.app.services.plugin_service import storage_get as _storage_get, storage_set  # noqa: F401 — tests patch this
 from backend.app.services.token_service import (
     calculate_turn_cost,
@@ -145,6 +146,24 @@ async def process_message(
             image_overrides=image_overrides, llm_overrides=llm_overrides,
         )
         for block in blocks:
+            block_type = str(block.get("type", "unknown"))
+            block_data = block.get("data")
+            declaration = ctx.block_declarations.get(block_type) if ctx.block_declarations else None
+
+            validation_errors = validate_block_data(block_type, block_data, declaration)
+            if validation_errors:
+                logger.warning("Invalid block from Plugin Agent: type={}, errors={}", block_type, validation_errors)
+                yield {
+                    "type": "notification",
+                    "data": {
+                        "level": "warning",
+                        "title": "Block 数据不完整",
+                        "content": f"{block_type}: {'; '.join(validation_errors[:2])}",
+                    },
+                    "turn_id": turn_id,
+                }
+                continue
+
             try:
                 result = await dispatch_block(
                     block, block_context, ctx.block_declarations, None,

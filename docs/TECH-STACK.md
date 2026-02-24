@@ -231,7 +231,6 @@ ai-gamestudio/
 │       │   ├── chat_service.py       # process_message 回合编排
 │       │   ├── turn_context.py       # TurnContext 数据类 + 异步加载
 │       │   ├── prompt_assembly.py    # 纯函数 Prompt 组装
-│       │   ├── block_processing.py   # Block 提取/校验/分发/事件排空
 │       │   ├── command_handlers.py   # WebSocket 消息类型处理器
 │       │   ├── plugin_service.py     # 插件启用状态管理
 │       │   ├── runtime_settings_service.py  # 运行时设置 CRUD

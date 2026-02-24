@@ -60,8 +60,8 @@ backend/app/
 ├── services/      # Business logic
 │   ├── chat_service.py              # process_message() — turn orchestration (slim entry point)
 │   ├── turn_context.py              # TurnContext dataclass + build_turn_context() data loading
-│   ├── prompt_assembly.py           # assemble_prompt() — pure PromptBuilder assembly
-│   ├── block_processing.py          # process_blocks() — block extract/validate/dispatch
+│   ├── prompt_assembly.py           # assemble_narrative_prompt() — narrative-only prompt
+│   ├── plugin_agent.py              # Plugin Agent — post-narrative function-calling agent
 │   ├── command_handlers.py          # WebSocket command handlers (init_game, form_submit, etc.)
 │   ├── plugin_service.py            # Plugin enablement state management
 │   ├── runtime_settings_service.py  # Per-plugin runtime settings CRUD
@@ -70,7 +70,7 @@ backend/app/
 └── db/            # Database engine and initialization
 ```
 
-**Request flow for chat:** WebSocket at `/ws/chat/{session_id}` (or HTTP POST `/api/chat/{session_id}/command` for Vercel) → `chat.py` router → `_dispatch_incoming_message()` → `command_handlers._handle_*()` → `chat_service.process_message()` (async generator: `build_turn_context` → `assemble_prompt` → stream LLM → `process_blocks`) → streamed back over WebSocket.
+**Request flow for chat:** WebSocket at `/ws/chat/{session_id}` (or HTTP POST `/api/chat/{session_id}/command` for Vercel) → `chat.py` router → `_dispatch_incoming_message()` → `command_handlers._handle_*()` → `chat_service.process_message()` (async generator: `build_turn_context` → `assemble_narrative_prompt` → stream narrative LLM → `run_plugin_agent` → validate + dispatch blocks) → streamed back over WebSocket.
 
 **PromptBuilder injection positions** (positions 1–4 merge into one system message, 5 becomes role-specific messages, 6 appends as final system message):
 1. `system` — world doc, global plugins

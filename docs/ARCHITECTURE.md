@@ -27,7 +27,6 @@ Backend (FastAPI + SQLModel + SQLite / PostgreSQL)
   - novel_service      — Session material extraction + outline/chapter generation
   - turn_context       — TurnContext dataclass + async data loading
   - prompt_assembly    — Pure-function prompt assembly from TurnContext
-  - block_processing   — Block extraction, validation, dispatch, event drain
   - plugin_engine      — Discovery / loading / manifest / dependency resolution
   - prompt_builder     — 6-position prompt template engine
   - block_parser       — json:xxx block extraction
