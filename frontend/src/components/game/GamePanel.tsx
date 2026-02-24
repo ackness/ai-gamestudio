@@ -15,7 +15,10 @@ import { WelcomeScreen } from './WelcomeScreen'
 import { DebugLogPanel } from './DebugLogPanel'
 import { SessionSelector } from './SessionSelector'
 import type { LlmInfo } from '../../services/api'
+import * as api from '../../services/api'
+import { useTokenStore } from '../../stores/tokenStore'
 import { useUiStore } from '../../stores/uiStore'
+import { TokenUsageBar } from './TokenUsageBar'
 import { useGameWebSocket } from '../../hooks/useGameWebSocket'
 import { useGameActions } from '../../hooks/useGameActions'
 import { useArchive } from '../../hooks/useArchive'
@@ -126,6 +129,26 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
   const effectiveModel = llmInfo?.model || ''
   const effectiveProvider = llmInfo?.provider || 'openai'
   const effectiveModelName = llmInfo?.model_name || ''
+
+  const setModelInfo = useTokenStore((s) => s.setModelInfo)
+
+  useEffect(() => {
+    if (!effectiveModel) return
+    api.getModelInfo(effectiveModel).then((info) => {
+      setModelInfo({
+        model: info.model,
+        maxInputTokens: info.max_input_tokens,
+        maxOutputTokens: info.max_output_tokens,
+        maxInputTokensDisplay: info.max_input_tokens_display,
+        inputCostPerToken: info.input_cost_per_token,
+        outputCostPerToken: info.output_cost_per_token,
+        known: info.known,
+      })
+    }).catch(() => {
+      // Silently ignore — model info is optional
+    })
+  }, [effectiveModel, setModelInfo])
+
   const modelBadge = effectiveModel ? (
     <Badge variant="outline" className="text-[10px] font-mono font-normal tracking-tight h-5 truncate max-w-[200px]" title={effectiveModel}>
       {effectiveProvider}/{effectiveModelName}
@@ -142,6 +165,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
               {gpt.noSession}
             </span>
             {modelBadge}
+            <TokenUsageBar />
           </div>
           <SessionSelector
             sessions={sessions}
@@ -168,6 +192,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
             {gpt.gameSession}
           </span>
           {modelBadge}
+          <TokenUsageBar />
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <Tooltip>
