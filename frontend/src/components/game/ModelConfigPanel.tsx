@@ -33,7 +33,9 @@ const modelPanelText: Record<string, Record<string, string>> = {
     pluginModel: '插件模型',
     pluginApiKey: '插件 API Key',
     pluginApiBase: '插件 API Base',
-    pluginModelHint: '留空则与主模型相同',
+    pluginModelPlaceholder: '例：openai/llama3.2',
+    pluginApiKeyPlaceholder: '输入 API Key',
+    pluginApiBasePlaceholder: '例：http://localhost:11434/v1',
     pluginSameAsMain: '与主模型相同',
     pluginCustom: '自定义模型',
     imageGeneration: '图片生成',
@@ -74,7 +76,9 @@ const modelPanelText: Record<string, Record<string, string>> = {
     pluginModel: 'Plugin Model',
     pluginApiKey: 'Plugin API Key',
     pluginApiBase: 'Plugin API Base',
-    pluginModelHint: 'Leave empty to use main model',
+    pluginModelPlaceholder: 'e.g. openai/llama3.2',
+    pluginApiKeyPlaceholder: 'Enter API Key',
+    pluginApiBasePlaceholder: 'e.g. http://localhost:11434/v1',
     pluginSameAsMain: 'Same as main model',
     pluginCustom: 'Custom model',
     imageGeneration: 'Image Generation',
@@ -561,7 +565,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
                 type="text"
                 value={pluginModel}
                 onChange={(e) => setPluginModel(e.target.value)}
-                placeholder={model || t.pluginModelHint}
+                placeholder={t.pluginModelPlaceholder}
                 disabled={pluginUseSameModel}
                 className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
               />
@@ -573,7 +577,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
                 type="password"
                 value={pluginApiKey}
                 onChange={(e) => setPluginApiKey(e.target.value)}
-                placeholder={browserConfig.pluginApiKey ? t.keySetInBrowser : t.pluginModelHint}
+                placeholder={t.pluginApiKeyPlaceholder}
                 disabled={pluginUseSameModel}
                 className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
               />
@@ -585,7 +589,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
                 type="text"
                 value={pluginApiBase}
                 onChange={(e) => setPluginApiBase(e.target.value)}
-                placeholder={apiBase || t.pluginModelHint}
+                placeholder={t.pluginApiBasePlaceholder}
                 disabled={pluginUseSameModel}
                 className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
               />
