@@ -119,9 +119,14 @@ async function detectBackend(): Promise<StorageBackend> {
   let persistent = await probeHealth()
   if (persistent === null) {
     // Network error — backend may still be starting up (local dev race condition).
-    // Retry once after a short delay before concluding storage is not persistent.
-    await new Promise<void>((r) => setTimeout(r, 2500))
-    persistent = await probeHealth() ?? false
+    // Retry with progressive delays to handle slow cold starts (e.g. LiteLLM ~10s).
+    const retryDelays = [2000, 3000, 5000]
+    for (const delay of retryDelays) {
+      await new Promise<void>((r) => setTimeout(r, delay))
+      persistent = await probeHealth()
+      if (persistent !== null) break
+    }
+    persistent = persistent ?? false
   }
 
   _storagePersistent = persistent
