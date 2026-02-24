@@ -144,6 +144,12 @@ run = "uv run python -m backend.app.core.plugin_engine list plugins/"
 # 工具
 # =============================================================================
 
+[tasks."kill:backend"]
+description = "强制结束后端进程（端口 8000）"
+run = """
+powershell -Command "Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Write-Host 'Done'"
+"""
+
 [tasks."clean"]
 description = "清理构建产物和缓存"
 run = """
