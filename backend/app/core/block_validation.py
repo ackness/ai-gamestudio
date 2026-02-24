@@ -44,7 +44,7 @@ _BUILTIN_BLOCK_SCHEMAS: dict[str, dict[str, Any]] = {
             "description": {"type": "string"},
             "role": {"type": "string"},
         },
-        "required": ["character_id", "name"],
+        "required": ["name"],
     },
     "scene_update": {
         "type": "object",
@@ -65,7 +65,6 @@ _BUILTIN_BLOCK_SCHEMAS: dict[str, dict[str, Any]] = {
                 },
             },
         },
-        "required": ["action"],
     },
     "event": {
         "type": "object",
@@ -213,7 +212,7 @@ def _validate_builtin_semantics(block_type: str, data: Any) -> list[str]:
                     )
 
     elif block_type == "scene_update":
-        action = data.get("action")
+        action = data.get("action", "move")
         if action not in {"move", "update"}:
             errors.append("$.scene_update.action: must be 'move' or 'update'")
         if action == "move" and not str(data.get("name", "")).strip():
