@@ -1,6 +1,9 @@
+import { useState } from 'react'
+import { Settings2 } from 'lucide-react'
 import { useTokenStore } from '../../stores/tokenStore'
 import { useUiStore } from '../../stores/uiStore'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { CustomPricingModal } from './CustomPricingModal'
 
 const text: Record<string, Record<string, string>> = {
   zh: {
@@ -44,6 +47,7 @@ export function TokenUsageBar() {
   const modelInfo = useTokenStore((s) => s.modelInfo)
   const language = useUiStore((s) => s.language)
   const t = text[language] ?? text.en
+  const [showPricing, setShowPricing] = useState(false)
 
   if (!usage && !modelInfo) return null
 
@@ -61,37 +65,53 @@ export function TokenUsageBar() {
     'bg-green-500'
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground cursor-default select-none">
-          <span>{formatTokens(totalTokens + totalCompletionTokens)}</span>
-          {maxInput > 0 && (
-            <>
-              <span className="text-muted-foreground/50">/</span>
-              <span>{maxInputDisplay}</span>
-              <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-300 ${barColor}`}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-            </>
-          )}
-          {totalCost > 0 && (
-            <span className="text-muted-foreground/70">{formatCost(totalCost)}</span>
-          )}
-        </div>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="text-xs">
-        <div className="space-y-1">
-          <div>{t.input}: {formatTokens(totalTokens)}</div>
-          <div>{t.output}: {formatTokens(totalCompletionTokens)}</div>
-          <div>{t.total}: {formatTokens(totalTokens + totalCompletionTokens)}</div>
-          {totalCost > 0 && <div>{t.cost}: {formatCost(totalCost)}</div>}
-          {maxInput > 0 && <div>{t.context}: {pct.toFixed(1)}% ({formatTokens(totalTokens)}/{maxInputDisplay})</div>}
-          {modelInfo && !modelInfo.known && <div className="text-yellow-500">{t.unknown}</div>}
-        </div>
-      </TooltipContent>
-    </Tooltip>
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground cursor-default select-none">
+            <span>{formatTokens(totalTokens + totalCompletionTokens)}</span>
+            {maxInput > 0 && (
+              <>
+                <span className="text-muted-foreground/50">/</span>
+                <span>{maxInputDisplay}</span>
+                <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${barColor}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </>
+            )}
+            {totalCost > 0 && (
+              <span className="text-muted-foreground/70">{formatCost(totalCost)}</span>
+            )}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">
+          <div className="space-y-1">
+            <div>{t.input}: {formatTokens(totalTokens)}</div>
+            <div>{t.output}: {formatTokens(totalCompletionTokens)}</div>
+            <div>{t.total}: {formatTokens(totalTokens + totalCompletionTokens)}</div>
+            {totalCost > 0 && <div>{t.cost}: {formatCost(totalCost)}</div>}
+            {maxInput > 0 && <div>{t.context}: {pct.toFixed(1)}% ({formatTokens(totalTokens)}/{maxInputDisplay})</div>}
+            {modelInfo && !modelInfo.known && <div className="text-yellow-500">{t.unknown}</div>}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+      {modelInfo && !modelInfo.known && (
+        <button
+          onClick={() => setShowPricing(true)}
+          className="text-yellow-500 hover:text-yellow-400"
+        >
+          <Settings2 className="w-3 h-3" />
+        </button>
+      )}
+      {showPricing && (usage?.model || modelInfo?.model) && (
+        <CustomPricingModal
+          model={(usage?.model || modelInfo?.model)!}
+          onClose={() => setShowPricing(false)}
+        />
+      )}
+    </>
   )
 }
