@@ -47,6 +47,7 @@ export function useGameWebSocket(currentSession: Session | null) {
     clearStreamContent,
     addPendingBlock,
     setPhase,
+    setPluginProcessing,
     setCurrentScene,
     setScenes,
     flushPendingBlocksForTurn,
@@ -124,6 +125,16 @@ export function useGameWebSocket(currentSession: Session | null) {
     }
 
     ws.onPhaseChange = (newPhase) => {
+      // Transient processing phases — don't override game phase
+      if (newPhase === 'plugins') {
+        setPluginProcessing(true)
+        return
+      }
+      if (newPhase === 'complete') {
+        setPluginProcessing(false)
+        return
+      }
+
       setPhase(newPhase)
       if ((newPhase === 'playing' || newPhase === 'character_creation') && currentSession) {
         gameStorage.fetchScenes(currentSession.id).then(setScenes).catch(() => {})

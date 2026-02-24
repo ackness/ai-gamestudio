@@ -68,6 +68,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
     messages,
     isStreaming,
     phase,
+    pluginProcessing,
     currentScene,
     scenes,
     switchSession,
@@ -290,8 +291,8 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
               <SceneBar currentScene={currentScene} scenes={scenes} onSceneSwitch={handleSceneSwitch} />
             )}
             <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} />
-            <QuickActions onTrigger={handleForceTrigger} disabled={isStreaming || phase === 'plugins'} />
-            <ChatInput onSend={handleSend} disabled={isStreaming || phase === 'plugins'} />
+            <QuickActions onTrigger={handleForceTrigger} disabled={isStreaming || pluginProcessing} />
+            <ChatInput onSend={handleSend} disabled={isStreaming || pluginProcessing} />
           </div>
         )}
 

@@ -22,6 +22,7 @@ interface SessionStore {
   streamStatus: StreamStatus
   pendingBlocks: PendingBlock[]
   phase: string
+  pluginProcessing: boolean
   currentScene: Scene | null
   scenes: Scene[]
   messageImages: Record<string, StoryImageData[]>
@@ -41,6 +42,7 @@ interface SessionStore {
   flushPendingBlocksForTurn: (turnId: string) => void
   clearPendingBlocks: () => void
   setPhase: (phase: string) => void
+  setPluginProcessing: (processing: boolean) => void
   setCurrentScene: (scene: Scene | null) => void
   setScenes: (scenes: Scene[]) => void
   addScene: (scene: Scene) => void
@@ -63,6 +65,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   streamStatus: 'idle' as StreamStatus,
   pendingBlocks: [],
   phase: 'init',
+  pluginProcessing: false,
   currentScene: null,
   scenes: [],
   messageImages: {},
@@ -229,6 +232,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
   clearPendingBlocks: () => set({ pendingBlocks: [] }),
 
   setPhase: (phase) => set({ phase }),
+
+  setPluginProcessing: (pluginProcessing) => set({ pluginProcessing }),
 
   setCurrentScene: (currentScene) => set({ currentScene }),
 

@@ -273,7 +273,7 @@ function RawMessageViewer({ msg, onClose, t }: { msg: Message; onClose: () => vo
 }
 
 export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
-  const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom, messageImages, imageLoadingMessages, phase } = useSessionStore()
+  const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom, messageImages, imageLoadingMessages, pluginProcessing } = useSessionStore()
   const language = useUiStore((s) => s.language)
   const t = chatText[language] ?? chatText.en
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -488,7 +488,7 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
           </div>
         )}
 
-        {phase === 'plugins' && !isStreaming && (
+        {pluginProcessing && !isStreaming && (
           <div className="flex justify-start">
             <div className="px-4 py-2.5 rounded-2xl rounded-tl-sm bg-muted/20 border border-dashed border-primary/30 shadow-sm">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
