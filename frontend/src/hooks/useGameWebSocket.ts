@@ -250,7 +250,25 @@ export function useGameWebSocket(currentSession: Session | null) {
     const connectTimeout = setTimeout(() => ws.connect(currentSession.id), 100)
 
     gameStorage.fetchCharacters(currentSession.id).then(setCharacters).catch(() => {})
-    api.getSessionState(currentSession.id).then((state) => setWorldState(state.world || {})).catch(() => {})
+    api.getSessionState(currentSession.id).then((state) => {
+      setWorldState(state.world || {})
+      // Restore cumulative token usage from backend
+      const tu = state.token_usage
+      if (tu && typeof tu === 'object' && (tu.total_prompt_tokens || tu.total_completion_tokens)) {
+        useTokenStore.getState().updateUsage({
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          turnCost: 0,
+          totalCost: Number(tu.total_cost || 0),
+          totalPromptTokens: Number(tu.total_prompt_tokens || 0),
+          totalCompletionTokens: Number(tu.total_completion_tokens || 0),
+          contextUsage: 0,
+          maxInputTokens: 0,
+          model: '',
+        })
+      }
+    }).catch(() => {})
     hydrateMessageImages(currentSession.id)
 
     if (currentSession.phase === 'playing' || currentSession.phase === 'character_creation') {

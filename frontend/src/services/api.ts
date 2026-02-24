@@ -90,6 +90,11 @@ export function deleteSession(sessionId: string): Promise<void> {
 export function getSessionState(sessionId: string): Promise<{
   world: Record<string, unknown>
   turn_count: number
+  token_usage?: {
+    total_prompt_tokens?: number
+    total_completion_tokens?: number
+    total_cost?: number
+  }
 }> {
   return request(`/sessions/${sessionId}/state`)
 }
