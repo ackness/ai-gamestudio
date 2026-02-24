@@ -14,7 +14,7 @@ AI GameStudio is an **LLM-native low-code RPG engine**. You don't write any game
 
 1. Write a world document in Markdown (setting, characters, rules, factions…)
 2. Advance the story through conversation — the DM (Dungeon Master) role is played by an LLM
-3. Enable plugins on demand to add dice rolls, archives, image generation, and more
+3. Enable plugins on demand to add combat mechanics, memory archives, image generation, and more
 
 ---
 
@@ -22,14 +22,15 @@ AI GameStudio is an **LLM-native low-code RPG engine**. You don't write any game
 
 ### Narrative Engine
 - Streaming WebSocket chat with real-time token-by-token output
-- Automatic extraction of structured `json:xxx` blocks from LLM output (choices, state updates, events…)
+- The main LLM focuses on pure narrative; a Plugin Agent appends structured blocks after each turn via tool calls
 - Game state (characters, scenes, events) stored separately from narrative text, enabling continuous session play
 
 ### Plugin System
-- Plugins described by `plugins/<name>/manifest.json` plus Markdown — zero code to extend
-- Topological dependency resolution between plugins
-- Each plugin can inject prompt context, define custom block types, and declare `json:plugin_use` capabilities
-- 17 built-in plugins included (4 global + 13 gameplay, see table below)
+- Plugins are described by `plugins/<group>/<plugin>/manifest.json` plus `PLUGIN.md` in a grouped layout
+- Topological dependency resolution with transitive auto-enable; `required` plugins cannot be disabled
+- `supersedes` provides smooth replacement of legacy plugins, and `default_enabled` controls startup defaults
+- Each plugin can inject prompt context, define custom block types, and declare capabilities (builtin or script)
+- 10 built-in plugins included (4 Core + 3 Narrative + 3 RPG mechanics, see table below)
 
 ### World Editor
 - Left-panel Markdown editor for live world document editing
@@ -42,12 +43,12 @@ AI GameStudio is an **LLM-native low-code RPG engine**. You don't write any game
 - Supports canceling generation mid-stream and exporting Markdown
 
 ### Story Images
-- `story-image` plugin triggers image generation at key scenes automatically
+- `image` plugin emits `story_image` blocks and triggers generation at key scenes automatically
 - Continuity references (style consistency carried from the previous image)
 - Regenerate any image from the frontend card with one click
 
 ### Save & Restore
-- `archive` plugin: automatic long-session summarization with versioned snapshots
+- `memory` plugin unifies memory injection, archive snapshots, and auto-compression for long sessions
 - Resume play from any saved snapshot
 
 ### Multilingual UI
@@ -63,25 +64,18 @@ AI GameStudio is an **LLM-native low-code RPG engine**. You don't write any game
 
 ## Built-in Plugins
 
-| Plugin | Type | Description |
-|--------|------|-------------|
-| `core-blocks` | Global | Core block declarations: state sync, character sheets, scenes, events, notifications |
-| `database` | Global | Persistent state context injection for prompts — required for all sessions |
-| `archive` | Global | Long-session summarization and versioned snapshot archives |
-| `memory` | Global | Reads stored memories and injects them at the `memory` prompt position |
-| `character` | Gameplay | Player/NPC state injection and character output guidance |
-| `choices` | Gameplay | Interactive choice blocks (single / multi-select) |
-| `auto-guide` | Gameplay | AI-suggested action options — supersedes `choices` when enabled |
-| `dice-roll` | Gameplay | Dice result blocks + `dice.roll` capability |
-| `skill-check` | Gameplay | Skill check request/result blocks + `skill_check.resolve` |
-| `combat` | Gameplay | Combat start/round/end blocks + `combat.resolve_action` |
-| `inventory` | Gameplay | Item update/loot blocks + `inventory.use_item` |
-| `quest` | Gameplay | Quest lifecycle update blocks |
-| `faction` | Gameplay | Faction reputation change blocks |
-| `relationship` | Gameplay | NPC relationship change blocks |
-| `status-effect` | Gameplay | Status effect blocks + `status_effect.tick` |
-| `codex` | Gameplay | Codex/encyclopedia entry blocks |
-| `story-image` | Gameplay | Structured prompt → generated scene image with continuity support |
+| Plugin | Group | Type | Description |
+|--------|-------|------|-------------|
+| `database` | core | Global (required) | Persistent state context for prompts; always enabled |
+| `state` | core | Global (required) | State sync, character sheets, scene updates, notifications; supersedes `core-blocks` / `character` |
+| `event` | core | Global (required) | Event and quest lifecycle tracking; supersedes `quest` |
+| `memory` | core | Global (default-enabled) | Memory injection, archive snapshots, and auto-compression; supersedes `archive` / `auto-compress` |
+| `guide` | narrative | Gameplay (default-enabled) | Action guidance and interactive choices; supersedes `auto-guide` / `choices` |
+| `codex` | narrative | Gameplay | Codex/encyclopedia tracking |
+| `image` | narrative | Gameplay (default-enabled) | Story image generation via `story_image`; supersedes `story-image` |
+| `combat` | rpg-mechanics | Gameplay | Unified combat, dice rolls, skill checks, status effects; supersedes `dice-roll` / `skill-check` / `status-effect` |
+| `inventory` | rpg-mechanics | Gameplay | Item updates, loot flow, and `inventory.use_item` capability |
+| `social` | rpg-mechanics | Gameplay | NPC relationship and faction reputation tracking; supersedes `relationship` / `faction` |
 
 ---
 
@@ -316,8 +310,8 @@ mise run db:reset         # Drop and recreate the database
 ├── backend/
 │   └── app/
 │       ├── api/           # FastAPI routers (chat, novel, projects, sessions, plugins, templates...)
-│       ├── core/          # Framework internals (plugin_engine, capability_executor, prompt_builder, block_parser)
-│       ├── services/      # Business logic (chat_service, novel_service, plugin_service, archive_service...)
+│       ├── core/          # Framework internals (plugin_engine, plugin_tools, capability_executor, prompt_builder)
+│       ├── services/      # Business logic (chat_service, plugin_agent, novel_service, plugin_service...)
 │       └── models/        # SQLModel ORM models
 ├── frontend/
 │   └── src/
@@ -325,7 +319,7 @@ mise run db:reset         # Drop and recreate the database
 │       ├── components/    # game/, editor/(incl. NovelPanel), plugins/, status/, ui/
 │       ├── stores/        # Zustand stores (session, gameState, project, plugin, ui)
 │       └── services/      # api.ts (incl. novel stream), websocket.ts, settingsStorage.ts, localDb.ts
-├── plugins/               # Built-in plugins
+├── plugins/               # Built-in grouped plugins (core / narrative / rpg-mechanics)
 ├── templates/worlds/      # World templates
 └── docs/                  # Detailed documentation
 ```

@@ -48,6 +48,7 @@ export function useGameWebSocket(currentSession: Session | null) {
     addPendingBlock,
     setPhase,
     setPluginProcessing,
+    setPluginProgress,
     setLastPluginSummary,
     setCurrentScene,
     setScenes,
@@ -130,6 +131,10 @@ export function useGameWebSocket(currentSession: Session | null) {
       setLastPluginSummary(data)
     }
 
+    ws.onPluginProgress = (data) => {
+      setPluginProgress(data)
+    }
+
     ws.onPhaseChange = (newPhase) => {
       // Transient processing phases — don't override game phase
       if (newPhase === 'plugins') {
@@ -201,6 +206,7 @@ export function useGameWebSocket(currentSession: Session | null) {
     ws.onBlock = (type, data, turnId, blockId) => {
       if (type === 'state_update') return
       if (type === 'scene_update') return
+      if (type === 'character_confirmed') return
       if (type === 'event') {
         if (isGameEvent(data)) addEvent(data)
         return

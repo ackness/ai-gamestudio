@@ -1,7 +1,7 @@
 # AI GameStudio 插件生态架构 V3
 
-> 本文是 V3 架构实现说明。V3 采用 **Plugin Agent + Progressive Disclosure** 架构：
-> 主 LLM 只输出纯叙事，独立的 Plugin Agent 通过 function calling 按需加载插件、操作游戏数据、输出结构化 block。
+> 本文是 V3 架构实现说明。V3 采用 **Plugin Agent + 并行执行** 架构：
+> 主 LLM 只输出纯叙事，Plugin Agent 为每个启用插件启动独立的 LLM 调用（asyncio.gather 并行执行），通过 function calling 操作游戏数据、输出结构化 block。
 >
 > **当前状态：V3 完整实现，所有内置插件已迁移至分组目录。**
 >
@@ -15,12 +15,14 @@
 
 1. **主 LLM 纯叙事**：主 LLM 只输出故事文本，不输出任何 `json:xxx` block 或结构化数据。
 2. **Plugin Agent 负责游戏机制**：独立的 Plugin Agent（LLM + function calling）分析叙事后决定触发哪些插件、输出哪些 block。
-3. **Progressive Disclosure（渐进式披露）**：Plugin Agent 启动时只知道插件 name + description（Level 1），需要时调用 `load_plugin()` 获取完整指令（Level 2），再按需 `execute_script()` 或 `db_*`（Level 3）。
+3. **直接注入**：并行模式下，每个插件的 PLUGIN.md 预加载为其独立 LLM 调用的系统提示（直接 Level 2），游戏状态快照作为用户消息提供。无需 `list_plugins()` 或 `load_plugin()` 工具。按需 `execute_script()` 或 `db_*`（Level 3）。
 4. **Prompt injection 保留为上下文机制**：PromptBuilder 6 位置仍然存在，但仅用于向主 LLM 注入叙事上下文（角色状态、世界信息、记忆等），不注入 block 格式说明。
 5. **manifest.json 是唯一机器事实源**：依赖、权限、能力、blocks、events、storage、i18n 全部声明在 manifest.json 中。
 6. **插件独立于核心代码**：插件开发者只需编写 PLUGIN.md + manifest.json（+ 可选脚本），无需了解后端代码。
 7. **最小必需文件区分内外**：builtin 插件仅需 `PLUGIN.md` + `manifest.json`；external 插件需额外 `README.md` + `schemas/`。
 8. **所有自带插件双语**：必须同时提供 `i18n.en` + `i18n.zh`。
+9. **DB 优先（DB-first）**：使用 `update_and_emit` 一次完成 DB 写入 + 前端通知。DB 是游戏状态的唯一真实来源，`emit_block` 只是通知前端刷新。纯展示插件（如 guide）直接用 `emit_block`。
+10. **延迟提交（Deferred Commit）**：每个插件使用 `GameDB(autocommit=False)`，所有 DB 写入在插件执行完毕后统一 `flush()` 提交，减少 I/O 开销。
 
 ---
 
@@ -58,6 +60,7 @@ V3 将 18 个旧扁平插件合并为 10 个分组插件：
 | `process_message` / `process_message_v3` | 合并为唯一 `process_message` | **合并** |
 | V1 回退（无 manifest.json） | 移除（所有插件必须有 manifest.json） | **移除** |
 | PromptBuilder 6 位置注入 | 保留（仅注入叙事上下文） | 保留 |
+| 单一 Plugin Agent 顺序执行 | 每个插件独立 LLM 调用，并行执行（asyncio.gather） | **替换** |
 | PluginStorage | 保留 | 保留 |
 | PluginEventBus | 保留 | 保留 |
 | `dispatch_block()` | 保留（处理 Plugin Agent emit 的 blocks） | 保留 |
@@ -72,11 +75,11 @@ V3 将 18 个旧扁平插件合并为 10 个分组插件：
 | 组件 | 代码位置 | 职责 |
 |------|---------|------|
 | **Plugin Agent** | `backend/app/services/plugin_agent.py` | 独立 LLM + function calling，分析叙事后触发游戏机制 |
-| **Plugin Tools** | `backend/app/core/plugin_tools.py` | Plugin Agent 可用工具定义（list/load/emit/execute/db_*） |
+| **Plugin Tools** | `backend/app/core/plugin_tools.py` | Plugin Agent 可用工具定义（7 个：update_and_emit/emit_block/db_read/db_log_*/db_graph_add/execute_script） |
 | PluginEngine | `backend/app/core/plugin_engine.py` | 插件发现（支持分组目录）、加载、prompt 注入配置 |
 | ManifestLoader | `backend/app/core/manifest_loader.py` | manifest.json 解析 + schemas/ 加载 |
 | PromptBuilder | `backend/app/core/prompt_builder.py` | 6 位置 prompt 组装（仅叙事上下文） |
-| GameDB | `backend/app/core/game_db.py` | 游戏数据库抽象（kv/graph/log） |
+| GameDB | `backend/app/core/game_db.py` | 游戏数据库抽象（kv/graph/log），支持 autocommit=False 延迟提交 |
 
 ### 3.2 Block 处理组件
 
@@ -101,6 +104,19 @@ V3 将 18 个旧扁平插件合并为 10 个分组插件：
 |------|---------|------|
 | GameStateManager | `backend/app/core/game_state.py` | DB 操作（messages / characters / world） |
 | PluginStorage | `backend/app/models/plugin_storage.py` | 插件键值存储 |
+
+**Collection 命名规范**（所有插件必须遵循）：
+
+| Collection | 用途 | 示例 key |
+|-----------|------|---------|
+| `characters` | 角色数据（attributes, inventory, status） | `"李逍遥"` |
+| `world` | 世界状态（location, time, weather） | `"current_location"` |
+| `npc` | NPC 数据（name, role, affinity） | `"王大锤"` |
+| `event` | 事件记录 | `"event_discover_sword"` |
+| `quest` | 任务数据 | `"explore_cave"` |
+| `codex` | 知识条目 | `"location_qingyun_cave"` |
+| `combat_log` | 战斗日志（用 db_log_append） | — |
+| `plugin.<name>` | 插件私有数据（如 plugin.memory） | `"memory_1"` |
 
 ---
 
@@ -141,13 +157,17 @@ chat_service.process_message(session_id, user_content)
   │
   ├─ 6. run_plugin_agent(narrative, game_state, enabled_plugins, ...)
   │     │
-  │     ├─ 系统提示词 + 叙事文本 + 游戏状态
+  │     ├─ 过滤：排除已达 max_triggers 上限的插件
   │     │
-  │     └─ 多轮 tool calling 循环（最多 10 轮）：
-  │           ├─ LLM 选择工具 → list_plugins / load_plugin / emit_block / execute_script / db_*
-  │           ├─ 执行工具 → 返回结果
-  │           ├─ LLM 继续或结束
-  │           └─ 收集所有 emit_block 的 blocks
+  │     ├─ 并行启动（asyncio.gather）：每个插件独立 LLM 调用
+  │     │     ├─ 各插件 PLUGIN.md 预加载为系统提示
+  │     │     ├─ 多轮 tool calling（最多 8 轮/插件）
+  │     │     ├─ 延迟提交：GameDB(autocommit=False)
+  │     │     └─ 执行完毕后统一 flush() 提交
+  │     │
+  │     ├─ 合并所有插件的 blocks
+  │     │
+  │     └─ 更新 plugin_trigger_counts
   │
   ├─ 7. dispatch blocks
   │     ├─ 遍历 Plugin Agent emit 的 blocks
@@ -164,33 +184,45 @@ chat_service.process_message(session_id, user_content)
 ### 4.2 Plugin Agent 内部流程
 
 ```
-Plugin Agent LLM（function calling）
+Plugin Agent（并行执行模式）
   │
-  ├─ 输入：系统提示 + 叙事文本 + 游戏状态快照
+  ├─ 输入：叙事文本 + 游戏状态快照 + 启用插件列表
   │
-  ├─ Round 1: list_plugins() → [{name, description}, ...]
-  │     Plugin Agent 了解可用插件概览
+  ├─ 过滤：排除已达 max_triggers 上限的插件
   │
-  ├─ Round 2: load_plugin("state") → {prompt, blocks, capabilities}
-  │     Plugin Agent 获取完整指令，判断需要 emit 哪些 blocks
+  ├─ 并行启动（asyncio.gather）：
+  │     ├─ 插件 A 的 LLM 调用
+  │     │     系统提示 = SINGLE_PLUGIN_SYSTEM_PROMPT + PLUGIN.md(A)
+  │     │     用户消息 = 叙事文本 + 游戏状态
+  │     │     GameDB(autocommit=False) — 延迟提交
+  │     │     → 多轮 tool calling（最多 8 轮）：
+  │     │         1. update_and_emit(writes=[...], emits=[...], logs=[...])
+  │     │            ← 一次完成 DB 写入 + 前端通知 + 日志追加
+  │     │         2. flush() ← 统一提交
+  │     │
+  │     ├─ 插件 B 的 LLM 调用（同时进行）
+  │     │     系统提示 = SINGLE_PLUGIN_SYSTEM_PROMPT + PLUGIN.md(B)
+  │     │     用户消息 = 叙事文本 + 游戏状态
+  │     │     → 同样使用 update_and_emit 复合操作
+  │     │
+  │     └─ 插件 C 的 LLM 调用（同时进行）
+  │           系统提示 = SINGLE_PLUGIN_SYSTEM_PROMPT + PLUGIN.md(C)
+  │           用户消息 = 叙事文本 + 游戏状态
+  │           → 纯展示插件可直接 emit_block（无需 DB）
   │
-  ├─ Round 3: emit_block("state_update", {...})
-  │     同时可能调用 db_kv_set() 持久化
+  ├─ 合并所有插件的 blocks
   │
-  ├─ Round 4: load_plugin("guide") → {prompt, blocks, capabilities}
-  │     获取 guide 插件指令
-  │
-  ├─ Round 5: emit_block("guide", {...})
-  │
-  └─ Round 6: 无更多工具调用 → 结束
+  └─ 更新 plugin_trigger_counts
 ```
 
-### 4.3 Progressive Disclosure 层级
+### 4.3 上下文注入策略
+
+> **V3 并行模式**：每个插件的 PLUGIN.md 作为系统提示词预加载到其独立 LLM 调用中，游戏状态快照作为用户消息提供。无需 `list_plugins()` 或 `load_plugin()` 工具（已移除）。
 
 | 层级 | 何时加载 | Token 消耗 | 内容 |
 |------|---------|-----------|------|
-| Level 1 | Plugin Agent 启动时 | ~30 tokens/插件 | 仅 name + description |
-| Level 2 | `load_plugin()` 时 | < 5k tokens | 完整 PLUGIN.md + blocks + capabilities |
+| Level 1 | 已移除（并行模式下无需插件列表） | — | — |
+| Level 2 | 并行模式下预加载为系统提示 | < 5k tokens | 完整 PLUGIN.md + blocks + capabilities |
 | Level 3 | `execute_script()` 时 | 几乎为 0 | 脚本 subprocess 执行，结果 JSON 返回 |
 
 ---
@@ -225,13 +257,18 @@ V3 中所有 blocks 均由 Plugin Agent 的 `emit_block()` 工具产出。主 LL
 ### 5.3 Block 生命周期
 
 ```
-Plugin Agent emit_block(type, data)
-  → chat_service 收集到 blocks 列表
-  → dispatch_block(block, context, declarations)
-       ├─ validate_block_data(block, schema)
-       ├─ handler.actions 执行（storage_write / emit_event / builtin）
-       └─ yield → WebSocket → 前端 renderer
+Plugin Agent 插件 LLM 调用
+  → update_and_emit(writes=[...], emits=[...], logs=[...])
+      ← 一次完成：DB 写入 + 日志追加 + 前端通知
+  → 或 emit_block(type, data)  ← 纯展示插件
+      → chat_service 收集到 blocks 列表
+      → dispatch_block(block, context, declarations)
+           ├─ validate_block_data(block, schema)
+           ├─ handler.actions 执行（storage_write / emit_event / builtin）
+           └─ yield → WebSocket → 前端 renderer
 ```
+
+> **DB 优先原则**：使用 `update_and_emit` 一次完成 DB 写入和前端通知。DB 是游戏状态的唯一真实来源。纯展示插件（如 guide）直接用 `emit_block`。
 
 ---
 
@@ -259,9 +296,11 @@ Plugin Agent emit_block(type, data)
 
 ### 6.4 Plugin Agent 安全
 
-- Plugin Agent 最多执行 10 轮工具调用（`MAX_TOOL_ROUNDS = 10`）
+- Plugin Agent 最多执行 8 轮工具调用（`MAX_TOOL_ROUNDS = 8`）
+- 每个插件使用 `GameDB(autocommit=False)` 延迟提交，执行完毕后统一 `flush()`
 - Plugin Agent 只能操作当前 session 的数据
 - `execute_script` 会校验插件是否启用、capability 是否声明
+- `max_triggers` 限制每个 session 中插件的触发次数，达到上限后该插件自动排除出后续并行执行
 
 ---
 
@@ -336,6 +375,8 @@ Plugin Agent emit_block(type, data)
 - [x] 插件 i18n（名称、描述、设置项）
 - [x] `supersedes` 字段
 - [x] `default_enabled` 字段
+- [x] 并行插件执行（asyncio.gather）
+- [x] 插件触发次数限制（max_triggers）
 - [ ] 插件导出（zip/tarball）
 - [ ] 多语言脚本支持（JavaScript）
 - [ ] 项目级模板覆盖
@@ -350,8 +391,8 @@ Plugin Agent emit_block(type, data)
 | 文件 | 职责 |
 |------|------|
 | `backend/app/services/plugin_agent.py` | Plugin Agent：叙事分析 + 多轮 tool calling |
-| `backend/app/core/plugin_tools.py` | Plugin Agent 工具定义（list/load/emit/execute/db_*） |
-| `backend/app/core/game_db.py` | 游戏数据库抽象（kv/graph/log） |
+| `backend/app/core/plugin_tools.py` | Plugin Agent 工具定义（7 个优化工具：update_and_emit/emit_block/db_read/db_log_*/db_graph_add/execute_script） |
+| `backend/app/core/game_db.py` | 游戏数据库抽象（kv/graph/log），支持 autocommit=False 延迟提交 |
 | `backend/app/services/chat_service.py` | process_message：叙事 LLM + Plugin Agent 集成 |
 | `backend/app/services/prompt_assembly.py` | assemble_narrative_prompt（纯叙事 prompt） |
 | `backend/app/services/turn_context.py` | build_turn_context（构建回合上下文） |
@@ -385,11 +426,12 @@ Plugin Agent emit_block(type, data)
 2. 首期不做插件导出。
 3. 首期不做项目级模板覆盖。
 4. 所有自带插件必须提供 `i18n.en` + `i18n.zh`。
-5. Plugin Agent 最多执行 10 轮工具调用。
+5. Plugin Agent 每个插件最多执行 8 轮工具调用（`MAX_TOOL_ROUNDS = 8`），所有插件并行执行，每个插件使用延迟提交。
 6. 主 LLM 不输出任何 block，所有 block 由 Plugin Agent 产出。
 7. 旧插件通过 `supersedes` 机制自动禁用，数据 namespace key 保持不变（兼容已有数据）。
+8. **DB 优先**：使用 `update_and_emit` 一次完成 DB 写入 + 前端通知。纯展示插件（guide）直接用 `emit_block`。Collection 命名遵循 §3.4 规范。
 
 ---
 
-文档版本：v3.0
+文档版本：v3.1（工具优化：14→7，复合操作 update_and_emit，延迟提交）
 更新日期：2026-02-24

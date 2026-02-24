@@ -17,6 +17,24 @@ capability_summary: |
 
 Merged from: relationship + reputation + faction
 
+### 工作流程
+1. 阅读上下文中的 NPC/阵营数据（已提供，无需 db_read）
+2. 用 update_and_emit 一次完成关系更新 + 前端通知
+
+### 示例：同时更新 NPC 关系和阵营声望
+```
+update_and_emit({
+  "writes": [
+    {"collection": "npc", "key": "NPC名", "value": {"name": "...", "affinity": 60, "relationship": "友好"}},
+    {"collection": "world", "key": "faction_阵营名", "value": {"name": "...", "reputation": 30, "level": "友好"}}
+  ],
+  "emits": [
+    {"type": "relationship_change", "data": {"npc_name": "...", "change": 10, "reason": "...", "new_level": 60, "rank": "友好"}},
+    {"type": "reputation_change", "data": {"faction": "...", "change": 10, "new_level": 30, "rank": "友好"}}
+  ]
+})
+```
+
 ### NPC Relationships (json:relationship_change)
 追踪 NPC 与玩家的好感度（0-100）和关系类型。
 好感等级：亲密(80-100) / 友好(60-79) / 中立(40-59) / 冷淡(20-39) / 敌对(0-19)

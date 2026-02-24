@@ -23,6 +23,7 @@ interface SessionStore {
   pendingBlocks: PendingBlock[]
   phase: string
   pluginProcessing: boolean
+  pluginProgress: { round: number; tool_calls: string[]; blocks_so_far: string[] } | null
   lastPluginSummary: { rounds: number; tool_calls: string[]; blocks_emitted: string[] } | null
   currentScene: Scene | null
   scenes: Scene[]
@@ -44,6 +45,7 @@ interface SessionStore {
   clearPendingBlocks: () => void
   setPhase: (phase: string) => void
   setPluginProcessing: (processing: boolean) => void
+  setPluginProgress: (progress: { round: number; tool_calls: string[]; blocks_so_far: string[] } | null) => void
   setLastPluginSummary: (summary: { rounds: number; tool_calls: string[]; blocks_emitted: string[] } | null) => void
   setCurrentScene: (scene: Scene | null) => void
   setScenes: (scenes: Scene[]) => void
@@ -69,6 +71,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   pendingBlocks: [],
   phase: 'init',
   pluginProcessing: false,
+  pluginProgress: null,
   lastPluginSummary: null,
   currentScene: null,
   scenes: [],
@@ -237,7 +240,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   setPhase: (phase) => set({ phase }),
 
-  setPluginProcessing: (pluginProcessing) => set({ pluginProcessing }),
+  setPluginProcessing: (pluginProcessing) => set({ pluginProcessing, ...(pluginProcessing ? {} : { pluginProgress: null }) }),
+  setPluginProgress: (pluginProgress) => set({ pluginProgress }),
 
   setLastPluginSummary: (lastPluginSummary) => set({ lastPluginSummary }),
 

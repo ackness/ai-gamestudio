@@ -18,11 +18,31 @@ capability_summary: |
 
 Merged from: combat + skill-check + dice-roll + status-effect
 
+### 工作流程
+1. 阅读上下文中的角色数据（已提供，无需 db_read）
+2. 如需随机判定，调用 execute_script 掷骰
+3. 用 update_and_emit 一次完成角色属性更新 + 战斗日志 + 前端通知
+
+### 示例：战斗结算
+```
+update_and_emit({
+  "writes": [
+    {"collection": "characters", "key": "角色名", "value": {"name": "...", "attributes": {"气血": 80}, "inventory": [...]}}
+  ],
+  "logs": [
+    {"collection": "combat_log", "entry": {"participants": [...], "outcome": "...", "damage": 20}}
+  ],
+  "emits": [
+    {"type": "dice_result", "data": {"expression": "2d6+3", "result": 11}},
+    {"type": "combat_action", "data": {"attacker": "...", "target": "...", "damage": 20}}
+  ]
+})
+```
+
 ### Dice Rolling (json:dice_result)
-当需要随机判定时输出。重大判定建议使用 plugin_use 调用 dice.roll。
+当需要随机判定时输出。重大判定建议使用 execute_script 调用 dice.roll。
 
 ### Skill Checks (json:skill_check / json:skill_check_result)
-玩家尝试需要判定的技能行动时输出 skill_check，系统自动返回 skill_check_result。
 成功等级：critical_success / success / failure / critical_failure。
 
 ### Turn-Based Combat

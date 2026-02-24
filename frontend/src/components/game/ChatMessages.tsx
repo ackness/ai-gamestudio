@@ -287,7 +287,7 @@ function RawMessageViewer({ msg, onClose, t }: { msg: Message; onClose: () => vo
 }
 
 export function ChatMessages({ onAction, onRetry, onGenerateImage, onRetriggerPlugins }: Props) {
-  const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom, messageImages, imageLoadingMessages, pluginProcessing, lastPluginSummary } = useSessionStore()
+  const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom, messageImages, imageLoadingMessages, pluginProcessing, pluginProgress, lastPluginSummary } = useSessionStore()
   const language = useUiStore((s) => s.language)
   const t = chatText[language] ?? chatText.en
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -520,7 +520,14 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage, onRetriggerPl
             <div className="px-4 py-2.5 rounded-2xl rounded-tl-sm bg-muted/20 border border-dashed border-primary/30 shadow-sm">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="w-2 h-2 bg-primary/50 rounded-full animate-pulse" />
-                <span>插件处理中，请稍候…</span>
+                {pluginProgress ? (
+                  <span>
+                    插件处理中 · 第 {pluginProgress.round} 轮
+                    {pluginProgress.tool_calls.length > 0 && ` · ${pluginProgress.tool_calls.join(', ')}`}
+                  </span>
+                ) : (
+                  <span>插件处理中，请稍候…</span>
+                )}
               </div>
             </div>
           </div>

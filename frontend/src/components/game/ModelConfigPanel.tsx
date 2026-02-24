@@ -59,6 +59,8 @@ const modelPanelText: Record<string, Record<string, string>> = {
     keySetInEnv: '(在 .env 中已设置)',
     keySetInBrowser: '(在浏览器中已设置)',
     keySetInProjectEnv: '(在项目/.env 中已设置)',
+    testConnection: '测试连接',
+    testing: '测试中...',
   },
   en: {
     title: 'Model Configuration',
@@ -102,6 +104,8 @@ const modelPanelText: Record<string, Record<string, string>> = {
     keySetInEnv: '(set in .env)',
     keySetInBrowser: '(set in browser)',
     keySetInProjectEnv: '(set in project/.env)',
+    testConnection: 'Test',
+    testing: 'Testing...',
   },
 }
 
@@ -130,6 +134,45 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
   const [saveProfileName, setSaveProfileName] = useState('')
   const [showSaveProfile, setShowSaveProfile] = useState(false)
   const browserConfig = currentProject ? getBrowserLlmConfig(currentProject.id) : {}
+
+  // Test connection state
+  const [mainTestResult, setMainTestResult] = useState<{ok: boolean; latency_ms?: number; error?: string} | null>(null)
+  const [mainTesting, setMainTesting] = useState(false)
+  const [pluginTestResult, setPluginTestResult] = useState<{ok: boolean; latency_ms?: number; error?: string} | null>(null)
+  const [pluginTesting, setPluginTesting] = useState(false)
+
+  const testModel = async (m: string, key: string, base: string): Promise<{ok: boolean; reply?: string; error?: string; latency_ms?: number}> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (m) headers['x-llm-model'] = m
+    if (key) headers['x-llm-api-key'] = key
+    if (base) headers['x-llm-api-base'] = base
+    const res = await fetch('/api/llm/test', { method: 'POST', headers })
+    return res.json()
+  }
+
+  const handleTestMain = async () => {
+    setMainTesting(true)
+    setMainTestResult(null)
+    try {
+      const result = await testModel(model, apiKey, apiBase)
+      setMainTestResult(result)
+    } catch {
+      setMainTestResult({ ok: false, error: 'Network error' })
+    }
+    setMainTesting(false)
+  }
+
+  const handleTestPlugin = async () => {
+    setPluginTesting(true)
+    setPluginTestResult(null)
+    try {
+      const result = await testModel(pluginModel, pluginApiKey, pluginApiBase)
+      setPluginTestResult(result)
+    } catch {
+      setPluginTestResult({ ok: false, error: 'Network error' })
+    }
+    setPluginTesting(false)
+  }
 
   // Load profiles and preset models on mount
   useEffect(() => {
@@ -526,6 +569,23 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
           />
         </div>
 
+        {/* Test main model connection */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleTestMain}
+            disabled={mainTesting || !model}
+            className="px-2.5 py-1 text-xs border rounded hover:bg-muted disabled:opacity-50 transition-colors"
+          >
+            {mainTesting ? t.testing : t.testConnection}
+          </button>
+          {mainTestResult && (
+            <span className={`text-xs ${mainTestResult.ok ? 'text-emerald-500' : 'text-destructive'}`}>
+              {mainTestResult.ok ? `OK ${mainTestResult.latency_ms}ms` : mainTestResult.error}
+            </span>
+          )}
+        </div>
+
         {/* Actions */}
         <div className="pt-1 border-t" />
 
@@ -593,6 +653,23 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
                 disabled={pluginUseSameModel}
                 className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
               />
+            </div>
+
+            {/* Test plugin model connection */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTestPlugin}
+                disabled={pluginTesting || pluginUseSameModel || !pluginModel}
+                className="px-2.5 py-1 text-xs border rounded hover:bg-muted disabled:opacity-50 transition-colors"
+              >
+                {pluginTesting ? t.testing : t.testConnection}
+              </button>
+              {pluginTestResult && (
+                <span className={`text-xs ${pluginTestResult.ok ? 'text-emerald-500' : 'text-destructive'}`}>
+                  {pluginTestResult.ok ? `OK ${pluginTestResult.latency_ms}ms` : pluginTestResult.error}
+                </span>
+              )}
             </div>
           </div>
         </div>

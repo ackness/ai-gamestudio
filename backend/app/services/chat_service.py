@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator
@@ -151,8 +152,16 @@ async def process_message(
         game_db = GameDB(db, session_id)
         state_snapshot = await game_db.build_state_snapshot()
         plugin_summary: dict[str, Any] = {}
-        try:
-            blocks, plugin_summary = await run_plugin_agent(
+
+        # Load per-session plugin trigger counts
+        game_state_data = json.loads(ctx.session.game_state_json or "{}")
+        trigger_counts: dict[str, int] = game_state_data.get("plugin_trigger_counts", {})
+
+        # Use asyncio.Queue to stream plugin progress in real-time
+        progress_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+        async def _run_agent() -> tuple[list[dict], dict[str, Any]]:
+            return await run_plugin_agent(
                 narrative=full_response,
                 game_state=state_snapshot,
                 enabled_plugins=ctx.enabled_names,
@@ -160,10 +169,28 @@ async def process_message(
                 game_db=game_db,
                 pe=ctx.pe,
                 config=plugin_config,
+                on_progress=progress_queue.put_nowait,
+                trigger_counts=trigger_counts,
             )
+
+        agent_task = asyncio.create_task(_run_agent())
+        try:
+            while not agent_task.done():
+                try:
+                    progress = await asyncio.wait_for(progress_queue.get(), timeout=0.2)
+                    yield {"type": "plugin_progress", "data": progress, "turn_id": turn_id}
+                except asyncio.TimeoutError:
+                    continue
+            # Drain remaining progress events
+            while not progress_queue.empty():
+                progress = progress_queue.get_nowait()
+                yield {"type": "plugin_progress", "data": progress, "turn_id": turn_id}
+            blocks, plugin_summary = agent_task.result()
         except Exception:
             logger.exception("Plugin Agent failed for session {}", session_id)
             blocks = []
+            if not agent_task.done():
+                agent_task.cancel()
 
         # Filter conflicting blocks: suppress guide/choices when character_sheet is present
         block_types = {b.get("type") for b in blocks}
@@ -173,6 +200,16 @@ async def process_message(
             blocks = [b for b in blocks if b.get("type") not in suppressed]
             if len(blocks) < before_count:
                 logger.debug("Suppressed guide/choices blocks due to character_sheet presence")
+
+        # Suppress character_sheet if a player character already exists
+        if "character_sheet" in block_types:
+            existing_chars = await state_mgr.get_characters(session_id)
+            has_player = any(c.role == "player" for c in existing_chars)
+            if has_player:
+                before_count = len(blocks)
+                blocks = [b for b in blocks if b.get("type") != "character_sheet"]
+                if len(blocks) < before_count:
+                    logger.debug("Suppressed character_sheet: player character already exists")
 
         # Debug: log Plugin Agent results
         logger.debug(
@@ -247,6 +284,14 @@ async def process_message(
                     existing_meta["blocks"] = dispatched_blocks
                     msg_obj.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
                     db.add(msg_obj)
+
+        # Update trigger counts for plugins that emitted blocks
+        if plugin_summary and plugin_summary.get("plugins_run"):
+            for pname in plugin_summary["plugins_run"]:
+                trigger_counts[pname] = trigger_counts.get(pname, 0) + 1
+            game_state_data["plugin_trigger_counts"] = trigger_counts
+            ctx.session.game_state_json = json.dumps(game_state_data)
+            db.add(ctx.session)
 
         await db.commit()
 
@@ -387,6 +432,11 @@ async def retrigger_plugins(
         game_db = GameDB(db, session_id)
         state_snapshot = await game_db.build_state_snapshot()
         plugin_summary: dict[str, Any] = {}
+
+        # Load per-session plugin trigger counts
+        retrigger_gs_data = json.loads(ctx.session.game_state_json or "{}")
+        retrigger_trigger_counts: dict[str, int] = retrigger_gs_data.get("plugin_trigger_counts", {})
+
         try:
             blocks, plugin_summary = await run_plugin_agent(
                 narrative=narrative,
@@ -396,6 +446,7 @@ async def retrigger_plugins(
                 game_db=game_db,
                 pe=ctx.pe,
                 config=plugin_config,
+                trigger_counts=retrigger_trigger_counts,
             )
         except Exception:
             logger.exception("Plugin Agent retrigger failed for session {}", session_id)
@@ -406,6 +457,14 @@ async def retrigger_plugins(
         if "character_sheet" in block_types:
             suppressed = {"guide", "choices", "auto_guide"}
             blocks = [b for b in blocks if b.get("type") not in suppressed]
+
+        # Suppress character_sheet if a player character already exists
+        if "character_sheet" in block_types:
+            existing_chars = await state_mgr.get_characters(session_id)
+            has_player = any(c.role == "player" for c in existing_chars)
+            if has_player:
+                blocks = [b for b in blocks if b.get("type") != "character_sheet"]
+                logger.debug("Retrigger: suppressed character_sheet (player exists)")
 
         logger.info("Retrigger: {} blocks emitted for message {}", len(blocks), message_id)
 
@@ -450,6 +509,14 @@ async def retrigger_plugins(
             existing_meta["blocks"] = dispatched_blocks
             msg_obj.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
             db.add(msg_obj)
+
+        # Update trigger counts for plugins that emitted blocks
+        if plugin_summary and plugin_summary.get("plugins_run"):
+            for pname in plugin_summary["plugins_run"]:
+                retrigger_trigger_counts[pname] = retrigger_trigger_counts.get(pname, 0) + 1
+            retrigger_gs_data["plugin_trigger_counts"] = retrigger_trigger_counts
+            ctx.session.game_state_json = json.dumps(retrigger_gs_data)
+            db.add(ctx.session)
 
         await db.commit()
 

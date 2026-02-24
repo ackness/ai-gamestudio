@@ -26,6 +26,7 @@ type NotificationCallback = (
 type TurnEndCallback = (turnId: string) => void
 type MessageBlocksUpdatedCallback = (messageId: string, blocks: { type: string; data: unknown; block_id?: string }[]) => void
 type PluginSummaryCallback = (data: { rounds: number; tool_calls: string[]; blocks_emitted: string[] }) => void
+type PluginProgressCallback = (data: { round: number; tool_calls: string[]; blocks_so_far: string[] }) => void
 type MessageImageCallback = (messageId: string, data: Record<string, unknown>) => void
 type MessageImageLoadingCallback = (messageId: string) => void
 type ConnectedCallback = () => void
@@ -93,6 +94,7 @@ export class GameWebSocket {
   onTurnEnd: TurnEndCallback = () => {}
   onMessageBlocksUpdated: MessageBlocksUpdatedCallback = () => {}
   onPluginSummary: PluginSummaryCallback = () => {}
+  onPluginProgress: PluginProgressCallback = () => {}
   onMessageImage: MessageImageCallback = () => {}
   onMessageImageLoading: MessageImageLoadingCallback = () => {}
   onConnected: ConnectedCallback = () => {}
@@ -304,6 +306,11 @@ export class GameWebSocket {
         )
         this.onBlock('notification', data.data, String(data.turn_id || ''), String(data.block_id || ''))
         break
+      case 'plugin_progress': {
+        const progressData = (data.data || {}) as { round: number; tool_calls: string[]; blocks_so_far: string[] }
+        this.onPluginProgress(progressData)
+        break
+      }
       case 'plugin_summary': {
         const summaryData = (data.data || {}) as { rounds: number; tool_calls: string[]; blocks_emitted: string[] }
         this.onPluginSummary(summaryData)

@@ -140,6 +140,26 @@ run = "uv run python -m backend.app.core.plugin_engine validate plugins/"
 description = "列出所有已安装插件"
 run = "uv run python -m backend.app.core.plugin_engine list plugins/"
 
+[tasks."plugin:test"]
+description = "测试插件 Agent（使用 .env 中的 PLUGIN_LLM 配置）"
+run = "uv run python scripts/test_plugin_agent.py"
+
+[tasks."plugin:test:all"]
+description = "测试所有插件（每个插件自动选择最佳预设，跳过 image）"
+run = "uv run python scripts/test_plugin_agent.py --all -v"
+
+[tasks."plugin:test:list"]
+description = "列出可测试的插件"
+run = "uv run python scripts/test_plugin_agent.py --list"
+
+[tasks."plugin:test:verbose"]
+description = "详细模式测试插件 Agent（显示 tool call 日志）"
+run = "uv run python scripts/test_plugin_agent.py -v"
+
+[tasks."plugin:test:dry-run"]
+description = "插件测试 dry-run（只显示配置，不调用模型）"
+run = "uv run python scripts/test_plugin_agent.py --dry-run"
+
 # =============================================================================
 # 工具
 # =============================================================================

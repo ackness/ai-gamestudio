@@ -38,6 +38,7 @@ class PluginManifest:
     default_enabled: bool = False
     supersedes: list[str] = field(default_factory=list)
     manifest_source: str = "manifest"
+    max_triggers: int | None = None  # None = unlimited; per-session trigger limit
 
 
 def load_manifest(plugin_dir: pathlib.Path) -> PluginManifest | None:
@@ -87,6 +88,7 @@ def load_manifest(plugin_dir: pathlib.Path) -> PluginManifest | None:
         i18n=data.get("i18n") or {},
         default_enabled=bool(data.get("default_enabled", False)),
         supersedes=data.get("supersedes") or [],
+        max_triggers=data.get("max_triggers"),
     )
 
 
@@ -196,6 +198,8 @@ def manifest_to_v1_metadata(manifest: PluginManifest) -> dict[str, Any]:
         metadata["default_enabled"] = manifest.default_enabled
     if manifest.supersedes:
         metadata["supersedes"] = manifest.supersedes
+    if manifest.max_triggers is not None:
+        metadata["max_triggers"] = manifest.max_triggers
 
     return metadata
 

@@ -15,17 +15,22 @@ avoid_when:
 
 Merged from: memory + archive + auto-compress
 
-### Memory Context
-- Injects stored memories into prompts for narrative consistency.
-- Memory data is read from PluginStorage and used as plain prompt context.
+本插件是基础设施插件，**不输出任何 emit_block**。仅使用 DB 工具管理记忆数据。
 
-### Archive
-- Auto-summarizes every N turns (default 8) when enabled.
-- Supports manual summarize and restore via archive APIs.
-- Injects active archive summary into prompt memory section.
+### 工作流程
+1. 阅读上下文中的游戏状态（已提供，无需 db_read）
+2. 将当前叙事摘要存入 DB：
+```
+update_and_emit({
+  "writes": [
+    {"collection": "plugin.memory", "key": "memory_<N>", "value": {"id": "memory_<N>", "content": "摘要", "timestamp": N}},
+    {"collection": "plugin.memory", "key": "memory_index", "value": {"count": N, "latest": "memory_<N>"}}
+  ]
+})
+```
+3. 如果叙事内容简单或无重要信息，可以跳过不存储
 
-### Auto-Compress
-- Monitors context usage before each LLM call.
-- When usage exceeds threshold (default 0.7), compresses older messages into narrative summary.
-- Summary stored in PluginStorage and injected at memory position.
-- Works alongside discrete memory entries: compressed summary provides broad context, memories provide specifics.
+### 规则
+- **禁止使用 emit_block**，本插件不向前端输出任何 block
+- 记忆摘要应简洁，提取关键事件、人物、地点信息
+- collection 统一使用 "plugin.memory"

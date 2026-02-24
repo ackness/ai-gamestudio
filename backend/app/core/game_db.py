@@ -15,9 +15,18 @@ from backend.app.models.game_log import GameLog
 class GameDB:
     """Game state storage layer: KV, Graph, Log primitives."""
 
-    def __init__(self, db: AsyncSession, session_id: str) -> None:
+    def __init__(self, db: AsyncSession, session_id: str, *, autocommit: bool = True) -> None:
         self.db = db
         self.session_id = session_id
+        self.autocommit = autocommit
+
+    async def _maybe_commit(self) -> None:
+        if self.autocommit:
+            await self.db.commit()
+
+    async def flush(self) -> None:
+        """Explicit commit — call after a batch of deferred writes."""
+        await self.db.commit()
 
     # ── KV ──
 
@@ -50,7 +59,7 @@ class GameDB:
                 value_json=json.dumps(value, ensure_ascii=False),
                 updated_at=now,
             ))
-        await self.db.commit()
+        await self._maybe_commit()
 
     async def kv_query(self, collection: str, filter_key: str | None = None) -> list[dict]:
         stmt = select(GameKV).where(
@@ -72,7 +81,7 @@ class GameDB:
         if not row:
             return False
         await self.db.delete(row)
-        await self.db.commit()
+        await self._maybe_commit()
         return True
 
     # ── Graph ──
@@ -98,7 +107,7 @@ class GameDB:
                 relation=relation,
                 data_json=json.dumps(data or {}, ensure_ascii=False),
             ))
-        await self.db.commit()
+        await self._maybe_commit()
 
     async def graph_remove(self, from_id: str, to_id: str, relation: str) -> bool:
         stmt = select(GameGraph).where(
@@ -111,7 +120,7 @@ class GameDB:
         if not row:
             return False
         await self.db.delete(row)
-        await self.db.commit()
+        await self._maybe_commit()
         return True
 
     async def graph_query(
@@ -151,7 +160,7 @@ class GameDB:
             collection=collection,
             entry_json=json.dumps(entry, ensure_ascii=False),
         ))
-        await self.db.commit()
+        await self._maybe_commit()
 
     async def log_query(
         self, collection: str, limit: int = 10, since: str | None = None

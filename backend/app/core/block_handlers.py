@@ -281,7 +281,25 @@ class SceneUpdateHandler:
 
 
 class EventHandler:
+    @staticmethod
+    def _enrich_from_record(data: dict, event: "GameEvent", session_id: str) -> dict:
+        """Enrich block data with full DB record fields so frontend isGameEvent() passes."""
+        data["id"] = event.id
+        data["event_id"] = event.id
+        data["session_id"] = session_id
+        data["event_type"] = event.event_type
+        data["name"] = event.name
+        data["description"] = event.description or ""
+        data["status"] = event.status
+        data["source"] = event.source or "dm"
+        data["visibility"] = event.visibility or "known"
+        if event.parent_event_id:
+            data["parent_event_id"] = event.parent_event_id
+        return data
+
     async def process(self, data: dict, context: BlockContext) -> dict | None:
+        from backend.app.models.game_event import GameEvent
+
         mgr = context.state_mgr
         action = data.get("action", "create")
 
@@ -296,7 +314,7 @@ class EventHandler:
                 visibility=data.get("visibility", "known"),
                 metadata=data.get("metadata"),
             )
-            data["event_id"] = event.id
+            self._enrich_from_record(data, event, context.session_id)
 
         elif action == "evolve":
             parent_id = data.get("event_id") or data.get("parent_event_id")
@@ -312,13 +330,17 @@ class EventHandler:
                     visibility=data.get("visibility", "known"),
                     metadata=data.get("metadata"),
                 )
-                data["event_id"] = child.id
+                self._enrich_from_record(data, child, context.session_id)
 
         elif action in ("resolve", "end"):
             event_id = data.get("event_id")
             if event_id:
                 status = "resolved" if action == "resolve" else "ended"
                 await mgr.update_event(event_id, status=status)
+                # Enrich with updated status for frontend
+                event_obj = await mgr.session.get(GameEvent, event_id)
+                if event_obj:
+                    self._enrich_from_record(data, event_obj, context.session_id)
 
         return data
 

@@ -16,8 +16,9 @@
 
 ## 这次更新后的重点
 
-- 插件现在有清晰的 `manifest.json`，依赖、Block、设置项都可被运行时直接识别；内置插件已扩展到 17 个。
+- 插件系统已切换为分组布局（`core` / `narrative` / `rpg-mechanics`），当前内置 10 个插件，并支持 `required`、`default_enabled`、`supersedes`。
 - 新的故事图片链路更完整：生成、续帧参考、前端展示与重生成功能已经打通。
+- 图片能力对应插件已统一为 `image`（输出 `story_image` block）；记忆/归档/压缩由 `memory` 插件统一管理。
 - 新增 `Novel` 面板：可把会话素材（世界观/角色/事件/消息）流式生成章节小说并导出 Markdown。
 - 后端补齐了能力执行、脚本执行、审计日志等基础能力，便于排查与扩展。
 - 前端 UI 已统一到 Tailwind v4 + shadcn/ui（Radix）体系，插件与状态面板一致性更高。
@@ -90,7 +91,7 @@ DATABASE_URL=postgresql+asyncpg://<user>:<pass>@<host>/<db>
 
 - `frontend/`：游戏界面与交互
 - `backend/`：会话编排、插件运行时、小说生成流、API/WebSocket
-- `plugins/`：内置插件（17 个，含 `story-image` / `combat` / `skill-check` 等）
+- `plugins/`：内置分组插件（10 个：`core/`、`narrative/`、`rpg-mechanics/`）
 - `templates/worlds/`：世界观模板
 
 ## 更多文档

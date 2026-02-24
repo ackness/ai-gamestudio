@@ -1,6 +1,7 @@
 """Plugin Agent — post-narrative function-calling agent for game mechanics."""
 from __future__ import annotations
 
+import asyncio
 import json
 import pathlib
 from typing import Any
@@ -16,24 +17,18 @@ from backend.app.core.plugin_tools import get_all_tools
 from backend.app.core.script_runner import PythonScriptRunner
 from backend.app.api.debug_log import _add_log
 
-MAX_TOOL_ROUNDS = 10
+MAX_TOOL_ROUNDS = 8
 
-PLUGIN_AGENT_SYSTEM_PROMPT = """\
-你是一个游戏插件代理（Plugin Agent）。你的任务是分析 DM 的叙事输出，判断需要触发哪些游戏机制，并通过工具调用来更新游戏状态和输出结构化数据。
+ProgressCallback = Any  # Callable[[dict], None] — optional sync callback
 
-## 工作流程
-1. 阅读 DM 的叙事文本和当前游戏状态
-2. 调用 list_plugins() 查看可用插件
-3. 根据叙事内容判断需要哪些插件
-4. 调用 load_plugin(name) 加载需要的插件详细指令
-5. 按照插件指令，使用 db_* 工具操作游戏数据
-6. 使用 emit_block() 输出结构化数据到前端
+SINGLE_PLUGIN_SYSTEM_PROMPT = """\
+你是游戏插件代理。分析 DM 叙事，按插件指令执行游戏机制。
 
-## 原则
-- 只处理叙事中实际发生的变化，不要臆造
-- 一次可以处理多个插件的需求
-- 优先使用 db_* 工具持久化状态，再用 emit_block 通知前端
-- 如果叙事中没有需要处理的游戏机制变化，直接结束即可
+## 规则
+- 当前游戏状态已在上下文中，无需 db_read 查询已有数据
+- 有状态变化时用 update_and_emit 一次完成 DB 写入 + 前端通知
+- 纯展示插件（如 guide）直接用 emit_block
+- 叙事中没有相关变化则直接结束，不要臆造
 """
 
 
@@ -46,85 +41,158 @@ async def run_plugin_agent(
     pe: PluginEngine,
     config: ResolvedLlmConfig,
     plugins_dir: str = "plugins",
+    on_progress: ProgressCallback | None = None,
+    trigger_counts: dict[str, int] | None = None,
 ) -> tuple[list[dict], dict[str, Any]]:
-    """Run the Plugin Agent after narrative completes.
+    """Run enabled plugins in parallel after narrative completes."""
+    all_discovered = pe.discover(plugins_dir)
+    plugins_to_run: list[dict] = []
+    for p in all_discovered:
+        name = p["name"]
+        if name not in enabled_plugins:
+            continue
+        loaded = pe.load(name, plugins_dir)
+        if not loaded:
+            continue
+        content = loaded.get("content", "").strip()
+        if not content:
+            continue
+        max_triggers = loaded.get("metadata", {}).get("max_triggers")
+        current_count = (trigger_counts or {}).get(name, 0)
+        if max_triggers is not None and current_count >= max_triggers:
+            logger.debug("Plugin '{}' skipped: trigger limit ({}/{})", name, current_count, max_triggers)
+            continue
+        plugins_to_run.append({"name": name, "content": content, "metadata": loaded.get("metadata", {})})
 
-    Returns ``(blocks, summary)`` where *summary* is a dict describing the
-    execution for progress reporting.
-    """
+    if not plugins_to_run:
+        logger.debug("No plugins to run for session {}", session_id)
+        return [], {"rounds": 0, "tool_calls": [], "blocks_emitted": [], "plugins_run": []}
+
+    logger.info("Running {} plugins in parallel: {}", len(plugins_to_run), [p["name"] for p in plugins_to_run])
 
     state_json = json.dumps(game_state, ensure_ascii=False, default=str)
+    context_text = f"## 叙事文本\n{narrative}\n\n## 当前游戏状态\n{state_json}"
+
+    tasks = [
+        _run_one_plugin(
+            plugin_info=pi, context_text=context_text, session_id=session_id,
+            game_db=game_db, pe=pe, config=config, plugins_dir=plugins_dir,
+            on_progress=on_progress,
+        )
+        for pi in plugins_to_run
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    all_blocks: list[dict] = []
+    all_tool_calls: list[str] = []
+    total_rounds = 0
+    plugins_run: list[str] = []
+
+    for plugin_info, result in zip(plugins_to_run, results):
+        name = plugin_info["name"]
+        if isinstance(result, Exception):
+            logger.exception("Plugin '{}' failed: {}", name, result)
+            continue
+        blocks, plugin_rounds, tool_calls = result
+        all_blocks.extend(blocks)
+        all_tool_calls.extend(tool_calls)
+        total_rounds = max(total_rounds, plugin_rounds)
+        if blocks:
+            plugins_run.append(name)
+
+    _add_log(session_id, "debug", {
+        "type": "plugin_agent_trace", "mode": "parallel",
+        "enabled_plugins": enabled_plugins,
+        "plugins_run": [p["name"] for p in plugins_to_run],
+        "plugins_emitted": plugins_run,
+        "total_blocks": len(all_blocks),
+        "blocks_emitted": [{"type": b["type"], "plugin": b.get("_plugin")} for b in all_blocks],
+    })
+
+    return all_blocks, {
+        "rounds": total_rounds, "tool_calls": all_tool_calls,
+        "blocks_emitted": [b.get("type") for b in all_blocks], "plugins_run": plugins_run,
+    }
+
+
+async def _run_one_plugin(
+    plugin_info: dict,
+    context_text: str,
+    session_id: str,
+    game_db: GameDB,
+    pe: PluginEngine,
+    config: ResolvedLlmConfig,
+    plugins_dir: str,
+    on_progress: ProgressCallback | None = None,
+) -> tuple[list[dict], int, list[str]]:
+    """Run a single plugin's LLM call. Returns (blocks, rounds, tool_call_names)."""
+    name = plugin_info["name"]
+    content = plugin_info["content"]
+    metadata = plugin_info.get("metadata", {})
+
+    block_instructions = _build_block_instructions(metadata)
+    system_parts = [SINGLE_PLUGIN_SYSTEM_PROMPT, f"## 插件指令 ({name})\n{content}"]
+    if block_instructions:
+        system_parts.append(f"## Block 格式参考\n{block_instructions}")
+
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": PLUGIN_AGENT_SYSTEM_PROMPT},
-        {"role": "user", "content": f"## 叙事文本\n{narrative}\n\n## 当前游戏状态\n{state_json}"},
+        {"role": "system", "content": "\n\n".join(system_parts)},
+        {"role": "user", "content": context_text},
     ]
     tools = get_all_tools()
     blocks: list[dict] = []
 
-    # Build tool executor context
+    # Deferred-commit DB for batched writes
+    plugin_db = GameDB(game_db.db, game_db.session_id, autocommit=False)
     ctx = _ToolContext(
-        session_id=session_id,
-        game_db=game_db,
-        pe=pe,
-        enabled_plugins=enabled_plugins,
-        plugins_dir=plugins_dir,
-        blocks=blocks,
+        session_id=session_id, game_db=plugin_db, pe=pe,
+        enabled_plugins=[name], plugins_dir=plugins_dir, blocks=blocks,
     )
 
     total_rounds = 0
-    all_tool_calls: list[dict[str, str]] = []
+    tool_call_names: list[str] = []
+
     for round_idx in range(MAX_TOOL_ROUNDS):
         total_rounds = round_idx + 1
         call_kwargs = _build_call_kwargs(config, messages, tools)
         try:
             response = await litellm.acompletion(**call_kwargs)
         except Exception:
-            logger.exception("Plugin Agent LLM call failed (round {})", round_idx)
+            logger.exception("Plugin '{}' LLM call failed (round {})", name, round_idx)
             break
 
         message = response.choices[0].message
         if not message.tool_calls:
-            logger.debug("Plugin Agent round {}: no tool calls, finishing", round_idx)
             break
 
         messages.append(message.model_dump(exclude_none=True))
-
-        round_calls = []
         for tc in message.tool_calls:
             result = await _execute_tool(tc, ctx)
-            call_info = {"tool": tc.function.name, "args_preview": tc.function.arguments[:200]}
-            round_calls.append(call_info)
-            all_tool_calls.append(call_info)
+            tool_call_names.append(tc.function.name)
             messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
+                "role": "tool", "tool_call_id": tc.id,
                 "name": tc.function.name,
                 "content": json.dumps(result, ensure_ascii=False, default=str),
             })
 
-        logger.debug(
-            "Plugin Agent round {}: {} tool calls: {}",
-            round_idx, len(round_calls), [c["tool"] for c in round_calls],
-        )
+        logger.debug("Plugin '{}' round {}: {} tool calls", name, round_idx, len(message.tool_calls))
+        if on_progress:
+            try:
+                on_progress({
+                    "plugin": name, "round": round_idx + 1,
+                    "tool_calls": [tc.function.name for tc in message.tool_calls],
+                    "blocks_so_far": [b.get("type") for b in blocks],
+                })
+            except Exception:
+                pass
 
-    # Debug: log full agent summary to debug panel
-    _add_log(session_id, "debug", {
-        "type": "plugin_agent_trace",
-        "enabled_plugins": enabled_plugins,
-        "rounds": total_rounds,
-        "blocks_emitted": [{"type": b["type"], "data_keys": list(b.get("data", {}).keys()) if isinstance(b.get("data"), dict) else None} for b in blocks],
-        "tool_calls": [
-            {"role": m["role"], "name": m.get("name", ""), "content_preview": str(m.get("content", ""))[:150]}
-            for m in messages if m.get("role") in ("tool",)
-        ],
-    })
+    # Single commit for all writes
+    await plugin_db.flush()
 
-    summary: dict[str, Any] = {
-        "rounds": total_rounds,
-        "tool_calls": [c["tool"] for c in all_tool_calls],
-        "blocks_emitted": [b.get("type") for b in blocks],
-    }
-    return blocks, summary
+    for b in blocks:
+        b["_plugin"] = name
+    logger.debug("Plugin '{}' finished: {} blocks, {} rounds", name, len(blocks), total_rounds)
+    return blocks, total_rounds, tool_call_names
 
 
 async def invoke_single_plugin(
@@ -137,7 +205,6 @@ async def invoke_single_plugin(
     plugins_dir: str = "plugins",
 ) -> list[dict]:
     """Invoke a single plugin directly (e.g. guide from quick-action bar)."""
-
     plugin = pe.load(plugin_name, plugins_dir)
     if not plugin:
         return [{"type": "notification", "data": {"message": f"插件 {plugin_name} 未找到", "level": "error"}}]
@@ -146,19 +213,16 @@ async def invoke_single_plugin(
     ctx_json = json.dumps(context, ensure_ascii=False, default=str)
 
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": f"你是游戏插件代理。请按照以下插件指令处理当前上下文，使用工具输出结果。\n\n{plugin_prompt}"},
+        {"role": "system", "content": f"{SINGLE_PLUGIN_SYSTEM_PROMPT}\n\n## 插件指令 ({plugin_name})\n{plugin_prompt}"},
         {"role": "user", "content": ctx_json},
     ]
     tools = get_all_tools()
     blocks: list[dict] = []
 
+    plugin_db = GameDB(game_db.db, game_db.session_id, autocommit=False)
     tool_ctx = _ToolContext(
-        session_id=session_id,
-        game_db=game_db,
-        pe=pe,
-        enabled_plugins=[plugin_name],
-        plugins_dir=plugins_dir,
-        blocks=blocks,
+        session_id=session_id, game_db=plugin_db, pe=pe,
+        enabled_plugins=[plugin_name], plugins_dir=plugins_dir, blocks=blocks,
     )
 
     for _ in range(MAX_TOOL_ROUNDS):
@@ -168,27 +232,40 @@ async def invoke_single_plugin(
         except Exception:
             logger.exception("Single plugin invoke failed for {}", plugin_name)
             break
-
         message = response.choices[0].message
         if not message.tool_calls:
             break
-
         messages.append(message.model_dump(exclude_none=True))
         for tc in message.tool_calls:
             result = await _execute_tool(tc, tool_ctx)
             messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
+                "role": "tool", "tool_call_id": tc.id,
                 "name": tc.function.name,
                 "content": json.dumps(result, ensure_ascii=False, default=str),
             })
 
+    await plugin_db.flush()
     return blocks
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _build_block_instructions(metadata: dict) -> str:
+    """Extract block format instructions from manifest metadata for the LLM."""
+    blocks = metadata.get("blocks", {})
+    if not blocks or not isinstance(blocks, dict):
+        return ""
+    parts: list[str] = []
+    for block_type, decl in blocks.items():
+        if not isinstance(decl, dict):
+            continue
+        instruction = decl.get("instruction", "")
+        if instruction:
+            parts.append(f"### {block_type}\n{instruction}")
+    return "\n\n".join(parts)
+
 
 class _ToolContext:
     __slots__ = ("session_id", "game_db", "pe", "enabled_plugins", "plugins_dir", "blocks")
@@ -221,44 +298,95 @@ async def _execute_tool(tool_call: Any, ctx: _ToolContext) -> Any:
     logger.debug("Plugin Agent tool: {}({})", name, args)
 
     try:
-        if name == "list_plugins":
-            return _handle_list_plugins(ctx)
-        elif name == "load_plugin":
-            return _handle_load_plugin(args, ctx)
-        elif name == "execute_script":
-            return await _handle_execute_script(args, ctx)
-        elif name == "emit_block":
-            return _handle_emit_block(args, ctx)
-        elif name.startswith("db_"):
-            return await _handle_db_tool(name, args, ctx)
-        else:
-            return {"error": f"Unknown tool: {name}"}
+        match name:
+            case "update_and_emit":
+                return await _handle_update_and_emit(args, ctx)
+            case "emit_block":
+                return _handle_emit_block(args, ctx)
+            case "db_read":
+                return await _handle_db_read(args, ctx)
+            case "execute_script":
+                return await _handle_execute_script(args, ctx)
+            case "db_log_append":
+                await ctx.game_db.log_append(args["collection"], args["entry"])
+                return {"status": "ok"}
+            case "db_log_query":
+                return await ctx.game_db.log_query(args["collection"], args.get("limit", 10))
+            case "db_graph_add":
+                await ctx.game_db.graph_add(args["from_id"], args["to_id"], args["relation"], args.get("data"))
+                return {"status": "ok"}
+            # Backward compat: handle old tool names if LLM hallucinates them
+            case "db_kv_set":
+                await ctx.game_db.kv_set(args["collection"], args["key"], args["value"])
+                return {"status": "ok"}
+            case "db_kv_get":
+                val = await ctx.game_db.kv_get(args["collection"], args["key"])
+                return val if val is not None else {"_empty": True}
+            case "db_kv_query":
+                return await ctx.game_db.kv_query(args["collection"], args.get("filter_key"))
+            case _:
+                return {"error": f"Unknown tool: {name}"}
     except Exception as e:
         logger.exception("Tool execution error: {}", name)
         return {"error": str(e)}
 
 
-def _handle_list_plugins(ctx: _ToolContext) -> list[dict]:
-    plugins = ctx.pe.discover(ctx.plugins_dir)
-    return [
-        {"name": p["name"], "description": p.get("metadata", {}).get("description", "")}
-        for p in plugins
-        if p["name"] in ctx.enabled_plugins
-    ]
+async def _handle_update_and_emit(args: dict, ctx: _ToolContext) -> dict:
+    """Batch KV writes + optional multiple emits + optional multiple logs in one call."""
+    db = ctx.game_db
+    writes = args.get("writes", [])
+    written = 0
+    for w in writes:
+        await db.kv_set(w["collection"], w["key"], w["value"])
+        written += 1
+
+    # Logs: support both "logs" (array) and "log" (single, backward compat)
+    logs = args.get("logs", [])
+    log_single = args.get("log")
+    if log_single and isinstance(log_single, dict):
+        logs.append(log_single)
+    for log_entry in logs:
+        if isinstance(log_entry, dict):
+            await db.log_append(log_entry["collection"], log_entry["entry"])
+
+    # Emits: support both "emits" (array) and "emit" (single, backward compat)
+    emits = args.get("emits", [])
+    emit_single = args.get("emit")
+    if emit_single and isinstance(emit_single, dict):
+        emits.append(emit_single)
+
+    emitted_types: list[str] = []
+    for emit in emits:
+        if not isinstance(emit, dict):
+            continue
+        block_type = emit.get("type", "")
+        if block_type.startswith("json:"):
+            block_type = block_type[5:]
+        ctx.blocks.append({"type": block_type, "data": emit.get("data", {})})
+        emitted_types.append(block_type)
+
+    result: dict[str, Any] = {"status": "ok", "written": written}
+    if emitted_types:
+        result["emitted"] = emitted_types
+    return result
 
 
-def _handle_load_plugin(args: dict, ctx: _ToolContext) -> dict:
-    name = args["name"]
-    plugin = ctx.pe.load(name, ctx.plugins_dir)
-    if not plugin:
-        return {"error": f"Plugin '{name}' not found"}
-    meta = plugin.get("metadata", {})
-    return {
-        "name": name,
-        "prompt": plugin.get("content", ""),
-        "blocks": meta.get("blocks", []),
-        "capabilities": meta.get("capabilities", []),
-    }
+def _handle_emit_block(args: dict, ctx: _ToolContext) -> dict:
+    block_type = args["type"]
+    if block_type.startswith("json:"):
+        block_type = block_type[5:]
+    ctx.blocks.append({"type": block_type, "data": args.get("data", {})})
+    return {"status": "emitted", "type": block_type}
+
+
+async def _handle_db_read(args: dict, ctx: _ToolContext) -> Any:
+    """Unified read: single key or full collection."""
+    collection = args["collection"]
+    key = args.get("key")
+    if key:
+        val = await ctx.game_db.kv_get(collection, key)
+        return val if val is not None else {"_empty": True}
+    return await ctx.game_db.kv_query(collection)
 
 
 async def _handle_execute_script(args: dict, ctx: _ToolContext) -> Any:
@@ -284,36 +412,3 @@ async def _handle_execute_script(args: dict, ctx: _ToolContext) -> Any:
     if result.exit_code != 0:
         return {"error": result.stderr or f"Script exited with code {result.exit_code}"}
     return result.parsed_output or {"stdout": result.stdout}
-
-
-def _handle_emit_block(args: dict, ctx: _ToolContext) -> dict:
-    # LLM sometimes passes "json:scene_update" instead of "scene_update"; strip prefix.
-    block_type = args["type"]
-    if block_type.startswith("json:"):
-        block_type = block_type[5:]
-    block = {"type": block_type, "data": args.get("data", {})}
-    ctx.blocks.append(block)
-    return {"status": "emitted", "type": block_type}
-
-
-async def _handle_db_tool(name: str, args: dict, ctx: _ToolContext) -> Any:
-    db = ctx.game_db
-    if name == "db_kv_get":
-        val = await db.kv_get(args["collection"], args["key"])
-        return val if val is not None else {"_empty": True}
-    elif name == "db_kv_set":
-        await db.kv_set(args["collection"], args["key"], args["value"])
-        return {"status": "ok"}
-    elif name == "db_kv_query":
-        return await db.kv_query(args["collection"], args.get("filter_key"))
-    elif name == "db_graph_add":
-        await db.graph_add(args["from_id"], args["to_id"], args["relation"], args.get("data"))
-        return {"status": "ok"}
-    elif name == "db_graph_query":
-        return await db.graph_query(args.get("node_id"), args.get("relation"), args.get("direction", "both"))
-    elif name == "db_log_append":
-        await db.log_append(args["collection"], args["entry"])
-        return {"status": "ok"}
-    elif name == "db_log_query":
-        return await db.log_query(args["collection"], args.get("limit", 10))
-    return {"error": f"Unknown db tool: {name}"}
