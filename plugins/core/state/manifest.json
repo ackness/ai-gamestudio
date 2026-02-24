@@ -4,6 +4,7 @@
   "name": "state",
   "type": "global",
   "required": true,
+  "supersedes": ["core-blocks", "character"],
   "description": "Core state management: state sync, character sheets, scene updates, and character context injection.",
   "dependencies": ["database"],
   "prompt": {

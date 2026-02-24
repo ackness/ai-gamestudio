@@ -5,6 +5,7 @@
   "type": "gameplay",
   "required": false,
   "default_enabled": true,
+  "supersedes": ["story-image"],
   "description": "Story image plugin that converts structured prompts into generated images with continuity.",
   "dependencies": ["database"],
   "prompt": {

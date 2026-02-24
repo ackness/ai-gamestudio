@@ -4,6 +4,7 @@
   "name": "combat",
   "type": "gameplay",
   "required": false,
+  "supersedes": ["skill-check", "dice-roll", "status-effect"],
   "description": "Unified combat system: turn-based combat, dice rolls, skill checks, and status effects.",
   "dependencies": ["state"],
   "prompt": {

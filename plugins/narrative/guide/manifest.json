@@ -5,7 +5,7 @@
   "type": "gameplay",
   "required": false,
   "default_enabled": true,
-  "supersedes": [],
+  "supersedes": ["auto-guide", "choices"],
   "description": "Action suggestions and interactive choices for player guidance.",
   "dependencies": [],
   "prompt": {

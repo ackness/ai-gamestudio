@@ -4,6 +4,7 @@
   "name": "event",
   "type": "global",
   "required": true,
+  "supersedes": ["quest"],
   "description": "Event tracking and quest management: lifecycle tracking for events and quests.",
   "dependencies": ["database"],
   "prompt": {

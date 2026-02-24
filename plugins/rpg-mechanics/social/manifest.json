@@ -4,6 +4,7 @@
   "name": "social",
   "type": "gameplay",
   "required": false,
+  "supersedes": ["relationship", "faction"],
   "description": "Social systems: NPC relationships, faction reputation, and standing tracking.",
   "dependencies": ["state", "database"],
   "prompt": {
