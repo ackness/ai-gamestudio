@@ -5,6 +5,7 @@
   "type": "global",
   "required": false,
   "default_enabled": true,
+  "supersedes": ["archive", "auto-compress"],
   "description": "Memory, archive, and auto-compression system for long-term context management.",
   "dependencies": ["database"],
   "prompt": {

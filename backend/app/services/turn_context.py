@@ -13,7 +13,6 @@ from backend.app.core.plugin_registry import get_plugin_engine
 from backend.app.models.project import Project
 from backend.app.models.session import GameSession
 from backend.app.services.archive_service import (
-    ARCHIVE_PLUGIN_NAME,
     ensure_archive_initialized,
     get_archive_prompt_context,
 )
@@ -77,7 +76,7 @@ async def build_turn_context(
     try:
         enabled = await get_enabled_plugins(db, project.id, world_doc=project.world_doc)
         enabled_names = [p["plugin_name"] for p in enabled]
-        if ARCHIVE_PLUGIN_NAME in enabled_names:
+        if "memory" in enabled_names:
             archive_context = await get_archive_prompt_context(db, project.id, session_id)
         resolved = await resolve_runtime_settings(
             db, project_id=project.id, session_id=session_id, enabled_plugins=enabled_names,
@@ -99,12 +98,12 @@ async def build_turn_context(
     # Memory plugin
     memories = await _load_memories(db, project.id, enabled_names)
 
-    # Compression summary (auto-compress plugin)
+    # Compression summary (memory plugin subsumes auto-compress)
     compression_summary = await _load_compression_summary(db, project.id, enabled_names)
 
     # Adjust history limit based on compression
     if compression_summary:
-        ac_settings = runtime_settings_by_plugin.get("auto-compress", {})
+        ac_settings = runtime_settings_by_plugin.get("memory", {})
         keep_recent = int(ac_settings.get("keep_recent_messages", 6))
         history_limit = min(history_limit, keep_recent + 4)
         recent_messages = await state_mgr.get_messages(session_id, limit=history_limit)
@@ -196,8 +195,8 @@ async def _load_memories(
 async def _load_compression_summary(
     db: SQLModelAsyncSession, project_id: str, enabled_names: list[str],
 ) -> str:
-    """Load the compression summary from auto-compress plugin storage."""
-    if "auto-compress" not in enabled_names:
+    """Load the compression summary from plugin storage (memory subsumes auto-compress)."""
+    if "memory" not in enabled_names:
         return ""
     try:
         data = await storage_get(db, project_id, "auto-compress", "compression-summary")
@@ -214,7 +213,7 @@ async def _load_compression_summary(
 async def _load_story_images(
     db: SQLModelAsyncSession, project_id: str, session_id: str, enabled_names: list[str],
 ) -> list[dict[str, Any]]:
-    if "story-image" not in enabled_names:
+    if "image" not in enabled_names:
         return []
     try:
         from backend.app.services.image_service import (

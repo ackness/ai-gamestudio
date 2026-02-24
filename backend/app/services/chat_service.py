@@ -162,8 +162,8 @@ async def process_message(
         if saved_message_id:
             yield {"type": "_message_saved", "message_id": saved_message_id, "turn_id": turn_id}
 
-        # 8. Auto archive
-        if should_increment_turn and ARCHIVE_PLUGIN_NAME in ctx.enabled_names:
+        # 8. Auto archive (memory plugin subsumes archive)
+        if should_increment_turn and "memory" in ctx.enabled_names:
             try:
                 created = await maybe_auto_archive_summary(db, ctx.project, ctx.session)
                 if created:
@@ -175,11 +175,11 @@ async def process_message(
             except Exception:
                 logger.exception("Auto archive summary failed")
 
-        # 9. Auto compress check
-        if "auto-compress" in ctx.enabled_names and context_usage > 0:
+        # 9. Auto compress check (memory plugin subsumes auto-compress)
+        if "memory" in ctx.enabled_names and context_usage > 0:
             from backend.app.services.compress_service import should_compress, compress_history
 
-            ac_settings = ctx.runtime_settings_by_plugin.get("auto-compress", {})
+            ac_settings = ctx.runtime_settings_by_plugin.get("memory", {})
             threshold = float(ac_settings.get("compression_threshold", 0.7))
             keep_recent = int(ac_settings.get("keep_recent_messages", 6))
 
