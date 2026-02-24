@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import Markdown from 'react-markdown'
-import { Copy, Image as ImageIcon, RotateCcw, Pencil, Trash2, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Copy, Image as ImageIcon, RotateCcw, Pencil, Trash2, AlertCircle, CheckCircle2, Plug } from 'lucide-react'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useUiStore } from '../../stores/uiStore'
 import type { StreamStatus } from '../../stores/sessionStore'
@@ -16,6 +16,7 @@ interface Props {
   onAction: (msg: string) => void
   onRetry?: () => void
   onGenerateImage?: (messageId: string) => void
+  onRetriggerPlugins?: (messageId: string) => void
 }
 
 const chatText: Record<string, Record<string, string>> = {
@@ -138,6 +139,7 @@ function MessageActions({
   onRegenerate,
   onEdit,
   onGenerateImage,
+  onRetriggerPlugins,
   imageLoading,
   hasImage,
   t,
@@ -149,6 +151,7 @@ function MessageActions({
   onRegenerate?: () => void
   onEdit?: () => void
   onGenerateImage?: () => void
+  onRetriggerPlugins?: () => void
   imageLoading?: boolean
   hasImage?: boolean
   t: Record<string, string>
@@ -189,6 +192,17 @@ function MessageActions({
             </Button>
           </TooltipTrigger>
           <TooltipContent><p>{t.regenerate}</p></TooltipContent>
+        </Tooltip>
+      )}
+
+      {msg.role === 'assistant' && onRetriggerPlugins && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-cyan-400" onClick={onRetriggerPlugins}>
+              <Plug className="w-3.5 h-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent><p>重新触发插件</p></TooltipContent>
         </Tooltip>
       )}
 
@@ -272,7 +286,7 @@ function RawMessageViewer({ msg, onClose, t }: { msg: Message; onClose: () => vo
   )
 }
 
-export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
+export function ChatMessages({ onAction, onRetry, onGenerateImage, onRetriggerPlugins }: Props) {
   const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom, messageImages, imageLoadingMessages, pluginProcessing } = useSessionStore()
   const language = useUiStore((s) => s.language)
   const t = chatText[language] ?? chatText.en
@@ -424,6 +438,7 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
                     onDelete={() => handleDelete(msg.id)}
                     onRegenerate={isLast && !isStreaming ? onRetry : undefined}
                     onGenerateImage={onGenerateImage ? () => onGenerateImage(msg.id) : undefined}
+                    onRetriggerPlugins={onRetriggerPlugins && !isStreaming && !pluginProcessing ? () => onRetriggerPlugins(msg.id) : undefined}
                     imageLoading={imageLoadingMessages.has(msg.id)}
                     hasImage={!!messageImages[msg.id]?.length}
                     t={t}

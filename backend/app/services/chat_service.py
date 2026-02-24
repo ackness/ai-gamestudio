@@ -221,6 +221,22 @@ async def process_message(
             except Exception:
                 logger.exception("Block dispatch failed: {}", block.get("type"))
 
+        # 7b. Persist blocks to message metadata for reload recovery
+        if saved_message_id and blocks:
+            dispatched_blocks = [
+                {"type": b.get("type"), "data": b.get("data"), "block_id": f"{saved_message_id}:{i}"}
+                for i, b in enumerate(blocks)
+                if b.get("type") not in {"state_update"}  # infra blocks excluded
+            ]
+            if dispatched_blocks:
+                from backend.app.models.message import Message
+                msg_obj = await db.get(Message, saved_message_id)
+                if msg_obj:
+                    existing_meta = json.loads(msg_obj.metadata_json or "{}") if msg_obj.metadata_json else {}
+                    existing_meta["blocks"] = dispatched_blocks
+                    msg_obj.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
+                    db.add(msg_obj)
+
         await db.commit()
 
         if saved_message_id:
@@ -318,3 +334,108 @@ def _format_llm_error(exc: Exception, model: str) -> str:
     return f"LLM 调用失败 ({exc_type}): {exc}"
 
 
+async def retrigger_plugins(
+    session_id: str,
+    message_id: str,
+    *,
+    llm_overrides: dict[str, str] | None = None,
+    image_overrides: dict[str, str] | None = None,
+) -> AsyncIterator[dict[str, Any]]:
+    """Re-run Plugin Agent for an existing assistant message's narrative."""
+    turn_id = str(uuid.uuid4())
+
+    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+        state_mgr = GameStateManager(db, autocommit=False)
+
+        # Load the target message
+        from backend.app.models.message import Message
+        msg_obj = await db.get(Message, message_id)
+        if not msg_obj or msg_obj.session_id != session_id:
+            yield {"type": "error", "content": "Message not found", "turn_id": turn_id}
+            return
+        if msg_obj.role != "assistant":
+            yield {"type": "error", "content": "Can only retrigger plugins for assistant messages", "turn_id": turn_id}
+            return
+
+        narrative = msg_obj.content
+        if not narrative or not narrative.strip():
+            yield {"type": "error", "content": "Message has no narrative content", "turn_id": turn_id}
+            return
+
+        # Build context
+        ctx = await build_turn_context(db, session_id, state_mgr)
+        if ctx is None:
+            yield {"type": "error", "content": "Session or project not found", "turn_id": turn_id}
+            return
+
+        config = resolve_llm_config(project=ctx.project, overrides=llm_overrides)
+
+        yield {"type": "phase_change", "phase": "plugins", "turn_id": turn_id}
+
+        game_db = GameDB(db, session_id)
+        state_snapshot = await game_db.build_state_snapshot()
+        try:
+            blocks = await run_plugin_agent(
+                narrative=narrative,
+                game_state=state_snapshot,
+                enabled_plugins=ctx.enabled_names,
+                session_id=session_id,
+                game_db=game_db,
+                pe=ctx.pe,
+                config=config,
+            )
+        except Exception:
+            logger.exception("Plugin Agent retrigger failed for session {}", session_id)
+            blocks = []
+
+        # Filter conflicting blocks
+        block_types = {b.get("type") for b in blocks}
+        if "character_sheet" in block_types:
+            suppressed = {"guide", "choices", "auto_guide"}
+            blocks = [b for b in blocks if b.get("type") not in suppressed]
+
+        logger.info("Retrigger: {} blocks emitted for message {}", len(blocks), message_id)
+
+        yield {"type": "phase_change", "phase": "complete", "turn_id": turn_id}
+
+        # Dispatch blocks
+        block_context = BlockContext(
+            session_id=session_id, project_id=ctx.project.id, db=db,
+            state_mgr=state_mgr, autocommit=False, turn_id=turn_id,
+            image_overrides=image_overrides, llm_overrides=llm_overrides,
+        )
+        for block in blocks:
+            block_type = str(block.get("type", "unknown"))
+            block_data = block.get("data")
+            declaration = ctx.block_declarations.get(block_type) if ctx.block_declarations else None
+
+            validation_errors = validate_block_data(block_type, block_data, declaration)
+            if validation_errors:
+                logger.warning("Invalid block on retrigger: type={}, errors={}", block_type, validation_errors)
+                continue
+
+            try:
+                result = await dispatch_block(block, block_context, ctx.block_declarations, None)
+                if isinstance(result, list):
+                    for r in result:
+                        yield {"type": r["type"], "data": r["data"], "turn_id": turn_id}
+                else:
+                    yield {"type": block["type"], "data": block["data"], "turn_id": turn_id}
+            except Exception:
+                logger.exception("Block dispatch failed on retrigger: {}", block.get("type"))
+
+        # Persist blocks to message metadata
+        if blocks:
+            dispatched_blocks = [
+                {"type": b.get("type"), "data": b.get("data"), "block_id": f"{message_id}:{i}"}
+                for i, b in enumerate(blocks)
+                if b.get("type") not in {"state_update"}
+            ]
+            if dispatched_blocks:
+                existing_meta = json.loads(msg_obj.metadata_json or "{}") if msg_obj.metadata_json else {}
+                existing_meta["blocks"] = dispatched_blocks
+                msg_obj.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
+                db.add(msg_obj)
+
+        await db.commit()
+        yield {"type": "turn_end", "turn_id": turn_id}

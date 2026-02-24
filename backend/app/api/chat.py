@@ -12,7 +12,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from backend.app.core.access_key import is_request_authorized
 from backend.app.db.engine import engine
 from backend.app.models.session import GameSession
-from backend.app.services.chat_service import process_message
+from backend.app.services.chat_service import process_message, retrigger_plugins
 
 from backend.app.api.debug_log import _add_log, _touch_log_session, _cleanup_log_sessions
 from backend.app.services.command_handlers import (
@@ -131,6 +131,26 @@ async def _background_generate_image(
             logger.warning("Failed to send image error event (WebSocket likely closed)")
 
 
+async def _handle_retrigger_plugins(
+    sink: EventSink,
+    session_id: str,
+    data: dict[str, Any],
+    *,
+    llm_overrides: dict[str, str] | None = None,
+    image_overrides: dict[str, str] | None = None,
+) -> None:
+    message_id = str(data.get("message_id", ""))
+    if not message_id:
+        await sink.send_json({"type": "error", "content": "message_id is required"})
+        return
+    async for event in retrigger_plugins(
+        session_id, message_id,
+        llm_overrides=llm_overrides, image_overrides=image_overrides,
+    ):
+        _add_log(session_id, "send", event)
+        await sink.send_json(event)
+
+
 async def _stream_process_message(
     sink: EventSink,
     session_id: str,
@@ -197,6 +217,8 @@ async def _dispatch_incoming_message(
             await _handle_force_trigger(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
         elif msg_type == "generate_message_image":
             await _handle_generate_message_image(sink, session_id, data, image_overrides=image_overrides, llm_overrides=llm_overrides)
+        elif msg_type == "retrigger_plugins":
+            await _handle_retrigger_plugins(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
         else:
             await sink.send_json({"type": "error", "content": f"Unknown message type: {msg_type}"})
     except Exception:

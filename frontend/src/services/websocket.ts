@@ -358,6 +358,10 @@ export class GameWebSocket {
     this.send({ type: 'generate_message_image', message_id: messageId })
   }
 
+  sendRetriggerPlugins(messageId: string) {
+    this.send({ type: 'retrigger_plugins', message_id: messageId })
+  }
+
   disconnect() {
     this.shouldReconnect = false
     this.ws?.close()

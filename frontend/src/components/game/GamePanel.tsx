@@ -117,6 +117,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
     handleForceTrigger,
     handleGenerateImage,
     handleSceneSwitch,
+    handleRetriggerPlugins,
   } = useGameActions(currentSession, wsRef, clearInitError)
   const {
     archiveVersions,
@@ -275,7 +276,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
 
         {phase === 'ended' && (
           <div className="flex flex-col h-full">
-            <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} />
+            <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} onRetriggerPlugins={handleRetriggerPlugins} />
             <div className="px-4 py-4 bg-muted/30 border-t text-center shrink-0">
               <p className="text-muted-foreground text-sm mb-3">游戏结束</p>
               <Button onClick={onNewSession} className="gap-2">
@@ -290,7 +291,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
             {currentScene && (
               <SceneBar currentScene={currentScene} scenes={scenes} onSceneSwitch={handleSceneSwitch} />
             )}
-            <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} />
+            <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} onRetriggerPlugins={handleRetriggerPlugins} />
             <QuickActions onTrigger={handleForceTrigger} disabled={isStreaming || pluginProcessing} />
             <ChatInput onSend={handleSend} disabled={isStreaming || pluginProcessing} />
           </div>
