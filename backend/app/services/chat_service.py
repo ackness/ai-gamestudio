@@ -25,6 +25,10 @@ from backend.app.services.token_service import (
 )
 from backend.app.services.turn_context import build_turn_context
 
+# V3 imports (Plugin Agent mode)
+from backend.app.core.game_db import GameDB
+from backend.app.services.plugin_agent import run_plugin_agent
+
 
 async def process_message(
     session_id: str,
@@ -291,3 +295,137 @@ def _format_llm_error(exc: Exception, model: str) -> str:
     if isinstance(exc, litellm.BadRequestError):
         return f"请求错误: {model} 拒绝了请求 — {exc}"
     return f"LLM 调用失败 ({exc_type}): {exc}"
+
+
+async def process_message_v3(
+    session_id: str,
+    user_content: str,
+    *,
+    save_user_msg: bool = True,
+    save_assistant_msg: bool = True,
+    llm_overrides: dict[str, str] | None = None,
+    image_overrides: dict[str, str] | None = None,
+) -> AsyncIterator[dict[str, Any]]:
+    """V3: Narrative-only LLM + Plugin Agent post-processing."""
+    turn_id = str(uuid.uuid4())
+
+    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+        state_mgr = GameStateManager(db, autocommit=False)
+
+        # 1. Build turn context
+        ctx = await build_turn_context(db, session_id, state_mgr)
+        if ctx is None:
+            yield {"type": "error", "content": "Session or project not found", "turn_id": turn_id}
+            return
+
+        # 2. Save user message
+        if save_user_msg:
+            await state_mgr.add_message(session_id, "user", user_content, scene_id=ctx.current_scene_id)
+            await db.commit()
+
+        # 3. Assemble narrative-only prompt (no block instructions)
+        from backend.app.services.prompt_assembly import assemble_narrative_prompt
+        messages = assemble_narrative_prompt(ctx, user_content, save_user_msg)
+        config = resolve_llm_config(project=ctx.project, overrides=llm_overrides)
+        logger.info("V3 narrative LLM: model={}, source={}", config.model, config.source)
+
+        # Token tracking
+        estimated_prompt_tokens = count_message_tokens(config.model, messages)
+        context_window = get_model_context_window(config.model)
+        max_input = context_window["max_input_tokens"]
+        result_acc = create_stream_result()
+
+        # 4. Stream narrative (no tools, no blocks)
+        try:
+            full_response = ""
+            stream = await completion_with_config(messages, config, stream=True, result_acc=result_acc)
+            async for chunk in stream:
+                full_response += chunk
+                yield {"type": "chunk", "content": chunk, "turn_id": turn_id}
+        except Exception as exc:
+            logger.exception("V3 narrative LLM call failed")
+            yield {"type": "error", "content": _format_llm_error(exc, config.model), "turn_id": turn_id}
+            return
+
+        yield {"type": "done", "content": full_response, "turn_id": turn_id}
+
+        # 5. Save narrative message
+        prompt_tokens = result_acc.prompt_tokens or estimated_prompt_tokens
+        completion_tokens = result_acc.completion_tokens or max(1, len(full_response) // 4)
+        turn_cost = calculate_turn_cost(config.model, prompt_tokens, completion_tokens)
+        context_usage = prompt_tokens / max_input if max_input > 0 else 0.0
+
+        saved_message_id: str | None = None
+        if save_assistant_msg and full_response.strip():
+            saved_msg = await state_mgr.add_message(
+                session_id, "assistant", full_response,
+                message_type="narration", scene_id=ctx.current_scene_id,
+            )
+            saved_message_id = saved_msg.id
+
+        # Update turn count + token usage
+        game_state = json.loads(ctx.session.game_state_json or "{}")
+        game_state["turn_count"] = game_state.get("turn_count", 0) + 1
+        token_state = game_state.setdefault("token_usage", {
+            "total_prompt_tokens": 0, "total_completion_tokens": 0, "total_cost": 0.0,
+        })
+        token_state["total_prompt_tokens"] += prompt_tokens
+        token_state["total_completion_tokens"] += completion_tokens
+        token_state["total_cost"] += turn_cost
+        ctx.session.game_state_json = json.dumps(game_state)
+        db.add(ctx.session)
+        await db.commit()
+
+        yield {
+            "type": "token_usage", "turn_id": turn_id,
+            "data": {
+                "prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+                "turn_cost": turn_cost, "context_usage": round(context_usage, 4),
+                "total_cost": token_state.get("total_cost", turn_cost),
+                "max_input_tokens": max_input, "model": config.model,
+            },
+        }
+
+        # 6. Run Plugin Agent (post-processing)
+        game_db = GameDB(db, session_id)
+        state_snapshot = await game_db.build_state_snapshot()
+        try:
+            blocks = await run_plugin_agent(
+                narrative=full_response,
+                game_state=state_snapshot,
+                enabled_plugins=ctx.enabled_names,
+                session_id=session_id,
+                game_db=game_db,
+                pe=ctx.pe,
+                config=config,
+            )
+        except Exception:
+            logger.exception("Plugin Agent failed for session {}", session_id)
+            blocks = []
+
+        # 7. Dispatch blocks (backend handlers: state_update writes DB, etc.)
+        block_context = BlockContext(
+            session_id=session_id, project_id=ctx.project.id, db=db,
+            state_mgr=state_mgr, autocommit=False, turn_id=turn_id,
+            image_overrides=image_overrides, llm_overrides=llm_overrides,
+        )
+        for block in blocks:
+            try:
+                result = await dispatch_block(
+                    block, block_context, ctx.block_declarations, None,
+                )
+                if isinstance(result, list):
+                    for r in result:
+                        yield {"type": r["type"], "data": r["data"], "turn_id": turn_id}
+                else:
+                    yield {"type": block["type"], "data": block["data"], "turn_id": turn_id}
+            except Exception:
+                logger.exception("Block dispatch failed: {}", block.get("type"))
+
+        await db.commit()
+
+        if saved_message_id:
+            yield {"type": "_message_saved", "message_id": saved_message_id, "turn_id": turn_id}
+
+        yield {"type": "turn_end", "turn_id": turn_id}

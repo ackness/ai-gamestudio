@@ -1,0 +1,7 @@
+{
+  "name": "rpg-mechanics",
+  "description": "RPG 机制插件组，提供战斗、物品装备和社交关系系统",
+  "shared_prompt": "You manage RPG gameplay mechanics. Use structured blocks for combat resolution, item management, and social interactions. Ensure mechanical fairness through dice rolls and skill checks.",
+  "execution_mode": "merged",
+  "plugins": ["combat", "inventory", "social"]
+}

@@ -66,56 +66,107 @@ class PluginEngine:
         cls._plugin_cache.clear()
         cls._template_cache.clear()
 
-    def discover(self, plugins_dir: str) -> list[dict[str, Any]]:
-        """Scan plugins_dir for subdirectories containing PLUGIN.md.
+    def _resolve_plugin_dir(self, plugin_name: str, plugins_dir: str) -> pathlib.Path | None:
+        """Resolve a plugin name to its directory, checking flat then nested layouts."""
+        root = pathlib.Path(plugins_dir)
+        # Flat: plugins/<plugin>/
+        flat = root / plugin_name
+        if flat.is_dir() and (flat / "PLUGIN.md").is_file():
+            return flat
+        # Nested: plugins/<group>/<plugin>/
+        for child in root.iterdir():
+            if not child.is_dir() or not (child / "group.json").is_file():
+                continue
+            nested = child / plugin_name
+            if nested.is_dir() and (nested / "PLUGIN.md").is_file():
+                return nested
+        return None
 
-        Returns a list of lightweight plugin metadata dicts (level 1 loading):
-        [{name, description, type, required, version, dependencies, manifest_source, capabilities, path}, ...]
-        """
+    def _find_plugin_dirs(self, plugins_dir: str) -> list[pathlib.Path]:
+        """Find all plugin directories (flat and nested group layouts)."""
         root = pathlib.Path(plugins_dir)
         if not root.is_dir():
             return []
-
-        plugins: list[dict[str, Any]] = []
+        dirs: list[pathlib.Path] = []
         for child in sorted(root.iterdir()):
-            plugin_md = child / "PLUGIN.md"
-            if child.is_dir() and plugin_md.is_file():
-                try:
-                    loaded = self.load(child.name, plugins_dir)
-                    if not loaded:
-                        continue
-                    meta = loaded["metadata"]
-                    manifest = loaded.get("manifest")
-                    has_script_capability = False
-                    if manifest and getattr(manifest, "capabilities", None):
-                        for cap_cfg in manifest.capabilities.values():
-                            if not isinstance(cap_cfg, dict):
-                                continue
-                            impl = cap_cfg.get("implementation")
-                            if isinstance(impl, dict) and impl.get("type") == "script":
-                                has_script_capability = True
-                                break
-                    entry: dict[str, Any] = {
-                        "name": meta.get("name", child.name),
-                        "description": meta.get("description", ""),
-                        "type": meta.get("type", ""),
-                        "required": meta.get("required", False),
-                        "default_enabled": meta.get("default_enabled", False),
-                        "supersedes": meta.get("supersedes", []),
-                        "version": meta.get("version", ""),
-                        "dependencies": meta.get("dependencies", []),
-                        "manifest_source": loaded.get("manifest_source", "v1_fallback"),
-                        "capabilities": list(loaded.get("manifest").capabilities.keys())
-                        if loaded.get("manifest")
-                        else [],
-                        "has_script_capability": has_script_capability,
-                        "i18n": meta.get("i18n", {}),
-                        "path": str(child),
-                    }
-                    plugins.append(entry)
-                except Exception:
-                    logger.warning("Failed to parse {}", plugin_md)
+            if not child.is_dir():
+                continue
+            if (child / "PLUGIN.md").is_file():
+                # Flat layout: plugins/<plugin>/PLUGIN.md
+                dirs.append(child)
+            elif (child / "group.json").is_file():
+                # Nested layout: plugins/<group>/<plugin>/PLUGIN.md
+                for sub in sorted(child.iterdir()):
+                    if sub.is_dir() and (sub / "PLUGIN.md").is_file():
+                        dirs.append(sub)
+        return dirs
+
+    def _build_entry(self, loaded: dict[str, Any], plugin_dir: pathlib.Path) -> dict[str, Any]:
+        """Build a discovery entry dict from loaded plugin data."""
+        meta = loaded["metadata"]
+        manifest = loaded.get("manifest")
+        has_script_capability = False
+        if manifest and getattr(manifest, "capabilities", None):
+            for cap_cfg in manifest.capabilities.values():
+                if not isinstance(cap_cfg, dict):
+                    continue
+                impl = cap_cfg.get("implementation")
+                if isinstance(impl, dict) and impl.get("type") == "script":
+                    has_script_capability = True
+                    break
+        return {
+            "name": meta.get("name", plugin_dir.name),
+            "description": meta.get("description", ""),
+            "type": meta.get("type", ""),
+            "required": meta.get("required", False),
+            "default_enabled": meta.get("default_enabled", False),
+            "supersedes": meta.get("supersedes", []),
+            "version": meta.get("version", ""),
+            "dependencies": meta.get("dependencies", []),
+            "manifest_source": loaded.get("manifest_source", "v1_fallback"),
+            "capabilities": list(manifest.capabilities.keys()) if manifest else [],
+            "has_script_capability": has_script_capability,
+            "i18n": meta.get("i18n", {}),
+            "path": str(plugin_dir),
+        }
+
+    def discover(self, plugins_dir: str) -> list[dict[str, Any]]:
+        """Scan plugins_dir for subdirectories containing PLUGIN.md.
+
+        Supports both flat (plugins/<plugin>/) and nested (plugins/<group>/<plugin>/) layouts.
+        Returns a list of lightweight plugin metadata dicts (level 1 loading).
+        """
+        plugins: list[dict[str, Any]] = []
+        seen_names: set[str] = set()
+        for plugin_dir in self._find_plugin_dirs(plugins_dir):
+            try:
+                loaded = self.load(plugin_dir.name, plugins_dir)
+                if not loaded:
+                    continue
+                entry = self._build_entry(loaded, plugin_dir)
+                name = entry["name"]
+                if name in seen_names:
+                    continue
+                seen_names.add(name)
+                plugins.append(entry)
+            except Exception:
+                logger.warning("Failed to parse {}", plugin_dir / "PLUGIN.md")
         return plugins
+
+    def discover_groups(self, plugins_dir: str | None = None) -> list["PluginGroup"]:
+        """Scan plugins_dir for group.json files and return group info."""
+        from backend.app.core.plugin_group import load_groups
+        from backend.app.core.config import settings
+
+        plugins_dir = plugins_dir or settings.PLUGINS_DIR
+        return load_groups(plugins_dir)
+
+    def load_group(self, group_name: str, plugins_dir: str | None = None) -> "PluginGroup | None":
+        """Load a specific group by name."""
+        for g in self.discover_groups(plugins_dir):
+            if g.name == group_name:
+                return g
+        return None
 
     def load(self, plugin_name: str, plugins_dir: str | None = None) -> dict[str, Any] | None:
         """Load full plugin content (level 2 loading).
@@ -127,12 +178,11 @@ class PluginEngine:
         from backend.app.core.config import settings
 
         plugins_dir = plugins_dir or settings.PLUGINS_DIR
-        plugin_dir = pathlib.Path(plugins_dir) / plugin_name
+        plugin_dir = self._resolve_plugin_dir(plugin_name, plugins_dir)
+        if plugin_dir is None:
+            return None
         plugin_path = plugin_dir / "PLUGIN.md"
         manifest_path = plugin_dir / "manifest.json"
-
-        if not plugin_path.is_file():
-            return None
 
         # Compute combined file signature for cache key
         md_sig = self._file_signature(plugin_path)
@@ -461,7 +511,9 @@ class PluginEngine:
         from backend.app.core.config import settings
 
         plugins_dir = plugins_dir or settings.PLUGINS_DIR
-        plugin_dir = pathlib.Path(plugins_dir) / plugin_name
+        plugin_dir = self._resolve_plugin_dir(plugin_name, plugins_dir)
+        if plugin_dir is None:
+            return None
 
         # Future: check project_overrides_dir/plugin_name/template_rel_path first
 
@@ -482,9 +534,19 @@ class PluginEngine:
         if not root.is_dir():
             return [{"plugin": plugins_dir, "errors": ["Directory not found"]}]
 
+        # Collect all candidate dirs: flat children + nested group children
+        candidates: list[pathlib.Path] = []
         for child in sorted(root.iterdir()):
             if not child.is_dir():
                 continue
+            if (child / "group.json").is_file():
+                for sub in sorted(child.iterdir()):
+                    if sub.is_dir():
+                        candidates.append(sub)
+            else:
+                candidates.append(child)
+
+        for child in candidates:
             plugin_md = child / "PLUGIN.md"
             manifest_json = child / "manifest.json"
             errors: list[str] = []
@@ -565,8 +627,7 @@ class PluginEngine:
 
                     # Check dependencies exist
                     for dep in manifest.dependencies:
-                        dep_dir = root / dep
-                        if not dep_dir.is_dir() or not (dep_dir / "PLUGIN.md").is_file():
+                        if self._resolve_plugin_dir(dep, plugins_dir) is None:
                             errors.append(f"Dependency '{dep}' not found")
 
                     results.append({"plugin": child.name, "errors": errors})
@@ -594,8 +655,7 @@ class PluginEngine:
 
             # Rule 6: dependencies exist
             for dep in meta.get("dependencies", []):
-                dep_dir = root / dep
-                if not dep_dir.is_dir() or not (dep_dir / "PLUGIN.md").is_file():
+                if self._resolve_plugin_dir(dep, plugins_dir) is None:
                     errors.append(f"Dependency '{dep}' not found")
 
             # Rule 7: hook scripts exist

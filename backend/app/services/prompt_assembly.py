@@ -8,15 +8,8 @@ from backend.app.core.prompt_builder import PromptBuilder
 from backend.app.services.turn_context import TurnContext
 
 
-def assemble_prompt(
-    ctx: TurnContext,
-    user_content: str,
-    save_user_msg: bool,
-) -> list[dict[str, str]]:
-    """Build the PromptBuilder from TurnContext and return the messages list."""
-    builder = PromptBuilder()
-
-    # System: world doc
+def _inject_world_doc(builder: PromptBuilder, ctx: TurnContext) -> None:
+    """Inject world doc into system position (shared by both prompt modes)."""
     if ctx.project.world_doc:
         try:
             import frontmatter as fm
@@ -31,7 +24,6 @@ def assemble_prompt(
             "You are the Dungeon Master (DM) for a role-playing game.\n\n"
             f"## World Document\n\n{clean_world_doc}",
         )
-        # Enforce output language based on world document metadata
         if world_language:
             _LANG_DISPLAY = {
                 "zh": "中文", "en": "English", "ja": "日本語",
@@ -41,13 +33,7 @@ def assemble_prompt(
             lang_display = _LANG_DISPLAY.get(world_language, world_language)
             builder.inject(
                 "system", 1,
-                f"**LANGUAGE REQUIREMENT**: ALL your output MUST be in **{lang_display}**, "
-                f"including narrative text, dialogue, descriptions, AND the human-readable "
-                f"string values inside ```json:xxx``` structured data blocks "
-                f"(such as name, description, title, inventory item names, scene names, "
-                f"continuity_notes, story_background, prompt, personality, etc.). "
-                f"Only JSON field keys (like \"action\", \"item_type\") and schema-defined "
-                f"enum values (like \"gain\", \"move\", \"player\") may remain in English.",
+                f"**LANGUAGE REQUIREMENT**: ALL your output MUST be in **{lang_display}**.",
             )
     else:
         builder.inject(
@@ -55,6 +41,72 @@ def assemble_prompt(
             "You are the Dungeon Master (DM) for a role-playing game. "
             "No world document has been defined yet. Help the player explore.",
         )
+
+
+NARRATIVE_INSTRUCTION = (
+    "Respond in character as the DM. Focus purely on storytelling — "
+    "describe scenes, NPC dialogue, actions, and consequences. "
+    "Do NOT output any structured data blocks (```json:xxx```). "
+    "The game system will handle state updates, mechanics, and UI separately."
+)
+
+
+def assemble_narrative_prompt(
+    ctx: TurnContext,
+    user_content: str,
+    save_user_msg: bool,
+) -> list[dict[str, str]]:
+    """Build a narrative-only prompt (no block instructions, no plugin injections)."""
+    builder = PromptBuilder()
+
+    # World doc
+    _inject_world_doc(builder, ctx)
+
+    # Scene + characters (compact summary)
+    if ctx.current_scene:
+        scene_text = f"## Current Scene: {ctx.current_scene.name}\n"
+        if ctx.current_scene.description:
+            scene_text += ctx.current_scene.description + "\n"
+        builder.inject("character", 5, scene_text)
+
+    if ctx.characters:
+        char_lines = ["## Characters\n"]
+        for ch in ctx.characters:
+            line = f"- **{ch.name}** ({ch.role})"
+            if ch.description:
+                line += f": {ch.description}"
+            char_lines.append(line)
+        builder.inject("character", 10, "\n".join(char_lines))
+
+    # Memory / compression summary (if available)
+    if ctx.compression_summary:
+        builder.inject("memory", 0, f"## Story So Far\n\n{ctx.compression_summary}")
+
+    # Chat history
+    if save_user_msg:
+        for i, msg in enumerate(ctx.recent_messages[:-1]):
+            builder.inject("chat-history", i, f"{msg.role}: {msg.content}")
+    else:
+        for i, msg in enumerate(ctx.recent_messages):
+            builder.inject("chat-history", i, f"{msg.role}: {msg.content}")
+    builder.inject("chat-history", len(ctx.recent_messages) + 1, f"user: {user_content}")
+
+    # Narrative-only instruction (no blocks)
+    builder.inject("pre-response", 0, NARRATIVE_INSTRUCTION)
+
+    return builder.build()
+
+
+def assemble_prompt(
+    ctx: TurnContext,
+    user_content: str,
+    save_user_msg: bool,
+) -> list[dict[str, str]]:
+    """Build the PromptBuilder from TurnContext and return the messages list (legacy)."""
+    builder = PromptBuilder()
+
+    # System: world doc (shared helper)
+    _inject_world_doc(builder, ctx)
 
     # Character info
     if ctx.characters:

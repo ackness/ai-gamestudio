@@ -138,7 +138,12 @@ class CapabilityExecutor:
         timeout_ms = implementation.get("timeout_ms", 10_000)
         language = implementation.get("language", "python")
 
-        plugin_dir = pathlib.Path(self._plugins_dir) / plugin_name
+        plugin_dir = self._engine._resolve_plugin_dir(plugin_name, self._plugins_dir)
+        if plugin_dir is None:
+            return CapabilityResult(
+                success=False,
+                error=f"Plugin directory not found for '{plugin_name}'",
+            )
         script_path = (plugin_dir / script_rel).resolve()
 
         # Prevent path traversal — script must be inside plugin directory

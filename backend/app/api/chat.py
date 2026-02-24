@@ -13,7 +13,8 @@ from backend.app.core.access_key import is_request_authorized
 from backend.app.core.block_parser import strip_blocks
 from backend.app.db.engine import engine
 from backend.app.models.session import GameSession
-from backend.app.services.chat_service import process_message
+from backend.app.core.config import settings
+from backend.app.services.chat_service import process_message, process_message_v3
 
 from backend.app.api.debug_log import _add_log, _touch_log_session, _cleanup_log_sessions
 from backend.app.services.command_handlers import (
@@ -132,6 +133,31 @@ async def _background_generate_image(
             logger.warning("Failed to send image error event (WebSocket likely closed)")
 
 
+async def _stream_process_message_v3(
+    sink: EventSink,
+    session_id: str,
+    content: str,
+    *,
+    save_user_msg: bool = True,
+    save_assistant_msg: bool = True,
+    llm_overrides: dict[str, str] | None = None,
+    image_overrides: dict[str, str] | None = None,
+) -> None:
+    """Stream process_message_v3 events (narrative + plugin agent) to sink."""
+    async for event in process_message_v3(
+        session_id, content,
+        save_user_msg=save_user_msg,
+        save_assistant_msg=save_assistant_msg,
+        llm_overrides=llm_overrides,
+        image_overrides=image_overrides,
+    ):
+        etype = event.get("type", "")
+        if etype == "_message_saved":
+            continue  # internal event, don't forward
+        _add_log(session_id, "send", event)
+        await sink.send_json(event)
+
+
 async def _stream_process_message(
     sink: EventSink,
     session_id: str,
@@ -143,6 +169,14 @@ async def _stream_process_message(
     image_overrides: dict[str, str] | None = None,
 ) -> None:
     """Run process_message and stream results to a transport sink."""
+    if settings.PLUGIN_PIPELINE == "v3":
+        return await _stream_process_message_v3(
+            sink, session_id, content,
+            save_user_msg=save_user_msg,
+            save_assistant_msg=save_assistant_msg,
+            llm_overrides=llm_overrides,
+            image_overrides=image_overrides,
+        )
     full_response = ""
     pending_blocks: list[dict] = []
     turn_id: str | None = None

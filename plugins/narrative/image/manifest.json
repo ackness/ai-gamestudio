@@ -1,0 +1,118 @@
+{
+  "schema_version": "2.0",
+  "version": "0.1.0",
+  "name": "image",
+  "type": "gameplay",
+  "required": false,
+  "default_enabled": true,
+  "description": "Story image plugin that converts structured prompts into generated images with continuity.",
+  "dependencies": ["database"],
+  "prompt": {
+    "position": "pre-response",
+    "priority": 92,
+    "template": "prompts/story-image-instruction.md"
+  },
+  "capabilities": {},
+  "blocks": {
+    "story_image": {
+      "instruction": "When the current moment should be visualized, append:\n```json:story_image\n{\"title\": \"Scene title\", \"story_background\": \"Context.\", \"prompt\": \"Current frame.\", \"continuity_notes\": \"Visual constraints.\"}\n```\nRules: story_background required. prompt describes current frame only. Include reference_image_ids for continuity.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "story_background": { "type": "string" },
+          "prompt": { "type": "string" },
+          "continuity_notes": { "type": "string" },
+          "reference_image_ids": { "type": "array", "items": { "type": "string" } },
+          "layout_preference": { "type": "string" },
+          "scene_frames": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["story_background", "prompt"]
+      },
+      "handler": {
+        "actions": [{ "type": "builtin", "handler_name": "story_image_builtin" }]
+      },
+      "requires_response": true,
+      "ui": { "component": "custom", "renderer_name": "story_image" }
+    }
+  },
+  "events": { "emit": [], "listen": [] },
+  "storage": { "keys": [] },
+  "i18n": {
+    "en": { "name": "Story Image", "description": "Story image plugin with continuity-aware generation." },
+    "zh": { "name": "故事图像", "description": "将结构化提示词转换为保持连续性的生成图像。" }
+  },
+  "extensions": {
+    "runtime_settings": {
+      "settings": [
+        {
+          "key": "style_preset", "type": "enum", "label": "Image Style Preset",
+          "description": "Visual style direction for generated images.", "default": "cinematic",
+          "options": [
+            { "value": "cinematic", "label": "Cinematic", "i18n": { "zh": { "label": "电影感" } } },
+            { "value": "anime", "label": "Anime", "i18n": { "zh": { "label": "动漫" } } },
+            { "value": "oil-painting", "label": "Oil Painting", "i18n": { "zh": { "label": "油画" } } },
+            { "value": "photoreal", "label": "Photoreal", "i18n": { "zh": { "label": "写实摄影" } } }
+          ],
+          "affects": ["image"],
+          "i18n": { "zh": { "label": "图像风格预设", "description": "生成图像的视觉风格方向。" } }
+        },
+        {
+          "key": "emit_mode", "type": "enum", "label": "Image Emission Mode",
+          "description": "When to emit story_image blocks.", "default": "manual",
+          "options": [
+            { "value": "manual", "label": "Manual", "i18n": { "zh": { "label": "手动" } } },
+            { "value": "key_moments", "label": "Key Moments", "i18n": { "zh": { "label": "关键时刻" } } },
+            { "value": "every_turn", "label": "Every Turn", "i18n": { "zh": { "label": "每回合" } } }
+          ],
+          "affects": ["image", "story"],
+          "i18n": { "zh": { "label": "图像触发模式", "description": "何时生成图像。" } }
+        },
+        {
+          "key": "multi_scene_policy", "type": "enum", "label": "Multi-Scene Layout Policy",
+          "description": "Layout preference for multiple scenes.", "default": "comic",
+          "options": [
+            { "value": "comic", "label": "Comic", "i18n": { "zh": { "label": "漫画格" } } },
+            { "value": "auto", "label": "Auto", "i18n": { "zh": { "label": "自动" } } },
+            { "value": "single", "label": "Single", "i18n": { "zh": { "label": "单图" } } }
+          ],
+          "affects": ["image"],
+          "i18n": { "zh": { "label": "多场景布局策略", "description": "提示词涉及多个场景时的排版偏好。" } }
+        },
+        {
+          "key": "prompt_template", "type": "string", "label": "Image Prompt Template",
+          "description": "Use {{story_background}} and {{frame_prompt}} placeholders.",
+          "component": "textarea", "scope": "both",
+          "default": "Style preset: {{style_preset}}\nStory background: {{story_background}}\nCurrent frame: {{frame_prompt}}\nContinuity notes: {{continuity_notes}}\nReference summary:\n{{reference_summary}}",
+          "affects": ["image"],
+          "i18n": { "zh": { "label": "图像提示词模板", "description": "支持占位符 {{story_background}}、{{frame_prompt}}。", "default": "画面风格：{{style_preset}}\n故事背景：{{story_background}}\n当前画面：{{frame_prompt}}\n连续性备注：{{continuity_notes}}\n参考摘要：\n{{reference_summary}}" } }
+        },
+        {
+          "key": "negative_prompt", "type": "string", "label": "Negative Prompt",
+          "description": "Things to avoid in generated images.", "component": "textarea",
+          "default": "blurry, extra limbs, distorted face, low detail",
+          "affects": ["image"],
+          "i18n": { "zh": { "label": "负向提示词", "description": "生成图像时需要避免的元素。", "default": "模糊, 多余肢体, 变形面部, 低细节" } }
+        },
+        {
+          "key": "reference_count", "type": "integer", "label": "Reference Frames Count",
+          "description": "Max previous frames used as reference.", "default": 2, "min": 0, "max": 6,
+          "affects": ["image"],
+          "i18n": { "zh": { "label": "参考帧数量", "description": "用于风格连续性参考的历史帧最大数量。" } }
+        },
+        {
+          "key": "strict_continuity", "type": "boolean", "label": "Strict Continuity",
+          "description": "Keep stronger character/prop consistency.", "default": true,
+          "affects": ["image"],
+          "i18n": { "zh": { "label": "严格连续性", "description": "强化角色与道具的视觉一致性。" } }
+        },
+        {
+          "key": "llm_prompt_enhance", "type": "boolean", "label": "LLM Prompt Enhancement",
+          "description": "Use LLM to distill story context into image prompt.", "default": true,
+          "affects": ["image"],
+          "i18n": { "zh": { "label": "LLM 提示词优化", "description": "使用 LLM 将故事上下文智能提炼为图像生成提示词。" } }
+        }
+      ]
+    }
+  }
+}

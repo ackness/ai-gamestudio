@@ -1,0 +1,63 @@
+{
+  "schema_version": "2.0",
+  "version": "0.1.0",
+  "name": "codex",
+  "type": "gameplay",
+  "required": false,
+  "description": "Codex/encyclopedia plugin that tracks discovered knowledge entries across categories.",
+  "dependencies": ["database"],
+  "prompt": {
+    "position": "memory",
+    "priority": 40,
+    "template": "prompts/codex-context.md"
+  },
+  "capabilities": {},
+  "blocks": {
+    "codex_entry": {
+      "instruction": "当玩家发现新知识、遭遇新怪物、获得新物品、到达新地点或了解到重要传说时，在回复末尾附加：\n```json:codex_entry\n{\"action\": \"unlock\", \"category\": \"monster\", \"entry_id\": \"goblin\", \"title\": \"哥布林\", \"content\": \"矮小的绿皮生物...\", \"tags\": [\"敌人\", \"弱小\"]}\n```\naction: unlock/update。category: monster/item/location/lore/character。",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "enum": ["unlock", "update"] },
+          "category": { "type": "string", "enum": ["monster", "item", "location", "lore", "character"] },
+          "entry_id": { "type": "string" },
+          "title": { "type": "string" },
+          "content": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "image_hint": { "type": "string" }
+        },
+        "required": ["action", "category", "entry_id", "title", "content"]
+      },
+      "handler": {
+        "actions": [
+          { "type": "storage_write", "key": "codex-entries" },
+          { "type": "emit_event", "event": "codex-unlocked" }
+        ]
+      },
+      "ui": { "component": "custom", "renderer_name": "codex_entry" },
+      "requires_response": false
+    }
+  },
+  "events": { "emit": ["codex-unlocked"], "listen": [] },
+  "storage": { "keys": ["codex-entries"] },
+  "extensions": {
+    "runtime_settings": {
+      "settings": [
+        {
+          "key": "codex_detail", "type": "enum", "label": "Codex Detail Level",
+          "description": "Level of detail in codex entry descriptions.", "default": "detailed",
+          "options": [
+            { "value": "brief", "label": "Brief", "i18n": { "zh": { "label": "简要" } } },
+            { "value": "detailed", "label": "Detailed", "i18n": { "zh": { "label": "详细" } } }
+          ],
+          "affects": ["story"],
+          "i18n": { "zh": { "label": "图鉴详细度", "description": "图鉴条目描述的详细程度。" } }
+        }
+      ]
+    }
+  },
+  "i18n": {
+    "en": { "name": "Codex", "description": "Track discovered knowledge entries including monsters, items, locations, lore, and characters." },
+    "zh": { "name": "图鉴百科", "description": "记录玩家发现的知识条目，包括怪物、物品、地点、传说与角色。" }
+  }
+}

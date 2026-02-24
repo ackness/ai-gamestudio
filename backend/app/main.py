@@ -105,6 +105,7 @@ from backend.app.api.sessions import router as sessions_router  # noqa: E402
 from backend.app.api.novel import router as novel_router  # noqa: E402
 from backend.app.api.templates import router as templates_router  # noqa: E402
 from backend.app.api.model_info import router as model_info_router  # noqa: E402
+from backend.app.api.plugin_invoke import router as plugin_invoke_router  # noqa: E402
 
 app.include_router(projects_router)
 app.include_router(sessions_router)
@@ -120,6 +121,7 @@ app.include_router(templates_router)
 app.include_router(novel_router)
 app.include_router(runtime_settings_router)
 app.include_router(model_info_router)
+app.include_router(plugin_invoke_router)
 
 
 @app.get("/api/health")
