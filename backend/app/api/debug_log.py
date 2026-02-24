@@ -221,7 +221,7 @@ async def websocket_debug_log(websocket: WebSocket, session_id: str):
         while True:
             entry = await queue.get()
             await websocket.send_json(entry)
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, asyncio.CancelledError):
         pass
     finally:
         subs.remove(queue)

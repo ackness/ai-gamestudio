@@ -267,7 +267,7 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
             _add_log(session_id, "recv", data)
             await _dispatch_incoming_message(websocket, session_id, data)
 
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, asyncio.CancelledError):
         logger.info("WebSocket disconnected for session {}", session_id)
         _touch_log_session(session_id)
         _cleanup_log_sessions()
