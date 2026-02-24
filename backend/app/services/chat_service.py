@@ -16,7 +16,7 @@ from backend.app.core.llm_gateway import completion_with_config, create_stream_r
 from backend.app.db.engine import engine  # noqa: F401 — tests patch this
 from backend.app.services.archive_service import ARCHIVE_PLUGIN_NAME, maybe_auto_archive_summary
 from backend.app.services.block_processing import process_blocks
-from backend.app.services.plugin_service import get_enabled_plugins  # noqa: F401 — tests patch this
+from backend.app.services.plugin_service import get_enabled_plugins, storage_get as _storage_get, storage_set  # noqa: F401 — tests patch this
 from backend.app.services.prompt_assembly import _build_pre_response_instructions  # noqa: F401 — tests import this
 from backend.app.services.token_service import (
     calculate_turn_cost,
@@ -205,6 +205,64 @@ async def process_message(
                     }
             except Exception:
                 logger.exception("Auto archive summary failed")
+
+        # 10. Auto compress check
+        if (
+            "auto-compress" in ctx.enabled_names
+            and context_usage > 0
+        ):
+            from backend.app.services.compress_service import should_compress, compress_history
+
+            ac_settings = ctx.runtime_settings_by_plugin.get("auto-compress", {})
+            threshold = float(ac_settings.get("compression_threshold", 0.7))
+            keep_recent = int(ac_settings.get("keep_recent_messages", 6))
+
+            if should_compress(context_usage, threshold):
+                try:
+                    all_messages = await state_mgr.get_messages(session_id, limit=100)
+                    if len(all_messages) > keep_recent:
+                        messages_to_compress = all_messages[:-keep_recent]
+                        existing_summary = ctx.compression_summary
+
+                        result = await compress_history(
+                            messages_to_compress,
+                            existing_summary,
+                            model=config.model,
+                            llm_overrides=llm_overrides,
+                        )
+
+                        await storage_set(
+                            db, ctx.project.id, "auto-compress",
+                            "compression-summary",
+                            {"summary": result["summary"]},
+                            autocommit=True,
+                        )
+
+                        # Update compression state
+                        prev_state = await _storage_get(db, ctx.project.id, "auto-compress", "compression-state")
+                        prev_count = (prev_state or {}).get("total_compressions", 0) if isinstance(prev_state, dict) else 0
+                        await storage_set(
+                            db, ctx.project.id, "auto-compress",
+                            "compression-state",
+                            {
+                                "last_compressed_message_count": len(messages_to_compress),
+                                "total_compressions": prev_count + 1,
+                            },
+                            autocommit=True,
+                        )
+
+                        yield {
+                            "type": "notification",
+                            "data": {
+                                "level": "info",
+                                "title": "上下文已压缩",
+                                "content": f"已将 {len(messages_to_compress)} 条旧消息压缩为摘要",
+                            },
+                            "turn_id": turn_id,
+                        }
+                        logger.info("Auto-compressed {} messages for session {}", len(messages_to_compress), session_id)
+                except Exception:
+                    logger.exception("Auto-compress failed for session {}", session_id)
 
 
 def extract_blocks_check(text: str) -> bool:

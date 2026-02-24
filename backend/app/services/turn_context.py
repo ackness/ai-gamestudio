@@ -44,6 +44,7 @@ class TurnContext:
     current_scene: Any | None = None
     current_scene_id: str | None = None
     scene_npcs: list[dict[str, Any]] = field(default_factory=list)
+    compression_summary: str = ""
     recent_messages: list[Any] = field(default_factory=list)
     pe: PluginEngine | None = None
 
@@ -98,6 +99,16 @@ async def build_turn_context(
     # Memory plugin
     memories = await _load_memories(db, project.id, enabled_names)
 
+    # Compression summary (auto-compress plugin)
+    compression_summary = await _load_compression_summary(db, project.id, enabled_names)
+
+    # Adjust history limit based on compression
+    if compression_summary:
+        ac_settings = runtime_settings_by_plugin.get("auto-compress", {})
+        keep_recent = int(ac_settings.get("keep_recent_messages", 6))
+        history_limit = min(history_limit, keep_recent + 4)
+        recent_messages = await state_mgr.get_messages(session_id, limit=history_limit)
+
     # Story image plugin
     story_images = await _load_story_images(db, project.id, session_id, enabled_names)
 
@@ -137,6 +148,7 @@ async def build_turn_context(
         active_events=active_events,
         world_state=world_state,
         memories=memories,
+        compression_summary=compression_summary,
         story_images=story_images,
         enabled_names=enabled_names,
         archive_context=archive_context,
@@ -179,6 +191,24 @@ async def _load_memories(
     except Exception:
         logger.exception("Failed to load memory plugin storage")
     return memories
+
+
+async def _load_compression_summary(
+    db: SQLModelAsyncSession, project_id: str, enabled_names: list[str],
+) -> str:
+    """Load the compression summary from auto-compress plugin storage."""
+    if "auto-compress" not in enabled_names:
+        return ""
+    try:
+        data = await storage_get(db, project_id, "auto-compress", "compression-summary")
+        if isinstance(data, dict):
+            return str(data.get("summary", ""))
+        if isinstance(data, str):
+            return data
+        return ""
+    except Exception:
+        logger.exception("Failed to load compression summary")
+        return ""
 
 
 async def _load_story_images(

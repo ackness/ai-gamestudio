@@ -179,6 +179,7 @@ def _inject_plugins(builder: PromptBuilder, ctx: TurnContext) -> None:
             "runtime_settings_flat": ctx.runtime_settings_flat,
             "story_images": ctx.story_images,
             "archive": ctx.archive_context,
+            "compression_summary": ctx.compression_summary,
         }
         injections = ctx.pe.get_prompt_injections(ctx.enabled_names, context)
         for inj in injections:
