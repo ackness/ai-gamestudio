@@ -29,6 +29,11 @@ const modelPanelText: Record<string, Record<string, string>> = {
     model: '模型',
     apiKey: 'API Key',
     apiBase: 'API Base',
+    pluginLlm: '插件模型（可选）',
+    pluginModel: '插件模型',
+    pluginApiKey: '插件 API Key',
+    pluginApiBase: '插件 API Base',
+    pluginModelHint: '留空则与主模型相同',
     imageGeneration: '图片生成',
     imageModel: '图片模型',
     imageApiKey: '图片 API Key',
@@ -63,6 +68,11 @@ const modelPanelText: Record<string, Record<string, string>> = {
     model: 'Model',
     apiKey: 'API Key',
     apiBase: 'API Base',
+    pluginLlm: 'Plugin Model (optional)',
+    pluginModel: 'Plugin Model',
+    pluginApiKey: 'Plugin API Key',
+    pluginApiBase: 'Plugin API Base',
+    pluginModelHint: 'Leave empty to use main model',
     imageGeneration: 'Image Generation',
     imageModel: 'Image Model',
     imageApiKey: 'Image API Key',
@@ -100,6 +110,9 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [apiBase, setApiBase] = useState('')
+  const [pluginModel, setPluginModel] = useState('')
+  const [pluginApiKey, setPluginApiKey] = useState('')
+  const [pluginApiBase, setPluginApiBase] = useState('')
   const [imageModel, setImageModel] = useState('')
   const [imageApiKey, setImageApiKey] = useState('')
   const [imageApiBase, setImageApiBase] = useState('')
@@ -142,6 +155,9 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
       setModel(local.model || currentProject.llm_model || '')
       setApiKey(local.apiKey || '')
       setApiBase(local.apiBase || currentProject.llm_api_base || '')
+      setPluginModel(local.pluginModel || '')
+      setPluginApiKey(local.pluginApiKey || '')
+      setPluginApiBase(local.pluginApiBase || '')
       setImageModel(local.imageModel || currentProject.image_model || '')
       setImageApiKey(local.imageApiKey || '')
       setImageApiBase(local.imageApiBase || currentProject.image_api_base || '')
@@ -259,6 +275,9 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
         model,
         apiKey,
         apiBase,
+        pluginModel,
+        pluginApiKey,
+        pluginApiBase,
         imageModel,
         imageApiKey,
         imageApiBase,
@@ -330,6 +349,9 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
       setModel('')
       setApiKey('')
       setApiBase('')
+      setPluginModel('')
+      setPluginApiKey('')
+      setPluginApiBase('')
       setImageModel('')
       setImageApiKey('')
       setImageApiBase('')
@@ -491,6 +513,47 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
             placeholder={llmInfo?.api_base || 'https://api.openai.com/v1'}
             className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
+        </div>
+
+        {/* Actions */}
+        <div className="pt-1 border-t" />
+
+        {/* Plugin Agent model config */}
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground">{t.pluginLlm}</div>
+
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">{t.pluginModel}</label>
+            <input
+              type="text"
+              value={pluginModel}
+              onChange={(e) => setPluginModel(e.target.value)}
+              placeholder={model || t.pluginModelHint}
+              className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">{t.pluginApiKey}</label>
+            <input
+              type="password"
+              value={pluginApiKey}
+              onChange={(e) => setPluginApiKey(e.target.value)}
+              placeholder={browserConfig.pluginApiKey ? t.keySetInBrowser : t.pluginModelHint}
+              className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">{t.pluginApiBase}</label>
+            <input
+              type="text"
+              value={pluginApiBase}
+              onChange={(e) => setPluginApiBase(e.target.value)}
+              placeholder={apiBase || t.pluginModelHint}
+              className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
         </div>
 
         {/* Actions */}

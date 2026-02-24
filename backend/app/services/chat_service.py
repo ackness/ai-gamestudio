@@ -11,7 +11,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 from backend.app.core.block_handlers import BlockContext, dispatch_block  # noqa: F401 — tests patch this
 from backend.app.core.block_validation import validate_block_data
 from backend.app.core.game_state import GameStateManager
-from backend.app.core.llm_config import resolve_llm_config
+from backend.app.core.llm_config import resolve_llm_config, resolve_plugin_llm_config
 from backend.app.core.llm_gateway import completion_with_config, create_stream_result  # noqa: F401 — tests patch this
 from backend.app.db.engine import engine  # noqa: F401 — tests patch this
 from backend.app.services.archive_service import maybe_auto_archive_summary
@@ -145,6 +145,9 @@ async def process_message(
         # 6. Run Plugin Agent (post-processing)
         yield {"type": "phase_change", "phase": "plugins", "turn_id": turn_id}
 
+        plugin_config = resolve_plugin_llm_config(config, overrides=llm_overrides)
+        logger.info("Plugin Agent: model={}, source={}", plugin_config.model, plugin_config.source)
+
         game_db = GameDB(db, session_id)
         state_snapshot = await game_db.build_state_snapshot()
         plugin_summary: dict[str, Any] = {}
@@ -156,7 +159,7 @@ async def process_message(
                 session_id=session_id,
                 game_db=game_db,
                 pe=ctx.pe,
-                config=config,
+                config=plugin_config,
             )
         except Exception:
             logger.exception("Plugin Agent failed for session {}", session_id)
@@ -372,7 +375,8 @@ async def retrigger_plugins(
             yield {"type": "error", "content": "Session or project not found", "turn_id": turn_id}
             return
 
-        config = resolve_llm_config(project=ctx.project, overrides=llm_overrides)
+        main_config = resolve_llm_config(project=ctx.project, overrides=llm_overrides)
+        plugin_config = resolve_plugin_llm_config(main_config, overrides=llm_overrides)
 
         yield {"type": "phase_change", "phase": "plugins", "turn_id": turn_id}
 
@@ -387,7 +391,7 @@ async def retrigger_plugins(
                 session_id=session_id,
                 game_db=game_db,
                 pe=ctx.pe,
-                config=config,
+                config=plugin_config,
             )
         except Exception:
             logger.exception("Plugin Agent retrigger failed for session {}", session_id)

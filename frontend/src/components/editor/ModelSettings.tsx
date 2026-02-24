@@ -39,6 +39,11 @@ const T = {
     apiKeyNote: '仅存储在你的浏览器中，不会上传到服务器',
     apiBase: 'API Base URL（可选）',
     apiBasePlaceholder: '例：https://api.deepseek.com',
+    pluginSection: '插件模型（可选）',
+    pluginModel: '插件模型',
+    pluginApiKey: '插件 API Key',
+    pluginApiBase: '插件 API Base',
+    pluginModelHint: '留空则与主模型相同',
     imageSection: '图片生成（可选）',
     imageModel: '图片模型',
     imageApiKey: '图片 API Key',
@@ -75,6 +80,11 @@ const T = {
     apiKeyNote: 'Stored in your browser only — never uploaded to the server',
     apiBase: 'API Base URL (optional)',
     apiBasePlaceholder: 'e.g. https://api.deepseek.com',
+    pluginSection: 'Plugin Model (optional)',
+    pluginModel: 'Plugin Model',
+    pluginApiKey: 'Plugin API Key',
+    pluginApiBase: 'Plugin API Base',
+    pluginModelHint: 'Leave empty to use main model',
     imageSection: 'Image Generation (optional)',
     imageModel: 'Image Model',
     imageApiKey: 'Image API Key',
@@ -124,6 +134,10 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [apiBase, setApiBase] = useState('')
+  const [pluginModel, setPluginModel] = useState('')
+  const [pluginApiKey, setPluginApiKey] = useState('')
+  const [pluginApiBase, setPluginApiBase] = useState('')
+  const [showPlugin, setShowPlugin] = useState(false)
   const [imageModel, setImageModel] = useState('')
   const [imageApiKey, setImageApiKey] = useState('')
   const [imageApiBase, setImageApiBase] = useState('')
@@ -155,6 +169,9 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
     setModel(local.model || currentProject.llm_model || '')
     setApiKey(local.apiKey || '')
     setApiBase(local.apiBase || currentProject.llm_api_base || '')
+    setPluginModel(local.pluginModel || '')
+    setPluginApiKey(local.pluginApiKey || '')
+    setPluginApiBase(local.pluginApiBase || '')
     setImageModel(local.imageModel || currentProject.image_model || '')
     setImageApiKey(local.imageApiKey || '')
     setImageApiBase(local.imageApiBase || currentProject.image_api_base || '')
@@ -218,6 +235,9 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
         model: effectiveModel || undefined,
         apiKey: apiKey || undefined,
         apiBase: effectiveApiBase || undefined,
+        pluginModel: pluginModel || undefined,
+        pluginApiKey: pluginApiKey || undefined,
+        pluginApiBase: pluginApiBase || undefined,
         imageModel: imageModel || undefined,
         imageApiKey: imageApiKey || undefined,
         imageApiBase: imageApiBase || undefined,
@@ -259,6 +279,9 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
       setModel('')
       setApiKey('')
       setApiBase('')
+      setPluginModel('')
+      setPluginApiKey('')
+      setPluginApiBase('')
       setImageModel('')
       setImageApiKey('')
       setImageApiBase('')
@@ -444,6 +467,58 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
                 className="font-mono text-sm"
               />
             </div>
+          </div>
+
+          {/* Plugin model — collapsible */}
+          <div className="pt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-between px-2 text-xs font-medium text-muted-foreground hover:text-foreground mb-2"
+              onClick={() => setShowPlugin(!showPlugin)}
+            >
+              <span className="flex items-center gap-2">
+                <Cpu className="w-3.5 h-3.5" />
+                {t.pluginSection}
+              </span>
+              {showPlugin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </Button>
+
+            {showPlugin && (
+              <div className="space-y-4 p-4 bg-muted/20 border rounded-lg">
+                <div className="space-y-2">
+                  <Label htmlFor="pluginModel" className="text-xs text-muted-foreground">{t.pluginModel}</Label>
+                  <Input
+                    id="pluginModel"
+                    value={pluginModel}
+                    onChange={(e) => setPluginModel(e.target.value)}
+                    placeholder={model || t.pluginModelHint}
+                    className="font-mono text-sm h-8"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="pluginApiKey" className="text-xs text-muted-foreground">{t.pluginApiKey}</Label>
+                  <Input
+                    id="pluginApiKey"
+                    type="password"
+                    value={pluginApiKey}
+                    onChange={(e) => setPluginApiKey(e.target.value)}
+                    placeholder={t.pluginModelHint}
+                    className="font-mono text-sm h-8"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="pluginApiBase" className="text-xs text-muted-foreground">{t.pluginApiBase}</Label>
+                  <Input
+                    id="pluginApiBase"
+                    value={pluginApiBase}
+                    onChange={(e) => setPluginApiBase(e.target.value)}
+                    placeholder={apiBase || t.pluginModelHint}
+                    className="font-mono text-sm h-8"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Image generation — collapsible */}

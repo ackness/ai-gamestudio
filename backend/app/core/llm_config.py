@@ -113,6 +113,44 @@ def resolve_llm_config(
     )
 
 
+def resolve_plugin_llm_config(
+    main_config: ResolvedLlmConfig,
+    overrides: dict[str, Any] | None = None,
+) -> ResolvedLlmConfig:
+    """Resolve LLM config for Plugin Agent.
+
+    Priority:
+    1. Browser overrides (plugin_model / plugin_api_key / plugin_api_base)
+    2. PLUGIN_LLM_* environment variables
+    3. Fallback to main_config (same model as narrative LLM)
+    """
+    overrides = overrides or {}
+
+    # Check browser-level plugin overrides
+    p_model = str(overrides.get("plugin_model") or "").strip()
+    p_key = str(overrides.get("plugin_api_key") or "").strip()
+    p_base = str(overrides.get("plugin_api_base") or "").strip()
+    if p_model:
+        return ResolvedLlmConfig(
+            model=p_model,
+            api_key=p_key or settings.PLUGIN_LLM_API_KEY or main_config.api_key,
+            api_base=p_base or settings.PLUGIN_LLM_API_BASE or main_config.api_base,
+            source="plugin_override",
+        )
+
+    # Check env-level plugin config
+    if not _is_empty(settings.PLUGIN_LLM_MODEL):
+        return ResolvedLlmConfig(
+            model=settings.PLUGIN_LLM_MODEL,
+            api_key=settings.PLUGIN_LLM_API_KEY or main_config.api_key,
+            api_base=settings.PLUGIN_LLM_API_BASE or main_config.api_base,
+            source="plugin_env",
+        )
+
+    # Fallback: use main config
+    return main_config
+
+
 def get_effective_config_for_project(project: Project | None = None) -> ResolvedLlmConfig:
     return resolve_llm_config(project=project)
 

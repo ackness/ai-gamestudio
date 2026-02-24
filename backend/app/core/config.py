@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "deepseek/deepseek-chat"
     LLM_API_KEY: str | None = None
     LLM_API_BASE: str | None = "https://api.deepseek.com"
+    PLUGIN_LLM_MODEL: str | None = None  # defaults to LLM_MODEL if unset
+    PLUGIN_LLM_API_KEY: str | None = None  # defaults to LLM_API_KEY if unset
+    PLUGIN_LLM_API_BASE: str | None = None  # defaults to LLM_API_BASE if unset
     IMAGE_GEN_MODEL: str = "gemini-2.5-flash-image-preview"
     IMAGE_GEN_API_KEY: str | None = None
     IMAGE_GEN_API_BASE: str | None = None

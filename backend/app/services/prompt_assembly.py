@@ -41,9 +41,13 @@ def _inject_world_doc(builder: PromptBuilder, ctx: TurnContext) -> None:
 
 NARRATIVE_INSTRUCTION = (
     "Respond in character as the DM. Focus purely on storytelling — "
-    "describe scenes, NPC dialogue, actions, and consequences. "
-    "Do NOT output any structured data blocks (```json:xxx```). "
-    "The game system will handle state updates, mechanics, and UI separately."
+    "describe scenes, NPC dialogue, actions, and consequences.\n"
+    "IMPORTANT RULES:\n"
+    "- Do NOT output any structured data blocks (```json:xxx```).\n"
+    "- Do NOT output action suggestions, numbered option lists, or \"你现在可以：\" style choices.\n"
+    "- Do NOT end your response with a list of possible player actions.\n"
+    "- The game's plugin system will independently generate guides and choices for the player.\n"
+    "- Just end your narrative naturally and let the game system handle the rest."
 )
 
 
