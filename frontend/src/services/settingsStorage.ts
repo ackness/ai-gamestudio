@@ -148,6 +148,18 @@ export const StorageFactory = {
     return _storagePersistent ?? false
   },
 
+  /** Re-probe backend if currently detected as non-persistent.
+   *  Useful when backend starts after the frontend (dev race condition). */
+  async redetectIfNeeded(): Promise<boolean> {
+    if (_storagePersistent === true) return true
+    // Reset and re-probe
+    _cached = null
+    _detectedBackend = null
+    _storagePersistent = null
+    await detectBackend()
+    return _storagePersistent ?? false
+  },
+
   /** Force a specific backend — useful for testing or explicit env config. */
   forceBackend(backend: StorageBackend) {
     _cached = backend === 'api' ? new ApiSettingsStorage() : new LocalSettingsStorage()

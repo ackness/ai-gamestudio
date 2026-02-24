@@ -7,6 +7,8 @@ import { useBlockInteractionStore } from '../stores/blockInteractionStore'
 import { useNotificationStore } from '../stores/notificationStore'
 import { useTokenStore } from '../stores/tokenStore'
 import { GameWebSocket } from '../services/websocket'
+import { StorageFactory } from '../services/settingsStorage'
+import { useUiStore } from '../stores/uiStore'
 import * as api from '../services/api'
 import * as gameStorage from '../services/gameStorage'
 import {
@@ -75,7 +77,13 @@ export function useGameWebSocket(currentSession: Session | null) {
     wsRef.current = ws
     setWsStatus('connected')
 
-    ws.onConnected = () => setWsStatus('connected')
+    ws.onConnected = () => {
+      setWsStatus('connected')
+      // Re-probe backend persistence in case it started after the frontend
+      StorageFactory.redetectIfNeeded().then((persistent) => {
+        if (persistent) useUiStore.getState().checkStoragePersistence()
+      }).catch(() => {})
+    }
     ws.onReconnecting = () => setWsStatus('reconnecting')
     ws.onDisconnected = () => {
       setWsStatus('disconnected')
