@@ -170,6 +170,15 @@ async def _stream_process_message(
             return
         elif event["type"] == "_message_saved":
             saved_message_id = event.get("message_id")
+        elif event["type"] == "token_usage":
+            # Forward token_usage immediately — don't defer to pending_blocks
+            token_event = {
+                "type": "token_usage",
+                "data": event.get("data", {}),
+                "turn_id": turn_id,
+            }
+            _add_log(session_id, "send", token_event)
+            await sink.send_json(token_event)
         else:
             pending_blocks.append(event)
 
