@@ -7,9 +7,6 @@ when_to_use:
 avoid_when:
   - 本次回复已包含 json:character_sheet
   - 系统消息或纯机械操作
-capability_summary: |
-  合并自 auto-guide + choices。提供 json:guide 分类行动建议
-  和 json:choices 简单选项两种模式，通过 guide_mode 设置切换。
 ---
 
 ## Guide Plugin

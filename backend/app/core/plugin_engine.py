@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 NAME_RE = re.compile(r"^[a-z][a-z0-9-]*[a-z0-9]$|^[a-z]$")
 
 # Optional LLM-facing frontmatter retained in PLUGIN.md.
-_LLM_ONLY_FIELDS = {"when_to_use", "avoid_when", "capability_summary"}
+_LLM_ONLY_FIELDS = {"when_to_use", "avoid_when"}
 
 
 @dataclass

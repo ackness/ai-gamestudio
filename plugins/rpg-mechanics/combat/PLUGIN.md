@@ -9,9 +9,6 @@ when_to_use:
 avoid_when:
   - 纯叙事无战斗或检定
   - 结果已经确定的行动
-capability_summary: |
-  合并自 combat + skill-check + dice-roll + status-effect。
-  提供完整的回合制战斗、D20 技能检定、骰子判定和状态效果管理。
 ---
 
 ## Combat Plugin

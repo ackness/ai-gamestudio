@@ -8,9 +8,6 @@ when_to_use:
 avoid_when:
   - 纯环境描写无 NPC 互动
   - 行为不涉及任何阵营立场
-capability_summary: |
-  合并自 relationship + reputation + faction。
-  提供 json:relationship_change 和 json:reputation_change block。
 ---
 
 ## Social Plugin

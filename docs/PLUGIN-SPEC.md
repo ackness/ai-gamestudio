@@ -1,17 +1,18 @@
 # AI GameStudio Plugin Spec v1
 
-本文档定义 AI GameStudio 当前唯一有效的插件规范（`schema_version: "1.0"`）。
+本文档定义 AI GameStudio 当前唯一有效插件规范（`schema_version: "1.0"`）。
 
-## 1. 设计原则
+## 1. 规范边界
 
-- 单一事实源：机器可读配置在 `manifest.json`，LLM 行为手册在 `PLUGIN.md`。
-- 单一版本：只支持插件规范 v1，不存在历史版本分支或 fallback 行为。
-- 可组合：插件可声明依赖、默认启用、替代关系（`supersedes`）。
-- 可验证：插件必须可通过 `PluginEngine.validate()`。
+- 单一版本：只支持 v1，不存在 v2/v3 fallback 分支。
+- 单一契约：插件必须同时提供 `manifest.json + PLUGIN.md`。
+- 单一工具集：Plugin Agent 只暴露固定 7 个工具。
 
-## 2. 目录结构
+## 2. 目录布局
 
-内置插件（推荐）
+当前 `PluginEngine` 支持两种布局：
+
+分组布局（推荐）：
 
 ```text
 plugins/
@@ -25,19 +26,24 @@ plugins/
       schemas/...
 ```
 
-外部插件（导入）
+平铺布局（兼容）：
+
+```text
+plugins/
+  <plugin>/
+    manifest.json
+    PLUGIN.md
+```
+
+外部导入插件最小要求：
 
 ```text
 <plugin>/
   manifest.json
   PLUGIN.md
-  prompts/...
-  scripts/...
-  schemas/...
-  README.md   # 建议提供
 ```
 
-## 3. manifest.json（必需）
+## 3. `manifest.json`（必需）
 
 ### 3.1 最小示例
 
@@ -48,51 +54,38 @@ plugins/
   "version": "0.1.0",
   "type": "gameplay",
   "required": false,
-  "description": "Unified combat system",
-  "dependencies": ["state"],
-  "prompt": {
-    "position": "pre-response",
-    "priority": 70,
-    "template": "prompts/combat-instruction.md"
-  },
-  "capabilities": {},
-  "blocks": {},
-  "events": {"emit": [], "listen": []},
-  "storage": {"keys": []}
+  "description": "Unified combat system"
 }
 ```
 
-### 3.2 必填字段
+### 3.2 必填字段与约束
 
-| 字段 | 类型 | 说明 |
+| 字段 | 类型 | 约束 |
 |---|---|---|
-| `schema_version` | string | 固定为 `"1.0"` |
-| `name` | string | 插件名，必须与目录名一致 |
+| `schema_version` | string | 必须等于 `"1.0"` |
+| `name` | string | 必须与目录名一致；仅小写字母/数字/短横线 |
 | `version` | string | 插件版本（建议 semver） |
-| `type` | string | `global` 或 `gameplay` |
+| `type` | string | 仅允许 `global` 或 `gameplay` |
 | `required` | boolean | 是否强制启用 |
-| `description` | string | 插件简介 |
+| `description` | string | 描述文案 |
 
 ### 3.3 常用可选字段
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `dependencies` | string[] | 依赖插件列表 |
+| `dependencies` | string[] | 依赖插件 |
 | `default_enabled` | boolean | 默认启用 |
-| `supersedes` | string[] | 启用后抑制的旧插件名 |
-| `prompt` | object | 提示词注入配置 |
-| `capabilities` | object | 能力声明（如脚本能力） |
-| `blocks` | object | block 定义（指令/schema/ui/handler） |
-| `events` | object | 事件声明 |
-| `storage` | object | 插件存储 key 声明 |
-| `permissions` | object | 权限声明（network/filesystem/script） |
-| `extensions` | object | 扩展配置（如 runtime_settings） |
-| `i18n` | object | 多语言展示文案 |
+| `supersedes` | string[] | 启用后抑制其他插件 |
+| `prompt` | object | 模板路径、注入位置、优先级 |
+| `blocks` | object | block 声明（instruction/schema/handler/ui） |
+| `capabilities` | object | 能力声明（含 script） |
+| `extensions` | object | 扩展配置（runtime settings 等） |
+| `i18n` | object | 多语言文案 |
 | `max_triggers` | integer | 每会话触发上限 |
 
-## 4. PLUGIN.md（必需）
+## 4. `PLUGIN.md`（必需）
 
-`PLUGIN.md` 用于给 Plugin Agent 提供高层策略和操作示例，不承担机器校验契约。
+`PLUGIN.md` 面向 LLM 行为，不替代机器契约。
 
 建议 frontmatter 字段：
 
@@ -100,24 +93,42 @@ plugins/
 - `description`
 - `when_to_use`
 - `avoid_when`
-- `capability_summary`
 
-## 5. Block 定义（manifest.blocks）
+说明：
+
+- 若 `PLUGIN.md` 里写了 `name/version`，校验时会与 `manifest.json` 进行一致性检查。
+
+## 5. Block 声明（`manifest.blocks`）
 
 每个 block 类型可声明：
 
-- `instruction`: 给 LLM 的输出指引
-- `schema`: JSON Schema（内联 object 或外部 schema 路径）
-- `handler`: 声明式处理动作（如 `storage_write`、`emit_event`、`builtin`）
-- `ui`: 前端渲染信息（`component`、`renderer_name` 等）
-- `requires_response`: 是否阻塞用户继续输入
+- `instruction`
+- `schema`
+- `handler`
+- `ui`
+- `requires_response`
 
-### 5.1 schema 写法
+### 5.1 `schema` 写法
 
 - 内联：`"schema": { ... }`
-- 外部：`"schema": "schemas/blocks/<name>.json"`
+- 外部路径：`"schema": "schemas/blocks/<name>.json"`
 
-## 6. Capability 定义（manifest.capabilities）
+当前实现说明：
+
+- 运行时校验支持内联 schema。
+- `GET /api/plugins/block-schemas` 当前返回内联 schema（`decl.schema`）；若仅填路径字符串，前端不会拿到展开后的 schema。
+
+### 5.2 声明式 handler 动作
+
+`dispatch_block()` 当前支持的声明式 action：
+
+- `builtin`
+- `storage_write`
+- `emit_event`
+- `update_character`
+- `create_event`
+
+## 6. Capability 声明（`manifest.capabilities`）
 
 脚本能力示例：
 
@@ -137,12 +148,33 @@ plugins/
 
 约束：
 
-- `script` 路径必须位于插件目录内。
-- 越界路径（`../`）会在校验阶段失败。
+- `implementation.type = "script"` 时，`script` 必须在插件目录内。
+- 越界路径（如 `../`）会在校验阶段失败。
 
-## 7. Plugin Agent 工具集（平台内置）
+## 7. Runtime Settings 扩展
 
-当前固定 7 个工具：
+声明入口：`manifest.extensions.runtime_settings`。
+
+推荐写法（当前运行时主写法）：
+
+```json
+{
+  "extensions": {
+    "runtime_settings": {
+      "fields": {
+        "style_preset": { "type": "enum", "default": "cinematic" }
+      }
+    }
+  }
+}
+```
+
+兼容写法：
+
+- `settings: [{ key: "...", ... }]` 仍可接受。
+- `manifest_to_metadata()` 会自动归一化成 `fields` 结构。
+
+## 8. Plugin Agent 工具集（固定）
 
 1. `update_and_emit`
 2. `emit_block`
@@ -154,30 +186,30 @@ plugins/
 
 不支持历史工具名。
 
-## 8. 运行时启用规则
+## 9. 启用规则
 
-最终启用集合由以下来源合并：
+最终启用集由以下来源合并：
 
 1. `required=true`
-2. 项目世界观 frontmatter 的 `plugins: [...]`
+2. 世界文档 frontmatter `plugins`
 3. `default_enabled=true`
-4. 用户在插件面板显式开关
+4. 用户显式开关
 5. 依赖自动补全
-6. `supersedes` 抑制（可被用户显式启用覆盖）
+6. `supersedes` 抑制（用户显式启用可覆盖）
 
-## 9. 校验清单
+## 10. 校验清单
 
-通过 `mise run plugin:validate` 时，至少满足：
+`mise run plugin:validate` 至少检查：
 
-- 存在 `PLUGIN.md` 与 `manifest.json`
+- `PLUGIN.md` 与 `manifest.json` 均存在
 - `schema_version == "1.0"`
 - `manifest.name == 目录名`
 - 依赖插件可解析
-- prompt template 路径不越界且文件存在
-- script capability 路径不越界且文件存在
+- prompt template 路径合法且文件存在
+- script capability 路径合法且文件存在
+- `PLUGIN.md` 与 manifest 的 `name/version` 一致性（若声明）
 
-## 10. 兼容性策略
+## 11. 兼容性策略
 
-- 当前仅维护插件规范 v1。
+- 插件系统按单版本 v1 维护。
 - 不保留多版本 schema 分支或旧版本 fallback 逻辑。
-- 插件升级通过同版本内字段演进完成。

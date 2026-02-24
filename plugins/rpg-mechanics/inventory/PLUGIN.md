@@ -7,9 +7,6 @@ when_to_use:
   - 角色使用消耗品或装备/卸下装备时
 avoid_when:
   - 纯叙事对话无物品交互
-capability_summary: |
-  合并自 inventory + loot。提供 json:item_update 和 json:loot block，
-  以及 inventory.use_item 能力。
 ---
 
 ## Inventory Plugin

@@ -8,9 +8,6 @@ when_to_use:
   - 玩家接受任务、发现线索、触发剧情事件时
 avoid_when:
   - 纯叙事无任务或事件相关内容
-capability_summary: |
-  提供 json:event 和 json:quest_update 两种 block 类型。
-  event 追踪剧情事件生命周期，quest_update 管理任务创建与进度。
 ---
 
 ## Event & Quest Plugin
