@@ -13,6 +13,7 @@ import { GamePanel } from '../components/game/GamePanel'
 import { SidePanel } from '../components/status/SidePanel'
 import { decideSessionBootstrap } from '../utils/sessionBootstrap'
 import type { LlmInfo } from '../services/api'
+import * as api from '../services/api'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -129,6 +130,12 @@ export function ProjectEditorPage() {
 
     return () => observer.disconnect()
   }, [language])
+
+  // Fetch llmInfo directly so it's available even before ModelSettings tab is opened
+  useEffect(() => {
+    if (!currentProject?.id) return
+    api.getLlmInfo(currentProject.id).then(setLlmInfo).catch(() => {})
+  }, [currentProject?.id])
 
   const handleLlmInfoChange = useCallback((info: LlmInfo | null) => setLlmInfo(info), [])
 
