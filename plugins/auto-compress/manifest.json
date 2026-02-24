@@ -1,0 +1,82 @@
+{
+  "schema_version": "2.0",
+  "name": "auto-compress",
+  "version": "1.0.0",
+  "type": "global",
+  "required": false,
+  "default_enabled": true,
+  "description": "Automatically compresses old conversation history into narrative summaries when context window usage approaches the limit. Works alongside the memory plugin.",
+  "dependencies": [
+    "database",
+    "memory"
+  ],
+  "prompt": {
+    "position": "memory",
+    "priority": 5,
+    "template": "prompts/compression-context.md"
+  },
+  "capabilities": {},
+  "blocks": {},
+  "events": {
+    "emit": [],
+    "listen": []
+  },
+  "storage": {
+    "keys": [
+      "compression-summary",
+      "compression-state"
+    ]
+  },
+  "permissions": {},
+  "extensions": {
+    "runtime_settings": {
+      "settings": [
+        {
+          "key": "compression_threshold",
+          "type": "number",
+          "label": "Compression Threshold",
+          "description": "Trigger compression when context usage exceeds this ratio (0.0 - 1.0)",
+          "default": 0.7,
+          "min": 0.3,
+          "max": 0.95,
+          "step": 0.05,
+          "scope": "project",
+          "affects": ["memory"],
+          "i18n": {
+            "zh": {
+              "label": "压缩触发阈值",
+              "description": "当上下文使用量超过此比例时触发自动压缩 (0.0 - 1.0)"
+            }
+          }
+        },
+        {
+          "key": "keep_recent_messages",
+          "type": "integer",
+          "label": "Keep Recent Messages",
+          "description": "Number of recent messages to keep after compression",
+          "default": 6,
+          "min": 2,
+          "max": 20,
+          "scope": "project",
+          "affects": ["memory"],
+          "i18n": {
+            "zh": {
+              "label": "保留近期消息数",
+              "description": "压缩后保留的最近消息数量"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "i18n": {
+    "en": {
+      "name": "Auto Compress",
+      "description": "Automatically compresses old conversation history into narrative summaries when approaching context limits."
+    },
+    "zh": {
+      "name": "自动压缩",
+      "description": "当对话接近上下文窗口上限时，自动将旧对话压缩为叙事摘要。"
+    }
+  }
+}

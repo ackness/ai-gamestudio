@@ -409,6 +409,19 @@ export async function getDebugPrompt(sessionId: string): Promise<DebugPromptResp
   return request(`/sessions/${sessionId}/debug-prompt`)
 }
 
+// Model Info
+export async function getModelInfo(model: string): Promise<{
+  model: string
+  max_input_tokens: number
+  max_output_tokens: number
+  max_input_tokens_display: string
+  input_cost_per_token: number
+  output_cost_per_token: number
+  known: boolean
+}> {
+  return request(`/model-info?model=${encodeURIComponent(model)}`)
+}
+
 // Novel Generation
 export type NovelEvent =
   | { type: 'outline'; chapters: { title: string; summary: string }[] }

@@ -29,6 +29,7 @@ type MessageImageLoadingCallback = (messageId: string) => void
 type ConnectedCallback = () => void
 type ReconnectingCallback = (attempt: number, max: number) => void
 type DisconnectedCallback = () => void
+type TokenUsageCallback = (data: Record<string, unknown>) => void
 
 export interface StructuredMessage {
   type: string
@@ -93,6 +94,7 @@ export class GameWebSocket {
   onConnected: ConnectedCallback = () => {}
   onReconnecting: ReconnectingCallback = () => {}
   onDisconnected: DisconnectedCallback = () => {}
+  onTokenUsage: TokenUsageCallback = () => {}
 
   async connect(sessionId: string) {
     this.sessionId = sessionId
@@ -309,6 +311,9 @@ export class GameWebSocket {
         break
       case 'error':
         this.onError(String(data.content || data.message || 'Unknown error'))
+        break
+      case 'token_usage':
+        this.onTokenUsage((data.data as Record<string, unknown>) || {})
         break
       default:
         if (type && data.data !== undefined) {

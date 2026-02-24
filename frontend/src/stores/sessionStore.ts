@@ -6,6 +6,7 @@ import { idbGetSessions } from '../services/localDb'
 import { syncToIdb, syncToIdbFireAndForget } from '../services/idbSync'
 import { attachPendingBlocksForTurn, type TurnPendingBlock } from './sessionTurnUtils'
 import { useProjectStore } from './projectStore'
+import { useTokenStore } from './tokenStore'
 import * as gameStorage from '../services/gameStorage'
 
 export type PendingBlock = TurnPendingBlock
@@ -115,6 +116,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
         messageImages: {},
         imageLoadingMessages: new Set<string>(),
       }))
+      useTokenStore.getState().reset()
       return session
     } catch (err) {
       console.error('Failed to create session:', err)
@@ -138,6 +140,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       messageImages: {},
       imageLoadingMessages: new Set<string>(),
     })
+    useTokenStore.getState().reset()
     try {
       const messages = await gameStorage.fetchMessages(session.id)
       set({ messages })
@@ -174,6 +177,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
         }
         return { sessions }
       })
+      useTokenStore.getState().reset()
     } catch (err) {
       console.error('Failed to delete session:', err)
       throw err
