@@ -12,12 +12,17 @@ from backend.app.core.block_handlers import BlockContext, dispatch_block  # noqa
 from backend.app.core.block_parser import strip_blocks
 from backend.app.core.game_state import GameStateManager
 from backend.app.core.llm_config import resolve_llm_config
-from backend.app.core.llm_gateway import completion_with_config  # noqa: F401 — tests patch this
+from backend.app.core.llm_gateway import completion_with_config, create_stream_result  # noqa: F401 — tests patch this
 from backend.app.db.engine import engine  # noqa: F401 — tests patch this
 from backend.app.services.archive_service import ARCHIVE_PLUGIN_NAME, maybe_auto_archive_summary
 from backend.app.services.block_processing import process_blocks
 from backend.app.services.plugin_service import get_enabled_plugins  # noqa: F401 — tests patch this
 from backend.app.services.prompt_assembly import _build_pre_response_instructions  # noqa: F401 — tests import this
+from backend.app.services.token_service import (
+    calculate_turn_cost,
+    count_message_tokens,
+    get_model_context_window,
+)
 from backend.app.services.turn_context import build_turn_context
 
 
@@ -56,9 +61,22 @@ async def process_message(
         config = resolve_llm_config(project=ctx.project, overrides=llm_overrides)
         logger.info(f"Using LLM: model={config.model}, source={config.source}")
 
+        # Estimate prompt tokens before sending
+        estimated_prompt_tokens = count_message_tokens(config.model, messages)
+        context_window = get_model_context_window(config.model)
+        max_input = context_window["max_input_tokens"]
+
+        # Prepare variables for token tracking (populated after streaming)
+        prompt_tokens = 0
+        completion_tokens = 0
+        turn_cost = 0.0
+        context_usage = 0.0
+        token_state: dict[str, Any] = {}
+
+        result_acc = create_stream_result()
         try:
             full_response = ""
-            stream = await completion_with_config(messages, config, stream=True)
+            stream = await completion_with_config(messages, config, stream=True, result_acc=result_acc)
             async for chunk in stream:
                 full_response += chunk
                 yield {"type": "chunk", "content": chunk, "turn_id": turn_id}
@@ -68,6 +86,16 @@ async def process_message(
             return
 
         logger.info("LLM response ({} chars): {}", len(full_response), full_response)
+
+        # Use actual tokens if available, otherwise use estimates
+        prompt_tokens = result_acc.prompt_tokens or estimated_prompt_tokens
+        completion_tokens = result_acc.completion_tokens or max(1, len(full_response) // 4)
+
+        # Calculate cost
+        turn_cost = calculate_turn_cost(config.model, prompt_tokens, completion_tokens)
+
+        # Context usage ratio
+        context_usage = prompt_tokens / max_input if max_input > 0 else 0.0
 
         # 4. Process blocks
         block_context = BlockContext(
@@ -113,6 +141,17 @@ async def process_message(
             if should_increment_turn:
                 game_state = json.loads(ctx.session.game_state_json or "{}")
                 game_state["turn_count"] = game_state.get("turn_count", 0) + 1
+
+                # Update cumulative token usage in game_state
+                token_state = game_state.setdefault("token_usage", {
+                    "total_prompt_tokens": 0,
+                    "total_completion_tokens": 0,
+                    "total_cost": 0.0,
+                })
+                token_state["total_prompt_tokens"] += prompt_tokens
+                token_state["total_completion_tokens"] += completion_tokens
+                token_state["total_cost"] += turn_cost
+
                 ctx.session.game_state_json = json.dumps(game_state)
                 db.add(ctx.session)
                 stage_b_has_writes = True
@@ -126,7 +165,25 @@ async def process_message(
             yield {"type": "error", "content": "回合状态保存失败，请重试", "turn_id": turn_id}
             return
 
-        # 7. Yield block events
+        # 7. Yield token_usage event
+        yield {
+            "type": "token_usage",
+            "turn_id": turn_id,
+            "data": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+                "turn_cost": turn_cost,
+                "total_cost": token_state.get("total_cost", turn_cost),
+                "total_prompt_tokens": token_state.get("total_prompt_tokens", prompt_tokens),
+                "total_completion_tokens": token_state.get("total_completion_tokens", completion_tokens),
+                "context_usage": round(context_usage, 4),
+                "max_input_tokens": max_input,
+                "model": config.model,
+            },
+        }
+
+        # 8. Yield block events
         for block in processed_blocks:
             yield {
                 "type": block["type"], "data": block["data"],
@@ -136,7 +193,7 @@ async def process_message(
         if saved_message_id:
             yield {"type": "_message_saved", "message_id": saved_message_id, "turn_id": turn_id}
 
-        # 8. Auto archive
+        # 9. Auto archive
         if should_increment_turn and ARCHIVE_PLUGIN_NAME in ctx.enabled_names:
             try:
                 created = await maybe_auto_archive_summary(db, ctx.project, ctx.session)

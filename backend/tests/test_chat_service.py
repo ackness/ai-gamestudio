@@ -503,3 +503,176 @@ class TestBuildPreResponseInstructions:
         }
         result = _build_pre_response_instructions(declarations)
         assert "no_instruction" not in result
+
+
+@pytest.mark.asyncio
+async def test_process_message_yields_token_usage_event():
+    """process_message should yield a token_usage event with cost and context info."""
+    test_engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    import backend.app.models  # noqa: F401
+
+    async with test_engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+
+    # Create test data
+    async with AsyncSession(test_engine) as session:
+        from backend.app.models.project import Project
+        from backend.app.models.session import GameSession
+
+        project = Project(name="Test", world_doc="# Test World")
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+
+        game_session = GameSession(project_id=project.id)
+        session.add(game_session)
+        await session.commit()
+        await session.refresh(game_session)
+        session_id = game_session.id
+
+    # Mock the LLM to return a simple stream and populate result_acc
+    async def mock_completion_with_config(messages, config, stream=False, **kwargs):
+        result_acc = kwargs.get("result_acc")
+        if result_acc is not None:
+            result_acc.prompt_tokens = 150
+            result_acc.completion_tokens = 50
+
+        async def gen():
+            for chunk in ["Hello, ", "adventurer", "!"]:
+                yield chunk
+
+        return gen()
+
+    import backend.app.services.chat_service as svc_mod
+
+    original_engine = svc_mod.engine
+
+    svc_mod.engine = test_engine
+
+    with (
+        patch.object(
+            svc_mod, "completion_with_config", side_effect=mock_completion_with_config
+        ),
+        patch.object(
+            svc_mod, "get_enabled_plugins", new_callable=AsyncMock, return_value=[]
+        ),
+        patch.object(
+            svc_mod, "count_message_tokens", return_value=100
+        ),
+        patch.object(
+            svc_mod, "get_model_context_window",
+            return_value={"max_input_tokens": 1000, "max_output_tokens": 100},
+        ),
+        patch.object(
+            svc_mod, "calculate_turn_cost", return_value=0.0025
+        ),
+    ):
+        events = []
+        async for event in svc_mod.process_message(session_id, "I enter the cave"):
+            events.append(event)
+
+    svc_mod.engine = original_engine
+
+    # Should have a token_usage event
+    token_events = [e for e in events if e["type"] == "token_usage"]
+    assert len(token_events) == 1
+
+    data = token_events[0]["data"]
+    assert data["prompt_tokens"] == 150
+    assert data["completion_tokens"] == 50
+    assert data["total_tokens"] == 200
+    assert data["turn_cost"] == 0.0025
+    assert data["context_usage"] == round(150 / 1000, 4)
+    assert data["max_input_tokens"] == 1000
+    assert isinstance(data["model"], str)
+    # Cumulative totals should match single-turn values
+    assert data["total_prompt_tokens"] == 150
+    assert data["total_completion_tokens"] == 50
+    assert data["total_cost"] == 0.0025
+
+    # Verify turn_id is consistent across events
+    turn_ids = {e["turn_id"] for e in events if "turn_id" in e}
+    assert len(turn_ids) == 1
+
+    await test_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_process_message_token_usage_uses_estimates_when_no_actual():
+    """token_usage event should fall back to estimates when result_acc has no tokens."""
+    test_engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    import backend.app.models  # noqa: F401
+
+    async with test_engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+
+    async with AsyncSession(test_engine) as session:
+        from backend.app.models.project import Project
+        from backend.app.models.session import GameSession
+
+        project = Project(name="Test", world_doc="# Test World")
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+
+        game_session = GameSession(project_id=project.id)
+        session.add(game_session)
+        await session.commit()
+        await session.refresh(game_session)
+        session_id = game_session.id
+
+    # Mock LLM without populating result_acc (simulates provider not returning usage)
+    async def mock_completion_with_config(messages, config, stream=False, **kwargs):
+        async def gen():
+            yield "Short reply"
+
+        return gen()
+
+    import backend.app.services.chat_service as svc_mod
+
+    original_engine = svc_mod.engine
+    svc_mod.engine = test_engine
+
+    with (
+        patch.object(
+            svc_mod, "completion_with_config", side_effect=mock_completion_with_config
+        ),
+        patch.object(
+            svc_mod, "get_enabled_plugins", new_callable=AsyncMock, return_value=[]
+        ),
+        patch.object(
+            svc_mod, "count_message_tokens", return_value=200
+        ),
+        patch.object(
+            svc_mod, "get_model_context_window",
+            return_value={"max_input_tokens": 2000, "max_output_tokens": 500},
+        ),
+        patch.object(
+            svc_mod, "calculate_turn_cost", return_value=0.001
+        ),
+    ):
+        events = []
+        async for event in svc_mod.process_message(session_id, "test"):
+            events.append(event)
+
+    svc_mod.engine = original_engine
+
+    token_events = [e for e in events if e["type"] == "token_usage"]
+    assert len(token_events) == 1
+
+    data = token_events[0]["data"]
+    # Should fall back to estimated prompt tokens (200)
+    assert data["prompt_tokens"] == 200
+    # completion_tokens should fall back to len("Short reply") // 4 = 2 (at least 1)
+    assert data["completion_tokens"] == max(1, len("Short reply") // 4)
+    assert data["context_usage"] == round(200 / 2000, 4)
+
+    await test_engine.dispose()
