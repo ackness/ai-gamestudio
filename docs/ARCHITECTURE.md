@@ -32,7 +32,7 @@ Backend (FastAPI + SQLModel + SQLite / PostgreSQL)
   - prompt_builder     — 6-position prompt template engine
   - block_parser       — json:xxx block extraction
   - block_handlers     — Dispatch + built-in handlers
-  - capability_executor — plugin_use capability invocation
+  - capability_executor — Plugin capability invocation
   - script_runner      — Python subprocess execution
   - audit_logger       — Append-only invocation audit trail
   - game_state         — DB operations (messages / characters / world)
@@ -51,9 +51,10 @@ LLM Gateway (litellm — supports 100+ providers)
 2. `chat.py` dispatches via `_dispatch_incoming_message()`; `type:"message"` goes to `_stream_process_message()`.
 3. `chat_service.process_message()` orchestrates the turn:
    a. `turn_context.build_turn_context()` — loads session, project, plugins, characters, scenes, events, archive, memories, story images, runtime settings.
-   b. `prompt_assembly.assemble_prompt()` — pure function, builds the multi-section prompt from TurnContext.
-   c. Streams LLM response; emits `chunk` events as tokens arrive.
-   d. `block_processing.process_blocks()` — extracts blocks, validates schemas, dispatches handlers, drains event bus, persists assistant message.
+   b. `prompt_assembly.assemble_narrative_prompt()` — pure function, builds the narrative-only prompt from TurnContext (no block format instructions).
+   c. Streams LLM response (pure narrative); emits `chunk` events as tokens arrive.
+   d. `plugin_agent.run_plugin_agent()` — independent LLM with function calling analyzes narrative, calls `list_plugins`/`load_plugin`/`emit_block`/`execute_script`/`db_*` tools to produce blocks.
+   e. `dispatch_block()` — validates schemas, dispatches handlers, drains event bus.
 4. Backend increments `turn_count`; optionally triggers archive summary.
 
 ### 2.2 WebSocket event ordering
@@ -89,7 +90,7 @@ The plugin system is **manifest-driven + declarative**. Every built-in plugin ha
 
 ### 3.1 What is implemented
 
-- Discover / load / validate plugins from `plugins/*/manifest.json` (V2) with automatic fallback to `PLUGIN.md` frontmatter (V1)
+- Discover / load / validate plugins from `plugins/<group>/<plugin>/manifest.json` (grouped layout) or `plugins/<plugin>/manifest.json` (flat layout)
 - Topological dependency ordering via Kahn's algorithm
 - Jinja2 prompt template injection at 6 fixed positions
 - File-signature-based process-local cache with hot reload
@@ -97,7 +98,7 @@ The plugin system is **manifest-driven + declarative**. Every built-in plugin ha
 - Declarative block handler actions
 - Request-scoped in-memory event bus
 - Plugin storage via `PluginStorage` table `(project_id, plugin_name, key)`
-- `json:plugin_use` capability invocation via `CapabilityExecutor`
+- Plugin Agent function calling (list_plugins / load_plugin / emit_block / execute_script / db_*)
 - Python script execution via `ScriptRunner` (stdin/stdout JSON, configurable timeout)
 - Append-only audit log (`data/audit/audit_YYYY-MM-DD.jsonl`)
 - Plugin import/validate/install API
@@ -126,7 +127,7 @@ The plugin system is **manifest-driven + declarative**. Every built-in plugin ha
 
 ### 4.2 `supersedes` field
 
-A plugin can declare `supersedes: ["choices"]` in `manifest.json`. When enabled, the superseded plugin's prompt injections and block declarations are excluded even if it is also enabled. Used by `auto-guide` to replace `choices`.
+A plugin can declare `supersedes: ["auto-guide", "choices"]` in `manifest.json`. When enabled, the superseded plugins are automatically disabled unless explicitly enabled by the user. Used by new grouped plugins to replace old flat plugins (e.g., `guide` supersedes `auto-guide` + `choices`, `combat` supersedes `skill-check` + `dice-roll` + `status-effect`).
 
 ### 4.3 Dependency behavior
 
@@ -148,7 +149,7 @@ Prompt positions are fixed (1–4 merge into one system message; 5 becomes role 
 | 3 | `world-state` | Current game state + plugin storage data |
 | 4 | `memory` | Long/short-term memory + archive summary |
 | 5 | `chat-history` | Recent user / assistant messages |
-| 6 | `pre-response` | Block format instructions + capability list |
+| 6 | `pre-response` | Narrative-only instructions (no block formats) |
 
 Template context keys available to plugins:
 
@@ -158,46 +159,33 @@ Template context keys available to plugins:
 
 ## 6. Block Protocol
 
-### 6.1 LLM output contract
+### 6.1 Block source (V3)
 
-````text
-```json:<type>
-{ ...json... }
-```
-````
+All blocks are produced by the **Plugin Agent** via `emit_block()` tool calls. The main LLM outputs pure narrative only — no `json:xxx` blocks.
 
-Parser also accepts a looser `json:<type>` marker without fencing (for weaker model output).
+### 6.2 Block types
 
-### 6.2 Block categories
-
-**Direct Output Blocks** — LLM outputs these directly; dispatched via `dispatch_block()`:
-
-| Block type | Handler | Frontend |
-|-----------|---------|----------|
-| `state_update` | built-in (DB write) | silent |
-| `character_sheet` | built-in (DB write) | custom renderer |
-| `scene_update` | built-in (DB write) | custom renderer |
-| `event` | built-in (DB write) | silent |
-| `notification` | pass-through | custom renderer |
-| `choices` | pass-through | custom renderer |
-| `guide` | pass-through | custom renderer |
-| `dice_result` | declarative (storage_write + emit_event) | schema-driven card |
-| `story_image` | built-in (image gen + DB) | custom renderer |
-
-`auto-guide` suppresses `json:guide` for opening narration and character-creation responses.
-
-**Capability Invocation Blocks** — LLM outputs `json:plugin_use`; backend executes and produces result blocks:
-
-```json
-{"plugin": "dice-roll", "capability": "dice.roll", "args": {"expr": "2d6+3"}}
-```
+| Block type | Source plugin | Handler | Frontend |
+|-----------|--------------|---------|----------|
+| `state_update` | state | built-in (DB write) | silent |
+| `character_sheet` | state | built-in (DB write) | custom renderer |
+| `scene_update` | state | built-in (DB write) | custom renderer |
+| `event` | event | built-in (DB write) | silent |
+| `notification` | state | pass-through | custom renderer |
+| `guide` | guide | pass-through | custom renderer |
+| `codex_entry` | codex | declarative | custom renderer |
+| `story_image` | image | built-in (image gen + DB) | custom renderer |
+| `dice_result` | combat | declarative (storage_write + emit_event) | schema-driven card |
+| `combat_start/round/end` | combat | declarative | custom renderer |
+| `item_update` / `loot` | inventory | declarative | card / custom renderer |
+| `relationship_change` | social | declarative | custom renderer |
+| `reputation_change` | social | declarative | custom renderer |
 
 ### 6.3 Backend dispatch priority
 
-1. `type == "plugin_use"` → `CapabilityExecutor`
-2. Built-in handler registry (`state_update`, `character_sheet`, `scene_update`, `event`, `story_image`)
-3. Declarative handler actions from `manifest.json`
-4. Pass-through to frontend
+1. Built-in handler registry (`state_update`, `character_sheet`, `scene_update`, `event`, `story_image`)
+2. Declarative handler actions from `manifest.json`
+3. Pass-through to frontend
 
 ### 6.4 Declarative actions supported
 
@@ -211,20 +199,31 @@ Block data is validated against plugin-declared schemas (`blocks.<type>.schema`)
 
 ---
 
-## 7. Capability Execution (plugin_use)
+## 7. Plugin Agent & Capability Execution
+
+### 7.1 Plugin Agent (`plugin_agent.py`)
+
+The Plugin Agent is an independent LLM call using function calling (tool calling). It receives the narrative text + game state snapshot and decides which plugins to invoke.
+
+**Progressive Disclosure**:
+- Level 1: `list_plugins()` — name + description only (~30 tokens/plugin)
+- Level 2: `load_plugin(name)` — full PLUGIN.md + blocks + capabilities (< 5k tokens)
+- Level 3: `execute_script()` / `db_*()` — on-demand execution
+
+Max tool rounds: 10 (`MAX_TOOL_ROUNDS`).
+
+### 7.2 Capability Execution
 
 ```
-CapabilityExecutor.execute(data, context)
-  ├─ Validate plugin name + capability ID against manifest.capabilities
-  ├─ Resolve implementation type:
-  │     "builtin"  → call registered Python function
-  │     "script"   → ScriptRunner.run(script_path, args, timeout_ms)
-  │     "template" → render Jinja2 template
-  ├─ Collect result_blocks (wrapped in result_block_type)
+Plugin Agent calls execute_script(plugin, function, args)
+  └─ Backend resolves manifest.capabilities[function].implementation
+       ├─ "builtin"  → call registered Python function
+       ├─ "script"   → ScriptRunner.run(script_path, args, timeout_ms)
+       └─ "template" → render Jinja2 template
   └─ AuditLogger.log(invocation_id, plugin, capability, exit_code, duration_ms, …)
 ```
 
-Script execution passes args as JSON on stdin, expects JSON output on stdout. Default timeout: 5000 ms (overridable per capability in `manifest.json`).
+Script execution passes args as JSON on stdin, expects JSON output on stdout. Default timeout: 5000 ms.
 
 Audit log location: `data/audit/audit_YYYY-MM-DD.jsonl` (append-only JSON-lines, rotated daily).
 

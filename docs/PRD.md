@@ -56,10 +56,10 @@ AI GameStudio 是一个基于 Web 的**低代码 RPG 游戏编辑器与运行平
 │  │   插件系统 (manifest + 手册)     │  ← 扩展游戏能力        │
 │  │                                  │                        │
 │  │  全局插件        游戏性插件       │                        │
-│  │  ├─ database     ├─ character    │                        │
-│  │  ├─ memory       ├─ skill-check  │                        │
-│  │  ├─ archive      ├─ combat       │                        │
-│  │  └─ core-blocks  └─ inventory... │                        │
+│  │  ├─ database     ├─ guide        │                        │
+│  │  ├─ state        ├─ combat       │                        │
+│  │  ├─ event        ├─ inventory    │                        │
+│  │  └─ memory       └─ social...    │                        │
 │  └────────────────┬────────────────┘                        │
 │                   │                                          │
 │                   ▼                                          │
@@ -101,8 +101,9 @@ AI GameStudio 是一个基于 Web 的**低代码 RPG 游戏编辑器与运行平
 - **LLM 协作**：插件可声明 LLM 交互模式，将世界状态作为上下文传入模型
 
 插件分类：
-- **全局插件**：控制世界级别状态（`core-blocks`、`database`、`archive`、`memory`）
-- **游戏性插件**：扩展玩法机制（`character`、`choices`、`auto-guide`、`dice-roll`、`skill-check`、`combat`、`inventory`、`quest`、`faction`、`relationship`、`status-effect`、`codex`、`story-image`）
+- **核心插件**（core 分组）：控制世界级别状态（`database`、`state`、`event`、`memory`）
+- **叙事插件**（narrative 分组）：扩展叙事能力（`guide`、`codex`、`image`）
+- **RPG 插件**（rpg-mechanics 分组）：扩展玩法机制（`combat`、`inventory`、`social`）
 
 ### 4.3 LLM 引擎
 
@@ -252,7 +253,9 @@ LLM 响应中的结构化数据通过 `` ```json:<type> `` 代码块传递。这
 | `relationship_change` | 声明式动作（存储+事件） | 自定义卡片 UI | NPC 关系变化 |
 | `status_effect` | 声明式动作（存储+事件） | 自定义卡片 UI | 状态效果变化 |
 | `codex_entry` | 声明式动作（存储+事件） | 自定义卡片 UI | 图鉴条目更新 |
-| `plugin_use` | CapabilityExecutor 执行 | 结果 block 渲染 | 插件能力调用协议 |
+
+
+> **注意**：V3 架构中所有 block 由 Plugin Agent 通过 `emit_block()` 工具产出，主 LLM 不直接输出 block。
 
 ### 4.9 小说生成功能
 
@@ -267,41 +270,34 @@ LLM 响应中的结构化数据通过 `` ```json:<type> `` 代码块传递。这
 
 ## 5. 内置插件清单（当前实现）
 
-当前内置插件共 **17 个**，分为全局插件 4 个与游戏性插件 13 个。
+当前内置插件共 **10 个**（V3 分组架构），分为核心插件 4 个与游戏性插件 6 个。
 
 ### 5.1 全局插件（4）
 
-| 插件 | 必需/默认 | 主要职责 |
-|------|-----------|----------|
-| `core-blocks` | 必需 | 定义核心 `json:xxx` Block（状态/角色卡/场景/事件/通知） |
-| `database` | 必需 | 提供持久化世界状态上下文与通用状态读写 |
-| `archive` | 必需 | 长会话摘要与版本化快照存档 |
-| `memory` | 默认启用 | 记忆提取与 Prompt memory 位置注入 |
+| 插件 | 分组 | 必需/默认 | 主要职责 |
+|------|------|-----------|----------|
+| `database` | core | 必需 | 提供持久化世界状态上下文与通用状态读写 |
+| `state` | core | 必需 | 核心 Block（状态/角色卡/场景/通知），合并原 core-blocks + character |
+| `event` | core | 必需 | 游戏事件管理，合并原 event + quest |
+| `memory` | core | 必需 | 记忆 + 存档 + 上下文压缩，合并原 memory + archive + auto-compress |
 
-### 5.2 游戏性插件（13）
+### 5.2 游戏性插件（6）
 
-| 插件 | 关键 Block | 能力调用（`plugin_use`） |
-|------|------------|--------------------------|
-| `character` | （以状态注入为主） | — |
-| `choices` | `choices` | — |
-| `auto-guide` | `guide` | —（`supersedes: choices`） |
-| `dice-roll` | `dice_result` | `dice.roll` |
-| `skill-check` | `skill_check` / `skill_check_result` | `skill_check.resolve` |
-| `combat` | `combat_start` / `combat_round` / `combat_end` / `combat_action` | `combat.resolve_action` |
-| `inventory` | `item_update` / `loot` | `inventory.use_item` |
-| `quest` | `quest_update` | — |
-| `faction` | `reputation_change` | — |
-| `relationship` | `relationship_change` | — |
-| `status-effect` | `status_effect` | `status_effect.tick` |
-| `codex` | `codex_entry` | — |
-| `story-image` | `story_image` | —（默认启用） |
+| 插件 | 分组 | 关键 Block | 脚本能力 |
+|------|------|------------|----------|
+| `guide` | narrative | `guide` | —（supersedes: auto-guide, choices） |
+| `codex` | narrative | `codex_entry` | — |
+| `image` | narrative | `story_image` | —（supersedes: story-image） |
+| `combat` | rpg-mechanics | `dice_result` / `combat_start` / `combat_round` / `combat_end` | `dice.roll`（supersedes: skill-check, dice-roll, status-effect） |
+| `inventory` | rpg-mechanics | `item_update` / `loot` | `inventory.use_item` |
+| `social` | rpg-mechanics | `relationship_change` / `reputation_change` | —（supersedes: relationship, faction） |
 
 ### 5.3 运行时约束
 
-- `core-blocks` / `database` / `archive` / `character` 为必需插件。
-- `memory` / `auto-guide` / `story-image` 默认启用，其余按项目按需启用。
-- `auto-guide` 启用时可替代 `choices` 的行动建议输出。
-- 能力调用统一走 `json:plugin_use`，由后端 `CapabilityExecutor` + `ScriptRunner` 执行并审计。
+- `database` / `state` / `event` / `memory` 为必需插件。
+- `guide` / `image` 默认启用，其余按项目按需启用。
+- 主 LLM 只输出纯叙事；所有 block 由 Plugin Agent 通过 `emit_block()` 工具产出。
+- 脚本能力调用由 Plugin Agent 的 `execute_script()` 工具执行并审计。
 
 ---
 
@@ -394,32 +390,25 @@ LLM 响应中的结构化数据通过 `` ```json:<type> `` 代码块传递。这
 - [x] 小说生成面板（会话素材→章节大纲→逐章流式正文，支持中断与导出）
 - [x] LiteLLM 接入（100+ 模型供应商，WebSocket + HTTP 双通道）
 - [x] Prompt 组装器（6 位置注入，Jinja2 模板）
-- [x] 插件系统（manifest.json V2 + PLUGIN.md V1 回退，依赖拓扑排序）
+- [x] 插件系统（V3 Plugin Agent + Progressive Disclosure，分组目录，依赖拓扑排序）
 - [x] Block 协议（提取、校验、分发、前端渲染注册系统）
 - [x] 模型设置增强（预设模型高亮、连接测试 `/api/llm/test`、按项目本地配置）
 - [x] 前端 UI 体系重构（shadcn/ui + Radix + 统一设计 Token）
 
-### 内置插件（17 个）
-- [x] core-blocks（状态同步、角色卡、场景、事件、通知）
+### 内置插件（10 个，V3 分组架构）
 - [x] database（持久状态上下文）
-- [x] archive（长会话摘要 + 版本化快照）
-- [x] memory（记忆注入）
-- [x] character（玩家/NPC 状态管理）
-- [x] choices（交互选项 Block）
-- [x] auto-guide（AI 推荐行动）
-- [x] dice-roll（骰子 Block + 脚本执行）
-- [x] skill-check（技能检定请求/结果 + 脚本执行）
-- [x] combat（战斗开始/回合/结束 + 动作解析）
-- [x] inventory（物品变更/战利品 + 使用物品能力）
-- [x] quest（任务生命周期更新）
-- [x] faction（阵营声望变化）
-- [x] relationship（关系变化追踪）
-- [x] status-effect（Buff/Debuff 生命周期）
+- [x] state（状态同步、角色卡、场景、通知，合并原 core-blocks + character）
+- [x] event（游戏事件管理，合并原 event + quest）
+- [x] memory（记忆 + 存档 + 上下文压缩，合并原 memory + archive + auto-compress）
+- [x] guide（AI 推荐行动，合并原 auto-guide + choices）
 - [x] codex（图鉴/百科条目记录）
-- [x] story-image（剧情图片生成 + 连续性）
+- [x] image（剧情图片生成 + 连续性，原 story-image）
+- [x] combat（战斗 + 骰子 + 技能检定 + 状态效果，合并原 combat + dice-roll + skill-check + status-effect）
+- [x] inventory（物品变更/战利品 + 使用物品能力）
+- [x] social（关系 + 阵营声望，合并原 relationship + faction）
 
 ### 基础设施
-- [x] `json:plugin_use` 能力调用协议（CapabilityExecutor）
+- [x] Plugin Agent function calling（list_plugins / load_plugin / emit_block / execute_script / db_*）
 - [x] Python 脚本执行（ScriptRunner，stdin/stdout JSON）
 - [x] 审计日志（AuditLogger，JSON-lines）
 - [x] 插件导入/验证/安装 API

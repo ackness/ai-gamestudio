@@ -1,21 +1,50 @@
-# AI GameStudio Plugin Spec v2.0
+# AI GameStudio Plugin Spec v3.0
 
-> 本文是 V2 实现规范（runtime contract）。实现者按本文可直接编码，无决策空白。
+> 本文是 V3 实现规范（runtime contract）。插件开发者按本文可直接编写插件，无需了解后端代码。
 >
-> 与 V1 的关系：V2 兼容 V1 插件（自动回退）；新插件应使用 V2 格式。
+> 核心变化：V3 采用 **Plugin Agent + Progressive Disclosure** 架构。主 LLM 只输出纯叙事；
+> 独立的 Plugin Agent 通过 function calling（工具调用）按需加载插件、操作游戏数据、输出结构化 block。
 >
-> 架构蓝图：`docs/PLUGIN-ECOSYSTEM-ARCHITECTURE.md`（设计原则、迁移映射、执行流程）。
+> 架构蓝图：`docs/PLUGIN-ECOSYSTEM-ARCHITECTURE.md`（设计原则、执行流程、组件架构）。
 
 ---
 
-## 1. 插件包结构
+## 1. 概述
 
-### 1.1 Builtin 插件（最小 2 文件）
+### 1.1 架构模型
+
+```
+用户消息 → 主 LLM（纯叙事，无 block 指令）→ 流式输出故事
+         → Plugin Agent（独立 LLM + function calling）
+              ├─ list_plugins()      → Level 1: name + description
+              ├─ load_plugin(name)   → Level 2: 完整 PLUGIN.md + blocks + capabilities
+              ├─ execute_script()    → Level 3: 执行插件脚本
+              ├─ emit_block()        → 输出结构化 block 到前端
+              └─ db_*()              → 持久化游戏状态
+```
+
+**渐进式披露（Progressive Disclosure）**：Plugin Agent 启动时只知道插件名和描述（~30 tokens/插件）。
+需要时调用 `load_plugin()` 获取完整指令（< 5k tokens），再按需调用 `execute_script()` 或 `db_*` 工具执行操作。
+这大幅降低了上下文占用，同时保证高精度执行。
+
+### 1.2 插件开发者须知
+
+- **插件 = 一个文件夹**。无需编写 Python 后端代码。
+- **PLUGIN.md** 是 Plugin Agent 的"运行手册"——写清楚何时触发、怎么操作、输出什么 block。
+- **manifest.json** 是运行时的"事实源"——声明依赖、权限、block schema、capabilities、i18n。
+- 如果需要计算逻辑（如骰子、战斗判定），放在 `scripts/` 中，Plugin Agent 会通过 `execute_script()` 调用。
+- 所有自带插件**必须提供中文和英文两种翻译**（`i18n.zh` + `i18n.en`）。
+
+---
+
+## 2. 插件包结构
+
+### 2.1 Builtin 插件（最小 2 文件）
 
 ```text
 my-plugin/
-├── PLUGIN.md           # LLM 运行手册（必需）
-├── manifest.json       # 机器事实源（必需）
+├── PLUGIN.md           # Plugin Agent 运行手册（必需）
+├── manifest.json       # 运行时事实源（必需）
 ├── prompts/            # Jinja2 模板（可选）
 │   └── *.md
 ├── scripts/            # 可执行脚本（可选）
@@ -23,12 +52,12 @@ my-plugin/
 └── references/         # 参考文档（可选）
 ```
 
-### 1.2 External 插件（完整 4 文件）
+### 2.2 External 插件（完整 4 文件）
 
 ```text
 my-plugin/
-├── PLUGIN.md           # LLM 运行手册（必需）
-├── manifest.json       # 机器事实源（必需）
+├── PLUGIN.md           # Plugin Agent 运行手册（必需）
+├── manifest.json       # 运行时事实源（必需）
 ├── README.md           # 人类文档（必需）
 ├── schemas/            # 结构化契约（必需）
 │   ├── index.yaml      # 索引文件（推荐）
@@ -41,55 +70,89 @@ my-plugin/
 └── references/
 ```
 
-### 1.3 职责分离
+### 2.3 分组目录
+
+插件可以放在分组目录中。分组目录下必须有 `group.json` 文件：
+
+```text
+plugins/
+├── core/                   # 分组目录
+│   ├── group.json          # 分组标识文件
+│   ├── database/           # 插件
+│   ├── state/
+│   ├── event/
+│   └── memory/
+├── narrative/
+│   ├── group.json
+│   ├── guide/
+│   ├── codex/
+│   └── image/
+└── rpg-mechanics/
+    ├── group.json
+    ├── combat/
+    ├── inventory/
+    └── social/
+```
+
+发现逻辑：扫描 `plugins/` 的直接子目录，有 `PLUGIN.md` 的是扁平插件，有 `group.json` 的是分组目录（递归扫描其子目录中有 `PLUGIN.md` 的插件）。
+
+### 2.4 职责分离
 
 | 文件 | 受众 | 职责 |
 |------|------|------|
-| `PLUGIN.md` | LLM | 运行手册：触发条件、执行步骤、输出要求、降级策略 |
-| `manifest.json` | 运行时 | 唯一事实源：依赖、权限、能力、入口、blocks、events、storage |
+| `PLUGIN.md` | Plugin Agent（LLM） | 运行手册：触发条件、执行步骤、输出要求、降级策略 |
+| `manifest.json` | 运行时引擎 | 唯一事实源：依赖、权限、能力、blocks、events、storage、i18n |
 | `README.md` | 开发者 | 安装、调试、测试说明 |
 | `schemas/` | 运行时 + 前端 | block/ui schema 契约 |
 
 ---
 
-## 2. `manifest.json` 完整字段定义
+## 3. `manifest.json` 完整字段定义
 
-### 2.1 示例
+### 3.1 示例
 
 ```json
 {
   "schema_version": "2.0",
-  "name": "dice-roll",
-  "version": "2.0.0",
+  "name": "combat",
+  "version": "0.1.0",
   "type": "gameplay",
   "required": false,
-  "description": "Optional dice-result block plugin with storage write and event emission.",
-  "dependencies": [],
+  "default_enabled": false,
+  "supersedes": ["skill-check", "dice-roll", "status-effect"],
+  "description": "Unified combat system: turn-based combat, dice rolls, skill checks, and status effects.",
+  "dependencies": ["state"],
 
   "prompt": {
     "position": "pre-response",
     "priority": 70,
-    "template": "prompts/dice-instruction.md"
+    "template": "prompts/combat-instruction.md"
   },
 
   "capabilities": {
     "dice.roll": {
-      "description": "Parse dice expression and roll",
+      "description": "解析骰子表达式（如 2d6+3）并执行随机掷骰",
       "implementation": {
         "type": "script",
         "script": "scripts/roll.py",
         "timeout_ms": 5000
       },
-      "input_schema": "schemas/capabilities/dice_roll_input.json",
-      "output_schema": "schemas/capabilities/dice_roll_output.json",
       "result_block_type": "dice_result"
     }
   },
 
   "blocks": {
     "dice_result": {
-      "instruction": "当需要随机判定时（攻击/防御/技能检定/概率事件），你必须输出此 block...",
-      "schema": "schemas/blocks/dice_result.yaml",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "dice": { "type": "string" },
+          "result": { "type": "integer" },
+          "success": { "type": "boolean" },
+          "description": { "type": "string" }
+        },
+        "required": ["dice", "result"]
+      },
       "handler": {
         "actions": [
           { "type": "storage_write", "key": "last-roll" },
@@ -98,22 +161,19 @@ my-plugin/
       },
       "ui": {
         "component": "card",
-        "title": "🎲 {{ dice }}",
-        "sections": [
-          { "type": "key-value", "fields": ["result", "success", "description"] }
-        ]
+        "title": "🎲 {{ dice }}"
       },
       "requires_response": false
     }
   },
 
   "events": {
-    "emit": ["dice-rolled"],
+    "emit": ["dice-rolled", "combat-started", "combat-ended"],
     "listen": []
   },
 
   "storage": {
-    "keys": ["last-roll"]
+    "keys": ["last-roll", "combat-state"]
   },
 
   "permissions": {
@@ -122,11 +182,16 @@ my-plugin/
     "script_languages": ["python"]
   },
 
-  "extensions": {}
+  "extensions": {},
+
+  "i18n": {
+    "en": { "name": "Combat", "description": "Turn-based combat, dice rolls, skill checks, and status effects." },
+    "zh": { "name": "战斗系统", "description": "回合制战斗、骰子判定、技能检定与状态效果。" }
+  }
 }
 ```
 
-### 2.2 字段定义
+### 3.2 字段定义
 
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
@@ -135,23 +200,26 @@ my-plugin/
 | `version` | string | 是 | 插件版本（建议 semver） |
 | `type` | enum | 是 | `"global"` 或 `"gameplay"` |
 | `required` | boolean | 是 | 是否必需插件（不可被用户关闭） |
-| `description` | string | 是 | 简短描述 |
+| `default_enabled` | boolean | 否 | 默认是否启用（新项目首次加载时），默认 false |
+| `supersedes` | string[] | 否 | 替代的旧插件名列表，启用此插件时自动禁用被替代插件 |
+| `description` | string | 是 | 简短描述（默认语言） |
 | `dependencies` | string[] | 否 | 依赖插件 ID 列表，用于拓扑排序 |
-| `prompt` | object | 否 | Prompt 注入配置，详见 §2.3 |
-| `capabilities` | object | 否 | 可调用能力声明，详见 §2.4 |
-| `blocks` | object | 否 | Block 类型声明，详见 §2.5 |
-| `events` | object | 否 | 事件声明，详见 §2.6 |
-| `storage` | object | 否 | 存储 key 声明，详见 §2.7 |
-| `permissions` | object | 否 | 权限声明，详见 §2.8 |
-| `extensions` | object | 否 | 扩展命名空间（如 runtime_settings），详见 §2.9 |
+| `prompt` | object | 否 | Prompt 注入配置，详见 §3.3 |
+| `capabilities` | object | 否 | 可调用能力声明，详见 §3.4 |
+| `blocks` | object | 否 | Block 类型声明，详见 §3.5 |
+| `events` | object | 否 | 事件声明，详见 §3.6 |
+| `storage` | object | 否 | 存储 key 声明，详见 §3.7 |
+| `permissions` | object | 否 | 权限声明，详见 §3.8 |
+| `extensions` | object | 否 | 扩展命名空间（如 runtime_settings），详见 §3.9 |
+| `i18n` | object | 否 | 多语言翻译，详见 §3.10 |
 
-### 2.3 `prompt` 字段
+### 3.3 `prompt` 字段
 
 ```json
 {
   "position": "pre-response",
   "priority": 70,
-  "template": "prompts/dice-instruction.md"
+  "template": "prompts/combat-instruction.md"
 }
 ```
 
@@ -161,7 +229,7 @@ my-plugin/
 | `priority` | integer | 是 | 排序优先级，越小越先注入 |
 | `template` | string | 否 | Jinja2 模板文件路径（相对插件目录）。缺失时使用 PLUGIN.md body |
 
-**PromptBuilder 6 位置语义**（与 V1 完全一致）：
+**PromptBuilder 6 位置语义**：
 
 | 位置 | 合并方式 | 用途 |
 |------|---------|------|
@@ -170,25 +238,28 @@ my-plugin/
 | `world-state` | 合并为第一条 system message | plugin state data |
 | `memory` | 合并为第一条 system message | long/short-term memory |
 | `chat-history` | 解析为 role-specific messages | recent messages |
-| `pre-response` | 追加为最终 system message | block instructions + capability list |
+| `pre-response` | 追加为最终 system message | narrative-only 指令 |
 
-**模板变量**（稳定上下文键，与 V1 一致）：
+> **V3 变化**：`pre-response` 不再包含 block 格式说明或 capability 列表。主 LLM 只关注叙事。
+> Block 格式和 capability 信息由 Plugin Agent 通过 `load_plugin()` 工具按需获取。
 
-`project` / `characters` / `player` / `npcs` / `current_scene` / `scene_npcs` / `active_events` / `world_state` / `memories` / `archive` / `runtime_settings` / `runtime_settings_flat` / `story_images`
+**模板变量**（稳定上下文键）：
 
-### 2.4 `capabilities` 字段
+`project` / `characters` / `player` / `npcs` / `current_scene` / `scene_npcs` / `active_events` / `world_state` / `memories` / `archive` / `runtime_settings` / `runtime_settings_flat` / `story_images` / `compression_summary`
+
+### 3.4 `capabilities` 字段
+
+声明插件提供的可执行能力。Plugin Agent 通过 `execute_script()` 工具调用。
 
 ```json
 {
   "dice.roll": {
-    "description": "Parse dice expression and roll",
+    "description": "解析骰子表达式（如 2d6+3）并执行随机掷骰",
     "implementation": {
       "type": "script",
       "script": "scripts/roll.py",
       "timeout_ms": 5000
     },
-    "input_schema": "schemas/capabilities/dice_roll_input.json",
-    "output_schema": "schemas/capabilities/dice_roll_output.json",
     "result_block_type": "dice_result"
   }
 }
@@ -196,7 +267,7 @@ my-plugin/
 
 | 子字段 | 类型 | 必需 | 说明 |
 |--------|------|------|------|
-| `description` | string | 是 | 能力描述（注入 pre-response 供 LLM 判断） |
+| `description` | string | 是 | 能力描述（`load_plugin` 时返回给 Plugin Agent） |
 | `implementation` | object | 是 | 执行配置 |
 | `implementation.type` | enum | 是 | `"builtin"` / `"script"` / `"template"` |
 | `implementation.script` | string | 当 type=script | 脚本相对路径（必须以 `scripts/` 开头） |
@@ -207,25 +278,28 @@ my-plugin/
 | `output_schema` | string | 否 | 输出 JSON Schema 文件路径 |
 | `result_block_type` | string | 否 | 执行结果封装为哪个 block type 发送到前端 |
 
-### 2.5 `blocks` 字段
+### 3.5 `blocks` 字段
 
-与 V1 frontmatter 的 `blocks` 结构一致，移入 manifest：
+声明插件可以 emit 的 block 类型。Plugin Agent 通过 `emit_block()` 工具输出。
 
 ```json
 {
   "dice_result": {
-    "instruction": "当需要随机判定时...",
-    "schema": "schemas/blocks/dice_result.yaml",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "dice": { "type": "string" },
+        "result": { "type": "integer" }
+      },
+      "required": ["dice", "result"]
+    },
     "handler": {
       "actions": [
         { "type": "storage_write", "key": "last-roll" },
         { "type": "emit_event", "event": "dice-rolled" }
       ]
     },
-    "ui": {
-      "component": "card",
-      "title": "🎲 {{ dice }}"
-    },
+    "ui": { "component": "card", "title": "🎲 {{ dice }}" },
     "requires_response": false
   }
 }
@@ -233,14 +307,16 @@ my-plugin/
 
 | 子字段 | 类型 | 必需 | 说明 |
 |--------|------|------|------|
-| `instruction` | string | 否 | 注入 pre-response 的 block 使用说明（含 fenced block 示例） |
 | `schema` | string or object | 否 | 外部 schema 文件路径（string）或内联 schema（object） |
 | `handler` | object | 否 | 声明式 handler 配置 |
 | `handler.actions` | array | 否 | 动作列表，支持的 action type 见下 |
 | `ui` | object | 否 | 前端 schema 渲染配置 |
 | `requires_response` | boolean | 否 | 默认 false。为 true 时前端将 block 视为交互 block |
 
-**支持的 handler action types**（V1 保持不变）：
+> **V3 变化**：移除了 `instruction` 字段。在 V2 中，`instruction` 用于告诉主 LLM 如何输出 block 格式。
+> V3 中主 LLM 不再输出 blocks，Plugin Agent 通过 `load_plugin()` 获取 PLUGIN.md 中的指令后自行决定如何 `emit_block()`。
+
+**支持的 handler action types**：
 
 | Action Type | 语义 |
 |------------|------|
@@ -252,32 +328,24 @@ my-plugin/
 
 未知 action type：记录 warning 并跳过。
 
-**支持的 UI component types**（V1 保持不变）：
+**支持的 UI component types**：
 
 `card` / `buttons` / `banner` / `custom` / `none`
 
 `custom` 通过 `renderer_name` 绑定前端 `registerBlockRenderer()` 注册的组件。
 
-### 2.6 `events` 字段
+### 3.6 `events` 字段
 
 ```json
 {
   "emit": ["dice-rolled"],
-  "listen": [
-    {
-      "dice-rolled": {
-        "actions": [
-          { "type": "storage_write", "key": "last-roll" }
-        ]
-      }
-    }
-  ]
+  "listen": []
 }
 ```
 
-与 V1 frontmatter 的 `events` 结构一致。`listen` 中的 actions 通过 `DeclarativeBlockHandler` 执行。
+`listen` 中的 actions 通过 `DeclarativeBlockHandler` 执行。
 
-### 2.7 `storage` 字段
+### 3.7 `storage` 字段
 
 ```json
 {
@@ -287,7 +355,7 @@ my-plugin/
 
 声明插件使用的存储 key。物理表 `PluginStorage`，逻辑键 `(project_id, plugin_name, key) → value_json`。
 
-### 2.8 `permissions` 字段
+### 3.8 `permissions` 字段
 
 ```json
 {
@@ -305,7 +373,7 @@ my-plugin/
 
 若 manifest 未声明 `permissions`，按插件 `type` 应用默认值。
 
-### 2.9 `extensions` 字段
+### 3.9 `extensions` 字段
 
 用于扩展命名空间，如 runtime_settings：
 
@@ -318,7 +386,10 @@ my-plugin/
         "type": "integer",
         "default": 3,
         "min": 2,
-        "max": 4
+        "max": 4,
+        "i18n": {
+          "zh": { "label": "分类数量", "description": "每次生成的建议分类数" }
+        }
       }
     ]
   }
@@ -327,136 +398,164 @@ my-plugin/
 
 运行时对未知 extension 命名空间采取"忽略但保留"策略。
 
+### 3.10 `i18n` 字段
+
+```json
+{
+  "en": { "name": "Combat", "description": "Turn-based combat system." },
+  "zh": { "name": "战斗系统", "description": "回合制战斗、骰子判定与状态效果。" }
+}
+```
+
+| 子字段 | 类型 | 说明 |
+|--------|------|------|
+| `{locale}.name` | string | 插件显示名称 |
+| `{locale}.description` | string | 插件描述 |
+
+前端根据用户语言偏好选择对应翻译。所有自带插件**必须**同时提供 `en` 和 `zh`。
+
+`extensions.runtime_settings` 中的每个 setting 也支持 `i18n` 子字段（覆盖 `label` 和 `description`）。
+
 ---
 
-## 3. `PLUGIN.md` frontmatter 规范
+## 4. `PLUGIN.md` 规范
 
-### 3.1 字段定义
+PLUGIN.md 是 Plugin Agent 的"运行手册"。当 Plugin Agent 调用 `load_plugin(name)` 时，会获取 PLUGIN.md 的完整内容。
 
-V2 的 PLUGIN.md frontmatter **仅保留 LLM 相关字段**，其余全部移入 manifest.json：
+### 4.1 frontmatter 字段
 
 ```yaml
 ---
-name: dice-roll
-version: 2.0.0
-description: 处理骰子检定与概率判定。
+name: combat
+description: 回合制战斗、骰子判定、技能检定与状态效果。
 when_to_use:
-  - 需要随机判定（攻击/防御/技能检定）
-  - 需要命中/豁免计算
+  - 叙事中发生战斗或冲突
+  - 需要技能检定或骰子判定
+  - 角色受到状态效果影响
 avoid_when:
-  - 纯叙事无检定
-  - 已经有确定结果的行动
-capability_summary: |
-  提供骰子解析、执行与结构化结果输出能力。
-  可通过 json:plugin_use 调用 dice.roll capability。
+  - 纯对话或探索无战斗
+  - 已有确定结果的行动
 ---
 ```
 
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
 | `name` | string | 是 | 必须与 manifest.json.name 一致 |
-| `version` | string | 是 | 必须与 manifest.json.version 一致 |
-| `description` | string | 是 | LLM 可读的插件描述 |
-| `when_to_use` | string[] | 否 | LLM 判断何时使用此插件的正向条件 |
-| `avoid_when` | string[] | 否 | LLM 判断何时不使用此插件的负向条件 |
-| `capability_summary` | string | 否 | LLM 选择 capability 时的摘要提示 |
+| `description` | string | 是 | Plugin Agent 可读的插件描述 |
+| `when_to_use` | string[] | 否 | Plugin Agent 判断何时使用此插件的正向条件 |
+| `avoid_when` | string[] | 否 | Plugin Agent 判断何时不使用此插件的负向条件 |
 
-### 3.2 一致性规则
+> **V3 变化**：移除 `version` 和 `capability_summary` 字段。版本信息由 manifest.json 管理；
+> capability 信息通过 `load_plugin()` 返回的 manifest 数据获取。
 
-1. `PLUGIN.md.name` 必须等于 `manifest.json.name`
-2. `PLUGIN.md.version` 必须等于 `manifest.json.version`
-3. 任一不一致，**导入期校验失败**（不是运行时猜测）
+### 4.2 一致性规则
 
-### 3.3 when_to_use / avoid_when 的语义
+`PLUGIN.md.name` 必须等于 `manifest.json.name`，否则导入期校验失败。
 
-这两个字段是 **LLM 提示词**，不是规则引擎输入：
+### 4.3 body 推荐章节
 
-- 运行时将 `when_to_use` / `avoid_when` 注入 pre-response 指令
-- LLM 自行判断当前 turn 是否应使用此插件的能力
-- 不存在 Rule Matcher 组件
-
----
-
-## 4. `PLUGIN.md` body 推荐章节
-
-正文建议固定以下章节结构，运行期作为 prompt 内容注入：
+PLUGIN.md 正文是 Plugin Agent 加载后看到的核心指令。推荐章节结构：
 
 ```markdown
 # Purpose
-对检定请求生成标准化随机结果。
+简要说明插件职责。
+
+# Blocks
+## state_update
+描述何时 emit 此 block，以及 data 格式要求。
+
+## character_sheet
+描述何时 emit 此 block，以及 data 格式要求。
 
 # Capabilities
-- dice.roll: 解析骰子表达式并执行随机掷骰
+- dice.roll: 何时使用、参数说明
 
-# Direct Blocks
-## json:dice_result
-当需要随机判定时输出此 block。格式：
-...（含 fenced block 示例）
+# DB Operations
+描述此插件使用的 db_kv_set/db_graph_add 等操作的 collection/key 约定。
 
 # Fallback
-脚本失败时输出 json:notification，提示玩家手动判定。
+脚本失败或异常情况的降级策略。
 
 # Rules
-- 每个检定独立输出一个 dice_result block
-- 不要在纯叙事中无故掷骰
+- 规则 1
+- 规则 2
 ```
 
-**运行时要求**：
-1. PLUGIN.md body 按 `manifest.json.prompt` 配置的 position/priority 注入 PromptBuilder
-2. 若 manifest.json.prompt.template 指向外部 Jinja2 文件，body 仅在模板缺失时作为回退
-3. body 中的 `# Direct Blocks` 章节应与 manifest.json.blocks 的 instruction 字段保持一致
+**关键原则**：
+- body 中的指令面向 Plugin Agent，不面向主 LLM
+- 告诉 Plugin Agent 何时 `emit_block()`、何时 `execute_script()`、何时 `db_*`
+- 不需要写 `json:xxx` 代码块格式说明（Plugin Agent 直接用 `emit_block` 工具）
+
+### 4.4 Prompt 注入（双重用途）
+
+PLUGIN.md body 还有第二个用途：通过 `manifest.json.prompt` 配置注入到**主 LLM** 的叙事 prompt 中。
+这允许插件向主 LLM 提供上下文信息（如角色状态、记忆摘要），而非操作指令。
+
+若 manifest.json.prompt.template 指向外部 Jinja2 文件，则 prompt 注入使用模板而非 body。
 
 ---
 
-## 5. `json:plugin_use` 协议
+## 5. Plugin Agent 工具
 
-### 5.1 JSON Schema
+Plugin Agent 通过 function calling 使用以下工具。插件开发者无需编写这些工具的代码——它们是平台内置的。
 
-```json
-{
-  "type": "object",
-  "required": ["plugin", "capability", "args"],
-  "properties": {
-    "plugin": { "type": "string", "minLength": 1 },
-    "capability": { "type": "string", "minLength": 1 },
-    "args": { "type": "object" }
-  },
-  "additionalProperties": false
-}
+### 5.1 插件发现与加载
+
+| 工具 | 参数 | 返回 | 说明 |
+|------|------|------|------|
+| `list_plugins()` | 无 | `[{name, description}]` | Level 1：列出所有启用插件的名称和描述 |
+| `load_plugin(name)` | `name: string` | `{name, prompt, blocks, capabilities}` | Level 2：加载完整 PLUGIN.md + manifest 数据 |
+
+### 5.2 Block 输出
+
+| 工具 | 参数 | 返回 | 说明 |
+|------|------|------|------|
+| `emit_block(type, data)` | `type: string, data: object` | `{status: "emitted"}` | 输出结构化 block 到前端 |
+
+### 5.3 脚本执行
+
+| 工具 | 参数 | 返回 | 说明 |
+|------|------|------|------|
+| `execute_script(plugin, function, args)` | `plugin: string, function: string, args?: object` | 脚本输出 JSON | 执行 manifest.capabilities 中声明的脚本 |
+
+### 5.4 游戏数据库
+
+| 工具 | 说明 |
+|------|------|
+| `db_kv_get(collection, key)` | 读取键值数据 |
+| `db_kv_set(collection, key, value)` | 写入键值数据 |
+| `db_kv_query(collection, filter_key?)` | 查询 collection 下所有键值 |
+| `db_graph_add(from_id, to_id, relation, data?)` | 添加关系边 |
+| `db_graph_query(node_id?, relation?, direction?)` | 查询关系图 |
+| `db_log_append(collection, entry)` | 追加日志条目 |
+| `db_log_query(collection, limit?)` | 查询日志 |
+
+### 5.5 工作流程示例
+
 ```
-
-### 5.2 LLM 输出示例
-
-````
-```json:plugin_use
-{
-  "plugin": "dice-roll",
-  "capability": "dice.roll",
-  "args": { "expr": "2d6+3" }
-}
+Plugin Agent 收到叙事文本 + 游戏状态
+  │
+  ├─ 调用 list_plugins() → 看到 [state, guide, combat, ...]
+  │
+  ├─ 判断叙事中有战斗发生
+  │
+  ├─ 调用 load_plugin("combat") → 获取完整战斗插件指令
+  │
+  ├─ 按指令调用 execute_script("combat", "dice.roll", {"expr": "1d20+5"})
+  │   → 返回 {"dice": "1d20+5", "result": 18, ...}
+  │
+  ├─ 调用 db_kv_set("combat.state", "current", {...})  → 持久化战斗状态
+  │
+  ├─ 调用 emit_block("dice_result", {"dice": "1d20+5", "result": 18, ...})
+  │
+  ├─ 判断叙事中角色属性变化
+  │
+  ├─ 调用 load_plugin("state") → 获取状态插件指令
+  │
+  ├─ 调用 emit_block("state_update", {"characters": [{...}]})
+  │
+  └─ 无更多需要处理的内容 → 结束（不再调用工具）
 ```
-````
-
-### 5.3 后端处理流程
-
-1. `block_parser.extract_blocks()` 提取 type == "plugin_use" 的 block
-2. `dispatch_block()` 识别后交给 `CapabilityExecutor`
-3. CapabilityExecutor：
-   - 校验 `plugin` 是否已启用
-   - 校验 `capability` 是否在 manifest.capabilities 中声明
-   - 校验 `args` 符合 capability.input_schema（如声明）
-   - 根据 `implementation.type` 分发执行
-4. 执行结果封装为 `result_block_type` 指定的 block type
-5. result block 走正常 dispatch_block 流程（可触发 handler actions / event bus）
-
-### 5.4 与 Direct Blocks 的区别
-
-| 维度 | Direct Output Blocks | Capability Invocation (plugin_use) |
-|------|---------------------|-----------------------------------|
-| LLM 职责 | 直接输出结构化数据 | 只声明调用意图 |
-| 后端执行 | dispatch_block 既有路径 | CapabilityExecutor → implementation |
-| 适用场景 | 简单状态更新、通知、选项 | 需要计算、外部调用、脚本执行 |
-| 数据来源 | LLM 生成 | 后端执行生成 |
 
 ---
 
@@ -465,12 +564,13 @@ capability_summary: |
 ### 6.1 执行方式
 
 ```
-CapabilityExecutor
-  └─ ScriptRunner.run(script_path, args)
-       └─ subprocess: python scripts/roll.py
-            stdin  ← JSON(args)
-            stdout → JSON(result)
-            exit_code → 0=成功, 非0=失败
+Plugin Agent 调用 execute_script(plugin, function, args)
+  └─ 后端查 manifest.capabilities[function].implementation
+       └─ type == "script" → ScriptRunner.run(script_path, args)
+            └─ subprocess: python scripts/roll.py
+                 stdin  ← JSON(args)
+                 stdout → JSON(result)
+                 exit_code → 0=成功, 非0=失败
 ```
 
 ### 6.2 stdin/stdout JSON 契约
@@ -482,8 +582,6 @@ CapabilityExecutor
   "expr": "2d6+3"
 }
 ```
-
-即 `json:plugin_use` 的 `args` 字段原样传入。
 
 **stdout**（脚本输出）：
 
@@ -509,20 +607,18 @@ stdout 必须是合法 JSON。非 JSON 输出视为脚本错误。
 
 ### 6.4 审计记录
 
-每次脚本执行 ScriptRunner 必须记录到 AuditLogger：
+每次脚本执行记录到 AuditLogger：
 
 ```json
 {
   "invocation_id": "inv_abc123",
-  "plugin": "dice-roll",
+  "plugin": "combat",
   "capability": "dice.roll",
   "script": "scripts/roll.py",
   "args": { "expr": "2d6+3" },
   "exit_code": 0,
   "duration_ms": 62,
-  "stdout": "{\"dice\":\"2d6+3\",\"result\":11,...}",
-  "stderr": "",
-  "timestamp": "2026-02-17T10:00:00Z"
+  "timestamp": "2026-02-24T10:00:00Z"
 }
 ```
 
@@ -541,22 +637,16 @@ ui:
   dice_result: schemas/ui/dice_result_card.yaml
 capabilities:
   dice_roll_input: schemas/capabilities/dice_roll_input.json
-  dice_roll_output: schemas/capabilities/dice_roll_output.json
 ```
 
 ### 7.2 扫描回退
 
-无索引时，按固定目录扫描：
-
-1. `schemas/blocks/`
-2. `schemas/ui/`
-3. `schemas/capabilities/`
+无索引时，按固定目录扫描：`schemas/blocks/` / `schemas/ui/` / `schemas/capabilities/`
 
 ### 7.3 文件格式
 
 - 支持扩展名：`.json` / `.yaml` / `.yml`
 - 解析后统一转为内部 JSON Schema 表示
-- 同名冲突时：索引声明优先；索引缺失时按文件名冲突报错
 
 ---
 
@@ -566,413 +656,199 @@ capabilities:
 
 | 规则 | 说明 |
 |------|------|
-| manifest.json 存在 | V2 插件必需；缺失则回退 V1 |
+| manifest.json 存在 | 必需 |
 | manifest.json 可解析 | JSON 格式合法 |
 | schema_version == "2.0" | 版本匹配 |
 | name 与目录名一致 | `manifest.json.name` == 目录名 |
 | name 格式合法 | 小写字母/数字/连字符，不以连字符开头或结尾 |
 | PLUGIN.md 存在 | 必需 |
 | PLUGIN.md frontmatter 可解析 | YAML 格式合法 |
+| name 跨文件一致性 | PLUGIN.md.name == manifest.name |
 
 ### 8.2 导入期校验（import/validate）
 
 | 规则 | 说明 |
 |------|------|
-| name/version 跨文件一致性 | PLUGIN.md.name == manifest.name，PLUGIN.md.version == manifest.version |
 | 必填字段齐全 | manifest.json 的 schema_version / name / version / type / required / description |
-| dependencies 引用可解析 | 被依赖插件存在于 builtin 或 library |
+| dependencies 引用可解析 | 被依赖插件存在 |
 | prompt.template 路径存在 | 如声明 |
 | capabilities 中 script 路径存在 | 如 implementation.type == "script" |
 | schemas 可解析 | 索引或扫描均可成功加载 |
-| permissions 策略合法 | network / filesystem_scope / script_languages 值在允许范围内 |
+| i18n 双语齐全 | 自带插件必须同时有 en 和 zh |
 | External 必需文件 | README.md + schemas/ 目录存在 |
 
-### 8.3 运行期校验（dispatch_block / CapabilityExecutor）
+### 8.3 运行期校验（Plugin Agent 工具执行时）
 
 | 规则 | 说明 |
 |------|------|
-| 插件已启用 | plugin_use 引用的插件在 enabled_names 中 |
-| 依赖已满足 | 依赖插件全部已启用 |
-| capability 已声明 | plugin_use 的 capability 在 manifest.capabilities 中 |
-| args 符合 input_schema | 如声明了 input_schema |
-| block_data 符合 schema | block 数据通过 validate_block_data |
+| 插件已启用 | `execute_script` 引用的插件在 enabled_names 中 |
+| capability 已声明 | 引用的 capability 在 manifest.capabilities 中 |
+| block_data 符合 schema | `emit_block` 的数据通过 validate_block_data |
 | 脚本路径在允许范围内 | 仅 scripts/ 子目录 |
 
 ---
 
-## 9. V1 回退行为
+## 9. 完整插件示例（V3）
 
-当插件目录下**不存在 manifest.json** 时：
-
-1. PluginEngine.load() 回退到 V1 路径：解析 PLUGIN.md frontmatter 获取全部元数据
-2. 日志输出：`logger.warning("Plugin '{}' has no manifest.json, using V1 fallback", name)`
-3. 后续流程统一：prompt injection / block declarations / event listeners 接口不变
-4. V1 回退插件不能声明 capabilities（无 plugin_use 支持）
-5. V1 回退是过渡机制，最终所有 builtin 插件应迁移到 V2
-
----
-
-## 10. 完整插件示例
-
-### 10.1 dice-roll V2
+### 9.1 combat 插件（rpg-mechanics 分组）
 
 **目录结构**：
 
 ```text
-plugins/dice-roll/
+plugins/rpg-mechanics/combat/
 ├── PLUGIN.md
 ├── manifest.json
 ├── prompts/
-│   └── dice-instruction.md
+│   └── combat-instruction.md
 └── scripts/
     └── roll.py
 ```
 
-**manifest.json**：
-
-```json
-{
-  "schema_version": "2.0",
-  "name": "dice-roll",
-  "version": "2.0.0",
-  "type": "gameplay",
-  "required": false,
-  "description": "Optional dice-result block plugin with storage write and event emission.",
-  "dependencies": [],
-
-  "prompt": {
-    "position": "pre-response",
-    "priority": 70,
-    "template": "prompts/dice-instruction.md"
-  },
-
-  "capabilities": {
-    "dice.roll": {
-      "description": "解析骰子表达式（如 2d6+3）并执行随机掷骰",
-      "implementation": {
-        "type": "script",
-        "script": "scripts/roll.py",
-        "timeout_ms": 5000
-      },
-      "result_block_type": "dice_result"
-    }
-  },
-
-  "blocks": {
-    "dice_result": {
-      "instruction": "当需要随机判定时（攻击/防御/技能检定/概率事件），你必须输出 json:dice_result block。格式：\n```json:dice_result\n{\"dice\": \"2d6+3\", \"result\": 11, \"success\": true, \"description\": \"掷出 2d6+3 = 11\"}\n```\n不要在纯叙事中无故输出此 block。",
-      "schema": {
-        "type": "object",
-        "properties": {
-          "dice": { "type": "string" },
-          "result": { "type": "integer" },
-          "success": { "type": "boolean" },
-          "description": { "type": "string" }
-        },
-        "required": ["dice", "result"]
-      },
-      "handler": {
-        "actions": [
-          { "type": "storage_write", "key": "last-roll" },
-          { "type": "emit_event", "event": "dice-rolled" }
-        ]
-      },
-      "ui": {
-        "component": "card",
-        "title": "🎲 {{ dice }}",
-        "sections": [
-          { "type": "key-value", "fields": ["result", "success", "description"] }
-        ]
-      },
-      "requires_response": false
-    }
-  },
-
-  "events": {
-    "emit": ["dice-rolled"],
-    "listen": []
-  },
-
-  "storage": {
-    "keys": ["last-roll"]
-  },
-
-  "permissions": {
-    "network": false,
-    "filesystem_scope": ["plugin", "data"],
-    "script_languages": ["python"]
-  },
-
-  "extensions": {}
-}
-```
-
 **PLUGIN.md**：
 
 ```markdown
 ---
-name: dice-roll
-version: 2.0.0
-description: 处理骰子检定与概率判定。
+name: combat
+description: 回合制战斗、骰子判定、技能检定与状态效果。
 when_to_use:
-  - 需要随机判定（攻击/防御/技能检定）
-  - 需要命中/豁免计算
-  - 概率事件需要公正裁决
+  - 叙事中发生战斗或冲突
+  - 需要技能检定或骰子判定
+  - 角色受到状态效果影响
 avoid_when:
-  - 纯叙事无检定
-  - 已经有确定结果的行动
-capability_summary: |
-  提供骰子解析与执行能力。可直接输出 json:dice_result，
-  或通过 json:plugin_use 调用 dice.roll capability 让后端掷骰。
+  - 纯对话或探索无战斗
+  - 已有确定结果的行动
 ---
 
 # Purpose
-对检定请求生成标准化随机结果。
+处理战斗机制：回合制战斗、骰子判定、技能检定、状态效果管理。
+
+# Blocks
+
+## dice_result
+当叙事中出现需要随机判定的情况时 emit：
+- emit_block("dice_result", {"dice": "2d6+3", "result": 11, "success": true, "description": "..."})
+- 必需字段：dice, result
+- 可选字段：success, description
+
+## combat_start
+战斗开始时 emit：
+- emit_block("combat_start", {"enemies": [...], "initiative_order": [...]})
+
+## combat_end
+战斗结束时 emit：
+- emit_block("combat_end", {"outcome": "victory", "rewards": [...]})
 
 # Capabilities
-- dice.roll: 解析骰子表达式（如 2d6+3, 1d20）并输出结构化掷骰结果
+- dice.roll: 调用 execute_script("combat", "dice.roll", {"expr": "2d6+3"})
+  返回 {"dice": "2d6+3", "result": 11, "detail": [4,4], "mod": 3}
 
-# Direct Blocks
-
-## json:dice_result
-当需要随机判定时（攻击/防御/技能检定/概率事件），输出此 block：
-
-` ` `json:dice_result
-{"dice": "2d6+3", "result": 11, "success": true, "description": "掷出 2d6+3 = 4+4+3 = 11"}
-` ` `
-
-必需字段：dice, result。可选字段：success, description。
-
-# Fallback
-脚本失败时输出 json:notification，提示玩家手动判定。
+# DB Operations
+- db_kv_set("combat.state", "current", {...}) — 保存当前战斗状态
+- db_log_append("combat.history", {...}) — 记录战斗日志
 
 # Rules
-- 每个检定独立输出一个 dice_result block
-- 不要在纯叙事中无故掷骰
-- 重大判定建议使用 plugin_use 调用 dice.roll 以确保公正
+- 每个判定使用 execute_script 确保公正随机
+- 战斗状态变化需同步 db_kv_set
+- 不要在纯叙事中无故发起判定
 ```
 
-### 10.2 core-blocks V2
+### 9.2 guide 插件（narrative 分组）
 
-**目录结构**：
+**目录结构**（无脚本的纯 block 插件）：
 
 ```text
-plugins/core-blocks/
+plugins/narrative/guide/
 ├── PLUGIN.md
 ├── manifest.json
 └── prompts/
-    └── core-instruction.md
-```
-
-**manifest.json**：
-
-```json
-{
-  "schema_version": "2.0",
-  "name": "core-blocks",
-  "version": "2.0.0",
-  "type": "global",
-  "required": true,
-  "description": "Core block declarations for state sync, character sheets, scenes, events, and notifications.",
-  "dependencies": [],
-
-  "prompt": {
-    "position": "system",
-    "priority": 95,
-    "template": "prompts/core-instruction.md"
-  },
-
-  "capabilities": {},
-
-  "blocks": {
-    "state_update": {
-      "instruction": "当角色属性/背包/世界状态有变化时，必须输出 json:state_update block...",
-      "handler": {
-        "actions": [
-          { "type": "builtin", "handler_name": "state_update" }
-        ]
-      },
-      "ui": { "component": "none" },
-      "requires_response": false
-    },
-    "character_sheet": {
-      "instruction": "当需要创建或编辑角色卡时，输出 json:character_sheet block...",
-      "handler": {
-        "actions": [
-          { "type": "builtin", "handler_name": "character_sheet" }
-        ]
-      },
-      "ui": { "component": "custom", "renderer_name": "character_sheet" },
-      "requires_response": false
-    },
-    "scene_update": {
-      "instruction": "当玩家移动到新地点或场景描述变化时，输出 json:scene_update block...",
-      "handler": {
-        "actions": [
-          { "type": "builtin", "handler_name": "scene_update" }
-        ]
-      },
-      "ui": { "component": "custom", "renderer_name": "scene_update" },
-      "requires_response": false
-    },
-    "event": {
-      "instruction": "当故事事件发生变化时（创建/演变/解决/结束），输出 json:event block...",
-      "handler": {
-        "actions": [
-          { "type": "builtin", "handler_name": "event" }
-        ]
-      },
-      "ui": { "component": "none" },
-      "requires_response": false
-    },
-    "notification": {
-      "instruction": "当需要向玩家显示系统提示或警告时，输出 json:notification block...",
-      "ui": { "component": "custom", "renderer_name": "notification" },
-      "requires_response": false
-    }
-  },
-
-  "events": {
-    "emit": [],
-    "listen": []
-  },
-
-  "storage": {
-    "keys": []
-  },
-
-  "permissions": {},
-
-  "extensions": {
-    "runtime_settings": {
-      "settings": [
-        {
-          "key": "narrative_tone",
-          "type": "enum",
-          "options": ["neutral", "grim", "heroic", "whimsical"],
-          "default": "neutral",
-          "affects": ["story"]
-        },
-        {
-          "key": "pacing",
-          "type": "enum",
-          "options": ["slow", "balanced", "fast"],
-          "default": "balanced",
-          "affects": ["story", "choices"]
-        },
-        {
-          "key": "response_length",
-          "type": "enum",
-          "options": ["short", "medium", "long"],
-          "default": "medium",
-          "affects": ["story"]
-        },
-        {
-          "key": "risk_bias",
-          "type": "enum",
-          "options": ["safe", "balanced", "dangerous"],
-          "default": "balanced",
-          "affects": ["story", "choices"]
-        }
-      ]
-    }
-  }
-}
+    └── guide-instruction.md
 ```
 
 **PLUGIN.md**：
 
 ```markdown
 ---
-name: core-blocks
-version: 2.0.0
-description: 核心 block 类型定义：状态同步、角色卡、场景、事件、通知。
+name: guide
+description: 为玩家提供行动建议和互动选项。
 when_to_use:
-  - 任何涉及角色/世界/场景/事件状态变化的回合
-  - 需要向玩家显示重要提示时
+  - 叙事结束后玩家需要行动方向
+  - 场景切换或重要剧情节点
 avoid_when:
-  - 纯对话无状态变化
-capability_summary: |
-  提供 state_update / character_sheet / scene_update / event / notification
-  五种基础 block 类型，是其他插件的基础依赖。
+  - 玩家已经明确表达了行动意图
+  - 战斗正在进行中
 ---
 
 # Purpose
-定义基础 block 类型，由后端 dispatcher 和前端 renderer 消费。
+分析叙事内容，生成分类行动建议供玩家选择。
 
-# Direct Blocks
+# Blocks
 
-## json:state_update
-角色属性/背包/世界状态变化时输出。
-
-## json:character_sheet
-创建或编辑角色卡时输出。
-
-## json:scene_update
-场景切换或描述更新时输出。
-
-## json:event
-故事事件创建/演变/解决/结束时输出。
-
-## json:notification
-向玩家显示系统提示时输出。
+## guide
+每次叙事结束后 emit：
+- emit_block("guide", {
+    "categories": [
+      {"style": "safe", "label": "稳妥", "suggestions": ["..."]},
+      {"style": "bold", "label": "大胆", "suggestions": ["..."]},
+      {"style": "creative", "label": "创意", "suggestions": ["..."]}
+    ]
+  })
+- categories 数量由 runtime_settings 的 category_count 决定（默认 3）
 
 # Rules
-- state_update 至少包含 characters 或 world 之一
-- scene_update.action 必须是 move 或 update
-- event.action 必须是 create / evolve / resolve / end 之一
+- 建议应与当前叙事紧密相关
+- 每个 category 至少 1 条建议
+- 风格标签必须包含 safe 和 bold
 ```
 
 ---
 
-## 11. 验收测试场景
+## 10. 验收测试场景
 
 ### 加载与校验
 
-1. **V2 加载**：有 manifest.json 的插件正确解析 manifest + PLUGIN.md
-2. **V1 回退**：无 manifest.json 的插件回退到 V1 frontmatter 解析，日志输出警告
-3. **一致性拒绝**：PLUGIN.md 与 manifest 的 name 不一致时导入失败
-4. **版本一致性拒绝**：PLUGIN.md 与 manifest 的 version 不一致时导入失败
-5. **必填字段缺失**：manifest.json 缺少 schema_version 时校验报错
-6. **name 格式校验**：name 含大写字母或空格时校验报错
+1. **manifest 加载**：有 manifest.json 的插件正确解析 manifest + PLUGIN.md
+2. **name 一致性校验**：PLUGIN.md 与 manifest 的 name 不一致时导入失败
+3. **必填字段缺失**：manifest.json 缺少 schema_version 时校验报错
+4. **name 格式校验**：name 含大写字母或空格时校验报错
+5. **分组目录发现**：`plugins/<group>/<plugin>/` 结构正确发现
 
-### Schema 加载
+### Plugin Agent 工具
 
-7. **索引加载**：有 schemas/index.yaml 时按索引路径加载 schema
-8. **扫描回退**：无索引时扫描 schemas/blocks/ 等固定目录可成功加载
-9. **schema 校验**：dice_result block data 不符合 schema 时被 validate_block_data 拒绝
+6. **list_plugins**：返回所有启用插件的 name + description
+7. **load_plugin**：返回完整 PLUGIN.md content + blocks + capabilities
+8. **emit_block**：输出的 block 被 dispatch_block 正确处理
+9. **execute_script**：脚本正确执行并返回 JSON 结果
+10. **db_* 工具**：kv_get/kv_set/graph_add/log_append 正确操作数据库
 
 ### Prompt 注入
 
-10. **6 位置注入**：各插件按 manifest.prompt 的 position/priority 注入正确位置
-11. **pre-response 增强**：启用 capability 的插件在 pre-response 中包含 plugin_use 格式说明
-12. **模板渲染**：Jinja2 模板正确渲染上下文变量（characters / world_state 等）
-
-### plugin_use 协议
-
-13. **正常调用**：LLM 输出 json:plugin_use → CapabilityExecutor 执行 → result block 返回
-14. **未声明 capability 拒绝**：plugin_use 引用不存在的 capability 时返回错误
-15. **未启用插件拒绝**：plugin_use 引用未启用的插件时返回错误
-16. **脚本超时**：script 执行超过 timeout_ms 时中止并返回错误
+11. **6 位置注入**：各插件按 manifest.prompt 的 position/priority 注入正确位置
+12. **模板渲染**：Jinja2 模板正确渲染上下文变量
+13. **纯叙事 prompt**：pre-response 不包含 block 格式说明
 
 ### 安全与审计
 
-17. **网络策略**：gameplay 插件脚本联网默认拒绝；global 插件默认允许
-18. **文件系统范围**：脚本访问插件目录和 data/ 可通过，访问其他路径被拒绝
-19. **审计完整性**：每次脚本执行在审计日志中有 invocation_id / exit_code / duration_ms / stdout / stderr
+14. **网络策略**：gameplay 插件脚本联网默认拒绝
+15. **文件系统范围**：脚本仅可访问插件目录和 data/
+16. **审计完整性**：每次脚本执行有 invocation_id / exit_code / duration_ms 记录
+
+### i18n
+
+17. **双语必备**：所有自带插件有 en + zh 翻译
+18. **前端显示**：PluginPanel 根据语言偏好显示正确的插件名和描述
 
 ---
 
-## 12. 假设与默认值
+## 11. 假设与默认值
 
 1. 首期脚本语言仅支持 Python。
 2. 首期不做插件导出。
 3. 首期不做项目级模板覆盖。
-4. API 路径不加 `/v2`，直接增强现有语义。
-5. 本规范中的"推荐"在首版实现中按"必须"执行。
-6. 无 manifest.json 的插件自动回退 V1 解析路径。
+4. 所有自带插件必须提供 `i18n.en` + `i18n.zh`。
+5. Plugin Agent 最多执行 10 轮工具调用（`MAX_TOOL_ROUNDS = 10`）。
+6. 主 LLM 不输出任何 block，所有 block 由 Plugin Agent 的 `emit_block()` 产出。
 
 ---
 
-文档版本：v2.0
-更新日期：2026-02-17
+文档版本：v3.0
+更新日期：2026-02-24

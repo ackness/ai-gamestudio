@@ -21,7 +21,7 @@
 | **数据库** | SQLite + aiosqlite | ✅ 已实现 | 本地零配置，可切 PostgreSQL |
 | **ORM** | SQLModel | ✅ 已实现 | Pydantic + SQLAlchemy 集成 |
 | **模板引擎** | Jinja2 | ✅ 已实现 | Prompt 模板变量替换 |
-| **插件元数据** | manifest.json + python-frontmatter | ✅ 已实现 | V2 manifest 优先，V1 frontmatter 回退 |
+| **插件元数据** | manifest.json + python-frontmatter | ✅ 已实现 | manifest.json 事实源 + PLUGIN.md Agent 运行手册 |
 | **实时通信** | WebSocket + HTTP fallback | ✅ 已实现 | 游戏消息推送、LLM 流式输出；Vercel 用 HTTP |
 | **小说生成流** | NDJSON Streaming | ✅ 已实现 | 按章节流式输出：outline/chapter_chunk/chapter/done |
 | **连通性诊断** | `/api/llm/test` | ✅ 已实现 | 测试当前模型配置可用性并返回延迟 |
