@@ -478,6 +478,18 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage, onRetriggerPl
                   t={t}
                 />
               )}
+
+              {isLast && msg.role === 'assistant' && (!msg.blocks || msg.blocks.length === 0) && onRetriggerPlugins && !isStreaming && !pluginProcessing && (
+                <div className="flex justify-start pl-1">
+                  <button
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-cyan-400 bg-muted/30 hover:bg-muted/50 border border-dashed border-muted-foreground/30 rounded-lg px-3 py-1.5 transition-colors"
+                    onClick={() => onRetriggerPlugins(msg.id)}
+                  >
+                    <Plug className="w-3 h-3" />
+                    <span>{'\u52a0\u8f7d\u63d2\u4ef6\uff08\u89d2\u8272\u5361\u3001\u573a\u666f\u7b49\uff09'}</span>
+                  </button>
+                </div>
+              )}
             </div>
           )
         })}
