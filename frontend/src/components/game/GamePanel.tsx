@@ -87,6 +87,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
     }
   }, [currentProject?.id, fetchSchemas, clearSchemas])
 
+
   // Hydrate notifications from messages
   useEffect(() => {
     if (!currentSession) {
@@ -158,14 +159,12 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
   if (!currentSession) {
     return (
       <div className="h-full flex flex-col overflow-hidden bg-background relative">
-        <div className="h-12 flex items-center justify-between px-4 bg-muted/20 border-b shrink-0 z-10">
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="text-sm font-semibold flex items-center gap-2">
-              <MonitorPlay className="w-4 h-4 text-muted-foreground" />
-              {gpt.noSession}
-            </span>
-            {modelBadge}
-            <TokenUsageBar />
+        <div className="@container h-12 flex items-center justify-between px-4 bg-muted/20 border-b shrink-0 z-10">
+          <div className="flex items-center gap-2 min-w-0">
+            <MonitorPlay className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span className="hidden @md:inline text-sm font-semibold truncate">{gpt.noSession}</span>
+            <span className="hidden @md:inline">{modelBadge}</span>
+            <span className="hidden @md:inline-flex"><TokenUsageBar /></span>
           </div>
           <SessionSelector
             sessions={sessions}
@@ -185,16 +184,14 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-background relative">
-      <div className="h-12 flex items-center justify-between px-4 bg-muted/20 border-b shrink-0 z-10">
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="text-sm font-semibold flex items-center gap-2">
-            <MonitorPlay className="w-4 h-4 text-primary" />
-            {gpt.gameSession}
-          </span>
-          {modelBadge}
-          <TokenUsageBar />
+      <div className="@container h-12 flex items-center justify-between px-4 bg-muted/20 border-b shrink-0 z-10">
+        <div className="flex items-center gap-2 min-w-0">
+          <MonitorPlay className="w-4 h-4 text-primary shrink-0" />
+          <span className="hidden @md:inline text-sm font-semibold truncate">{gpt.gameSession}</span>
+          <span className="hidden @md:inline">{modelBadge}</span>
+          <span className="hidden @md:inline-flex"><TokenUsageBar /></span>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -205,7 +202,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
                 disabled={archiveBusy || !currentSession}
               >
                 {archiveBusy ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                <span className="hidden sm:inline">{gpt.save}</span>
+                <span className="hidden @md:inline">{gpt.save}</span>
               </Button>
             </TooltipTrigger>
             <TooltipContent><p>{gpt.saveTip}</p></TooltipContent>
@@ -221,7 +218,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
                 disabled={archiveBusy || !currentSession}
               >
                 <History className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{gpt.restore}</span>
+                <span className="hidden @md:inline">{gpt.restore}</span>
               </Button>
             </TooltipTrigger>
             <TooltipContent><p>{gpt.restoreTip}</p></TooltipContent>
@@ -236,7 +233,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
                 onClick={() => setShowDebugLog((v) => !v)}
               >
                 <Bug className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{gpt.debug}</span>
+                <span className="hidden @md:inline">{gpt.debug}</span>
               </Button>
             </TooltipTrigger>
             <TooltipContent><p>{gpt.debugTip}</p></TooltipContent>

@@ -141,6 +141,7 @@ export interface LlmProfile {
 export interface PresetModel {
   id: string
   name: string
+  name_en?: string
   provider: string
   model: string
   api_base: string

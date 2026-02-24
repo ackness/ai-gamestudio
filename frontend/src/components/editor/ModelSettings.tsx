@@ -97,7 +97,7 @@ const T = {
 const LOCAL_PRESETS = [
   { id: 'ollama', name: 'Ollama', model: 'openai/llama3.2', apiBase: 'http://localhost:11434/v1', apiKey: 'ollama' },
   { id: 'lmstudio', name: 'LM Studio', model: 'openai/local-model', apiBase: 'http://localhost:1234/v1', apiKey: 'lm-studio' },
-  { id: 'openai-compat', name: 'Custom', model: 'openai/', apiBase: '', apiKey: '' },
+  { id: 'openai-compat', name: '自定义', name_en: 'Custom', model: 'openai/', apiBase: '', apiKey: '' },
 ]
 
 // Friendly provider display names
@@ -160,6 +160,20 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
     setImageApiBase(local.imageApiBase || currentProject.image_api_base || '')
     setImageApiBaseAutoSuffix(local.imageApiBaseAutoSuffix !== false)
   }, [currentProject?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Backfill model/apiBase from llmInfo when no explicit config is saved
+  useEffect(() => {
+    if (!llmInfo || !currentProject) return
+    const local = getBrowserLlmConfig(currentProject.id)
+    const hasExplicitModel = !!(local.model || currentProject.llm_model)
+    if (!hasExplicitModel && llmInfo.model) {
+      setModel((prev) => prev || llmInfo.model)
+    }
+    const hasExplicitBase = !!(local.apiBase || currentProject.llm_api_base)
+    if (!hasExplicitBase && llmInfo.api_base) {
+      setApiBase((prev) => prev || llmInfo.api_base || '')
+    }
+  }, [llmInfo, currentProject])
 
   // Determine where the current config comes from
   const getConfigSource = () => {
@@ -350,12 +364,12 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
                       {items.map((p) => (
                         <Button
                           key={p.id}
-                          variant={model === p.model ? 'default' : 'outline'}
+                          variant={model === p.model && (model || p.model) ? 'default' : 'outline'}
                           size="sm"
                           className="h-7 text-xs"
                           onClick={() => handlePresetClick(p)}
                         >
-                          {p.name}
+                          {language === 'en' && p.name_en ? p.name_en : p.name}
                         </Button>
                       ))}
                     </div>
@@ -385,7 +399,7 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
                     setApiKey(p.apiKey)
                   }}
                 >
-                  {p.name}
+                  {language === 'en' && 'name_en' in p && p.name_en ? p.name_en : p.name}
                 </Button>
               ))}
             </div>

@@ -78,9 +78,9 @@ export function SessionSelector({ sessions, currentSession, onSwitch, onNew, onD
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 px-2.5">
-          {t.sessions}
-          <Badge variant="secondary" className="px-1 text-[10px] h-4 leading-none ml-1">
+        <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 px-1.5 @md:px-2.5">
+          <span className="hidden @md:inline">{t.sessions}</span>
+          <Badge variant="secondary" className="px-1 text-[10px] h-4 leading-none @md:ml-1">
             {sessions.length}
           </Badge>
           <ChevronDown className="w-3 h-3 opacity-50 ml-0.5" />

@@ -391,7 +391,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
                 .filter((p) => p.provider === 'deepseek')
                 .map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}
+                    {language === 'en' && p.name_en ? p.name_en : p.name}
                   </option>
                 ))}
             </optgroup>
@@ -400,7 +400,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
                 .filter((p) => p.provider === 'openrouter')
                 .map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}
+                    {language === 'en' && p.name_en ? p.name_en : p.name}
                   </option>
                 ))}
             </optgroup>
