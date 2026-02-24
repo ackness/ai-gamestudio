@@ -96,7 +96,6 @@ export interface Plugin {
   dependencies?: string[]
   required_by?: string[]
   version?: string
-  manifest_source?: 'manifest' | 'v1_fallback'
   capabilities?: string[]
   has_script_capability?: boolean
   schema_status?: string

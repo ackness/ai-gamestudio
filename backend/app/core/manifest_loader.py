@@ -1,9 +1,4 @@
-"""ManifestLoader: parse manifest.json and convert to V1-compatible metadata.
-
-V2 plugins use manifest.json as the machine truth source alongside PLUGIN.md
-(which retains only LLM-facing fields). This module loads and validates manifests,
-and provides a bridge to the V1 metadata shape used by the rest of the system.
-"""
+"""ManifestLoader: parse and validate plugin manifest.json (schema v1)."""
 from __future__ import annotations
 
 import json
@@ -15,7 +10,15 @@ from loguru import logger
 
 from backend.app.core.plugin_engine import NAME_RE
 
-MANIFEST_REQUIRED_FIELDS = {"schema_version", "name", "version", "type", "required", "description"}
+PLUGIN_SCHEMA_VERSION = "1.0"
+MANIFEST_REQUIRED_FIELDS = {
+    "schema_version",
+    "name",
+    "version",
+    "type",
+    "required",
+    "description",
+}
 
 
 @dataclass
@@ -37,14 +40,13 @@ class PluginManifest:
     i18n: dict[str, dict[str, str]] = field(default_factory=dict)
     default_enabled: bool = False
     supersedes: list[str] = field(default_factory=list)
-    manifest_source: str = "manifest"
     max_triggers: int | None = None  # None = unlimited; per-session trigger limit
 
 
 def load_manifest(plugin_dir: pathlib.Path) -> PluginManifest | None:
     """Load and parse a manifest.json from a plugin directory.
 
-    Returns None if manifest.json doesn't exist (triggers V1 fallback).
+    Returns None if manifest.json doesn't exist.
     Raises ValueError if the file exists but is invalid.
     """
     manifest_path = plugin_dir / "manifest.json"
@@ -93,7 +95,7 @@ def load_manifest(plugin_dir: pathlib.Path) -> PluginManifest | None:
 
 
 def validate_manifest(data: dict[str, Any], plugin_dir_name: str) -> list[str]:
-    """Validate manifest data against V2 spec rules.
+    """Validate manifest data against plugin schema v1 rules.
 
     Returns a list of error strings (empty means valid).
     """
@@ -107,10 +109,10 @@ def validate_manifest(data: dict[str, Any], plugin_dir_name: str) -> list[str]:
     if errors:
         return errors  # Can't continue if required fields missing
 
-    # schema_version must be "2.0"
-    if data.get("schema_version") != "2.0":
+    # schema_version must match the current schema
+    if data.get("schema_version") != PLUGIN_SCHEMA_VERSION:
         errors.append(
-            f"schema_version must be '2.0', got '{data.get('schema_version')}'"
+            f"schema_version must be '{PLUGIN_SCHEMA_VERSION}', got '{data.get('schema_version')}'"
         )
 
     # name must match directory
@@ -138,12 +140,8 @@ def validate_manifest(data: dict[str, Any], plugin_dir_name: str) -> list[str]:
     return errors
 
 
-def manifest_to_v1_metadata(manifest: PluginManifest) -> dict[str, Any]:
-    """Convert a PluginManifest to V1-compatible metadata dict.
-
-    This allows the rest of the system (runtime_settings_service, etc.)
-    to work unchanged.
-    """
+def manifest_to_metadata(manifest: PluginManifest) -> dict[str, Any]:
+    """Convert a PluginManifest into the runtime metadata shape."""
     metadata: dict[str, Any] = {
         "name": manifest.name,
         "version": manifest.version,
@@ -157,7 +155,7 @@ def manifest_to_v1_metadata(manifest: PluginManifest) -> dict[str, Any]:
     if manifest.prompt:
         metadata["prompt"] = manifest.prompt
 
-    # Blocks — pass through as-is (same shape as V1 frontmatter)
+    # Blocks — pass through as-is.
     if manifest.blocks:
         metadata["blocks"] = manifest.blocks
 
@@ -169,7 +167,7 @@ def manifest_to_v1_metadata(manifest: PluginManifest) -> dict[str, Any]:
     if manifest.storage:
         metadata["storage"] = manifest.storage
 
-    # Extensions — convert runtime_settings array format to V1 dict format
+    # Extensions — runtime settings are normalized into fields dict.
     if manifest.extensions:
         extensions = dict(manifest.extensions)
         rt = extensions.get("runtime_settings")

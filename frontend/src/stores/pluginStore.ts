@@ -60,7 +60,6 @@ export const usePluginStore = create<PluginStore>((set) => ({
         dependencies: p.dependencies || enabledMap.get(p.name)?.dependencies || [],
         required_by: enabledMap.get(p.name)?.required_by || [],
         version: p.version || '',
-        manifest_source: p.manifest_source || 'v1_fallback',
         capabilities: p.capabilities || [],
         has_script_capability: !!p.has_script_capability,
         i18n: p.i18n || {},

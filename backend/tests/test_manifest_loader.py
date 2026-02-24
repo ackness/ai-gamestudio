@@ -10,7 +10,7 @@ from backend.app.core.manifest_loader import (
     PluginManifest,
     load_manifest,
     load_schemas,
-    manifest_to_v1_metadata,
+    manifest_to_metadata,
     validate_manifest,
 )
 
@@ -23,7 +23,7 @@ def _write_manifest(plugin_dir: Path, data: dict) -> Path:
 
 def _minimal_manifest(name: str = "test-plugin", **overrides) -> dict:
     base = {
-        "schema_version": "2.0",
+        "schema_version": "1.0",
         "name": name,
         "version": "1.0.0",
         "type": "gameplay",
@@ -56,7 +56,6 @@ class TestLoadManifest:
         assert manifest.version == "1.0.0"
         assert manifest.type == "gameplay"
         assert manifest.required is False
-        assert manifest.manifest_source == "manifest"
 
     def test_raises_on_invalid_json(self, tmp_path: Path):
         plugin_dir = tmp_path / "test-plugin"
@@ -68,7 +67,7 @@ class TestLoadManifest:
     def test_raises_on_missing_required_fields(self, tmp_path: Path):
         plugin_dir = tmp_path / "test-plugin"
         plugin_dir.mkdir()
-        _write_manifest(plugin_dir, {"schema_version": "2.0"})
+        _write_manifest(plugin_dir, {"schema_version": "1.0"})
         with pytest.raises(ValueError, match="Missing required field"):
             load_manifest(plugin_dir)
 
@@ -76,9 +75,9 @@ class TestLoadManifest:
         plugin_dir = tmp_path / "test-plugin"
         plugin_dir.mkdir()
         data = _minimal_manifest()
-        data["schema_version"] = "1.0"
+        data["schema_version"] = "2.0"
         _write_manifest(plugin_dir, data)
-        with pytest.raises(ValueError, match="schema_version must be '2.0'"):
+        with pytest.raises(ValueError, match="schema_version must be '1.0'"):
             load_manifest(plugin_dir)
 
     def test_raises_on_name_mismatch(self, tmp_path: Path):
@@ -127,13 +126,13 @@ class TestValidateManifest:
         assert errors == []
 
     def test_missing_required_fields(self):
-        errors = validate_manifest({"schema_version": "2.0"}, "test-plugin")
+        errors = validate_manifest({"schema_version": "1.0"}, "test-plugin")
         assert len(errors) > 0
         assert any("Missing required field" in e for e in errors)
 
     def test_wrong_schema_version(self):
         data = _minimal_manifest()
-        data["schema_version"] = "3.0"
+        data["schema_version"] = "2.0"
         errors = validate_manifest(data, "test-plugin")
         assert any("schema_version" in e for e in errors)
 
@@ -161,14 +160,14 @@ class TestValidateManifest:
 
 
 # ---------------------------------------------------------------------------
-# manifest_to_v1_metadata
+# manifest_to_metadata
 # ---------------------------------------------------------------------------
 
 
-class TestManifestToV1Metadata:
+class TestManifestToMetadata:
     def test_basic_conversion(self):
         manifest = PluginManifest(
-            schema_version="2.0",
+            schema_version="1.0",
             name="test-plugin",
             version="1.0.0",
             type="gameplay",
@@ -177,7 +176,7 @@ class TestManifestToV1Metadata:
             dependencies=["dep-a"],
             prompt={"position": "world-state", "priority": 50},
         )
-        meta = manifest_to_v1_metadata(manifest)
+        meta = manifest_to_metadata(manifest)
         assert meta["name"] == "test-plugin"
         assert meta["version"] == "1.0.0"
         assert meta["type"] == "gameplay"
@@ -187,7 +186,7 @@ class TestManifestToV1Metadata:
 
     def test_blocks_pass_through(self):
         manifest = PluginManifest(
-            schema_version="2.0",
+            schema_version="1.0",
             name="test-plugin",
             version="1.0.0",
             type="gameplay",
@@ -195,13 +194,13 @@ class TestManifestToV1Metadata:
             description="test",
             blocks={"my_block": {"instruction": "do it"}},
         )
-        meta = manifest_to_v1_metadata(manifest)
+        meta = manifest_to_metadata(manifest)
         assert meta["blocks"]["my_block"]["instruction"] == "do it"
 
     def test_blocks_with_inline_schema(self):
         schema = {"type": "object", "properties": {"x": {"type": "string"}}}
         manifest = PluginManifest(
-            schema_version="2.0",
+            schema_version="1.0",
             name="test-plugin",
             version="1.0.0",
             type="gameplay",
@@ -209,13 +208,13 @@ class TestManifestToV1Metadata:
             description="test",
             blocks={"my_block": {"schema": schema}},
         )
-        meta = manifest_to_v1_metadata(manifest)
+        meta = manifest_to_metadata(manifest)
         assert meta["blocks"]["my_block"]["schema"] == schema
 
     def test_blocks_with_schema_path_string(self):
         """Schema as a string path should pass through as-is."""
         manifest = PluginManifest(
-            schema_version="2.0",
+            schema_version="1.0",
             name="test-plugin",
             version="1.0.0",
             type="gameplay",
@@ -223,13 +222,13 @@ class TestManifestToV1Metadata:
             description="test",
             blocks={"my_block": {"schema": "schemas/blocks/my_block.yaml"}},
         )
-        meta = manifest_to_v1_metadata(manifest)
+        meta = manifest_to_metadata(manifest)
         assert meta["blocks"]["my_block"]["schema"] == "schemas/blocks/my_block.yaml"
 
     def test_runtime_settings_array_to_dict_conversion(self):
-        """V2 settings array should be converted to V1 fields dict."""
+        """Runtime settings array should be normalized to fields dict."""
         manifest = PluginManifest(
-            schema_version="2.0",
+            schema_version="1.0",
             name="test-plugin",
             version="1.0.0",
             type="gameplay",
@@ -255,7 +254,7 @@ class TestManifestToV1Metadata:
                 }
             },
         )
-        meta = manifest_to_v1_metadata(manifest)
+        meta = manifest_to_metadata(manifest)
         rt = meta["extensions"]["runtime_settings"]
         assert "fields" in rt
         assert "settings" not in rt
@@ -267,7 +266,7 @@ class TestManifestToV1Metadata:
 
     def test_extensions_without_runtime_settings_pass_through(self):
         manifest = PluginManifest(
-            schema_version="2.0",
+            schema_version="1.0",
             name="test-plugin",
             version="1.0.0",
             type="gameplay",
@@ -275,19 +274,19 @@ class TestManifestToV1Metadata:
             description="test",
             extensions={"custom_ext": {"foo": "bar"}},
         )
-        meta = manifest_to_v1_metadata(manifest)
+        meta = manifest_to_metadata(manifest)
         assert meta["extensions"]["custom_ext"]["foo"] == "bar"
 
     def test_empty_extensions(self):
         manifest = PluginManifest(
-            schema_version="2.0",
+            schema_version="1.0",
             name="test-plugin",
             version="1.0.0",
             type="gameplay",
             required=False,
             description="test",
         )
-        meta = manifest_to_v1_metadata(manifest)
+        meta = manifest_to_metadata(manifest)
         assert "extensions" not in meta
 
 

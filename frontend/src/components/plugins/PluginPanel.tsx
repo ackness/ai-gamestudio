@@ -26,7 +26,6 @@ const pluginText: Record<string, Record<string, string>> = {
     dependsOn: '依赖',
     viewPromptAndSchema: '查看提示词与 Schema',
     auto: '自动',
-    v1: '兼容',
     scriptBadge: 'SCRIPT',
     scriptWarningTitle: '检测到可执行脚本插件',
     scriptWarningDesc: '这些插件可执行本地脚本。生产环境启用前请先审查插件源码。',
@@ -47,7 +46,6 @@ const pluginText: Record<string, Record<string, string>> = {
     dependsOn: 'Depends on',
     viewPromptAndSchema: 'View prompt and schema',
     auto: 'auto',
-    v1: 'v1',
     scriptBadge: 'SCRIPT',
     scriptWarningTitle: 'Script execution plugins detected',
     scriptWarningDesc: 'These plugins can execute local scripts. Review plugin source before enabling in production.',
@@ -249,9 +247,6 @@ export function PluginPanel() {
                   <Badge variant="secondary" className="text-[10px] h-4 px-1">{plugin.type}</Badge>
                   {plugin.auto_enabled && (
                     <Badge variant="outline" className="text-[10px] h-4 px-1 text-cyan-400 border-cyan-400/30">{t.auto}</Badge>
-                  )}
-                  {plugin.manifest_source === 'v1_fallback' && (
-                    <Badge variant="outline" className="text-[10px] h-4 px-1 text-orange-400 border-orange-400/30">{t.v1}</Badge>
                   )}
                   {plugin.has_script_capability && (
                     <Badge variant="destructive" className="text-[10px] h-4 px-1">{t.scriptBadge}</Badge>

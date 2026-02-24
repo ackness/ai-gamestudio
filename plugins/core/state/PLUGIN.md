@@ -23,7 +23,9 @@ update_and_emit({
   "writes": [
     {"collection": "characters", "key": "角色名", "value": {name, attributes, inventory}}
   ],
-  "emit": {"type": "state_update", "data": {"characters": [...], "world": {...}}}
+  "emits": [
+    {"type": "state_update", "data": {"characters": [...], "world": {...}}}
+  ]
 })
 ```
 

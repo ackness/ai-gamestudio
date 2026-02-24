@@ -315,15 +315,6 @@ async def _execute_tool(tool_call: Any, ctx: _ToolContext) -> Any:
             case "db_graph_add":
                 await ctx.game_db.graph_add(args["from_id"], args["to_id"], args["relation"], args.get("data"))
                 return {"status": "ok"}
-            # Backward compat: handle old tool names if LLM hallucinates them
-            case "db_kv_set":
-                await ctx.game_db.kv_set(args["collection"], args["key"], args["value"])
-                return {"status": "ok"}
-            case "db_kv_get":
-                val = await ctx.game_db.kv_get(args["collection"], args["key"])
-                return val if val is not None else {"_empty": True}
-            case "db_kv_query":
-                return await ctx.game_db.kv_query(args["collection"], args.get("filter_key"))
             case _:
                 return {"error": f"Unknown tool: {name}"}
     except Exception as e:
@@ -340,20 +331,12 @@ async def _handle_update_and_emit(args: dict, ctx: _ToolContext) -> dict:
         await db.kv_set(w["collection"], w["key"], w["value"])
         written += 1
 
-    # Logs: support both "logs" (array) and "log" (single, backward compat)
     logs = args.get("logs", [])
-    log_single = args.get("log")
-    if log_single and isinstance(log_single, dict):
-        logs.append(log_single)
     for log_entry in logs:
         if isinstance(log_entry, dict):
             await db.log_append(log_entry["collection"], log_entry["entry"])
 
-    # Emits: support both "emits" (array) and "emit" (single, backward compat)
     emits = args.get("emits", [])
-    emit_single = args.get("emit")
-    if emit_single and isinstance(emit_single, dict):
-        emits.append(emit_single)
 
     emitted_types: list[str] = []
     for emit in emits:

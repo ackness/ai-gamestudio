@@ -259,9 +259,6 @@ async def execute_tool(
             return await _handle_db_read(args, game_db)
         if name.startswith("db_"):
             return await _handle_db(name, args, game_db)
-        # Backward compat for old tool names
-        if name in ("list_plugins", "load_plugin"):
-            return {"status": "deprecated", "message": "Use system prompt context instead"}
         return {"error": f"Unknown tool: {name}"}
     except Exception as exc:
         errors.append(f"Tool {name} error: {exc}")
@@ -281,19 +278,9 @@ def _handle_emit(args: dict, blocks: list[dict], errors: list[str]) -> dict:
 
 
 async def _handle_db(name: str, args: dict, db: GameDB) -> Any:
-    if name == "db_kv_get":
-        val = await db.kv_get(args["collection"], args["key"])
-        return val if val is not None else {"_empty": True}
-    if name == "db_kv_set":
-        await db.kv_set(args["collection"], args["key"], args["value"])
-        return {"status": "ok"}
-    if name == "db_kv_query":
-        return await db.kv_query(args["collection"], args.get("filter_key"))
     if name == "db_graph_add":
         await db.graph_add(args["from_id"], args["to_id"], args["relation"], args.get("data"))
         return {"status": "ok"}
-    if name == "db_graph_query":
-        return await db.graph_query(args.get("node_id"), args.get("relation"), args.get("direction", "both"))
     if name == "db_log_append":
         await db.log_append(args["collection"], args["entry"])
         return {"status": "ok"}
@@ -310,20 +297,12 @@ async def _handle_update_and_emit(args: dict, db: GameDB, blocks: list[dict], er
         await db.kv_set(w["collection"], w["key"], w["value"])
         written += 1
 
-    # Logs: support both "logs" (array) and "log" (single)
     logs = args.get("logs", [])
-    log_single = args.get("log")
-    if log_single and isinstance(log_single, dict):
-        logs.append(log_single)
     for log_entry in logs:
         if isinstance(log_entry, dict):
             await db.log_append(log_entry["collection"], log_entry["entry"])
 
-    # Emits: support both "emits" (array) and "emit" (single)
     emits = args.get("emits", [])
-    emit_single = args.get("emit")
-    if emit_single and isinstance(emit_single, dict):
-        emits.append(emit_single)
 
     emitted_types: list[str] = []
     for emit in emits:

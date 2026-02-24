@@ -182,10 +182,10 @@ async def validate_plugin_import(
         errors.append("Missing PLUGIN.md")
         return ImportValidationResult(valid=False, errors=errors, warnings=warnings)
 
-    # Must have manifest.json for V2
+    # Must have manifest.json
     manifest_path = path / "manifest.json"
     if not manifest_path.is_file():
-        warnings.append("No manifest.json found; plugin will use V1 fallback")
+        errors.append("Missing manifest.json")
     else:
         from backend.app.core.manifest_loader import load_manifest
 
@@ -301,8 +301,6 @@ async def get_plugin_detail(plugin_name: str):
     blocks: dict = {}
     if manifest and manifest.blocks:
         blocks = manifest.blocks
-    elif metadata.get("blocks"):
-        blocks = metadata.get("blocks", {})
 
     # Capabilities summary
     capabilities: dict = {}

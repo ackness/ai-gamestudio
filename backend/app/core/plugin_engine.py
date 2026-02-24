@@ -1,9 +1,8 @@
-"""Plugin engine: discover, load, validate, and render PLUGIN.md plugins.
+"""Plugin engine: discover, load, validate, and render plugins.
 
-V2 plugins use manifest.json as the machine truth source. When manifest.json
-exists, metadata is loaded from it; PLUGIN.md retains only LLM-facing fields.
-When manifest.json is absent, the engine falls back to V1 behavior (full
-frontmatter parsing with a deprecation warning).
+Canonical plugin layout:
+    plugins/<group>/<plugin>/manifest.json
+    plugins/<group>/<plugin>/PLUGIN.md
 
 CLI usage:
     python -m backend.app.core.plugin_engine validate plugins/
@@ -16,22 +15,24 @@ import pathlib
 import re
 import sys
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import frontmatter
 from jinja2 import BaseLoader, Environment
 from loguru import logger
 
-REQUIRED_FIELDS = {"name", "description", "type", "required"}
+if TYPE_CHECKING:
+    from backend.app.core.plugin_group import PluginGroup
+
 NAME_RE = re.compile(r"^[a-z][a-z0-9-]*[a-z0-9]$|^[a-z]$")
 
-# V1 frontmatter fields that are LLM-only in V2 (merged from PLUGIN.md)
+# Optional LLM-facing frontmatter retained in PLUGIN.md.
 _LLM_ONLY_FIELDS = {"when_to_use", "avoid_when", "capability_summary"}
 
 
 @dataclass
 class BlockDeclaration:
-    """Declarative block type defined in a plugin's manifest.json or PLUGIN.md frontmatter."""
+    """Declarative block type defined in a plugin manifest."""
 
     block_type: str
     plugin_name: str
@@ -123,7 +124,6 @@ class PluginEngine:
             "supersedes": meta.get("supersedes", []),
             "version": meta.get("version", ""),
             "dependencies": meta.get("dependencies", []),
-            "manifest_source": loaded.get("manifest_source", "v1_fallback"),
             "capabilities": list(manifest.capabilities.keys()) if manifest else [],
             "has_script_capability": has_script_capability,
             "i18n": meta.get("i18n", {}),
@@ -171,9 +171,7 @@ class PluginEngine:
     def load(self, plugin_name: str, plugins_dir: str | None = None) -> dict[str, Any] | None:
         """Load full plugin content (level 2 loading).
 
-        Returns metadata + full markdown body, or None if not found.
-        V2: If manifest.json exists, loads metadata from it and merges
-        LLM-only fields from PLUGIN.md frontmatter.
+        Returns metadata + full markdown body, or None if not found/invalid.
         """
         from backend.app.core.config import settings
 
@@ -200,52 +198,33 @@ class PluginEngine:
             logger.warning("Failed to parse {}", plugin_path)
             return None
 
-        # Try V2 manifest loading
-        has_manifest = manifest_path.is_file()
-        if has_manifest:
-            from backend.app.core.manifest_loader import load_manifest, manifest_to_v1_metadata
+        if not manifest_path.is_file():
+            logger.warning("Plugin '{}' missing manifest.json", plugin_name)
+            return None
 
-            try:
-                manifest = load_manifest(plugin_dir)
-            except ValueError as exc:
-                logger.warning("Invalid manifest.json for '{}': {}", plugin_name, exc)
-                manifest = None
+        from backend.app.core.manifest_loader import load_manifest, manifest_to_metadata
 
-            if manifest is not None:
-                # V2 path: metadata from manifest, LLM-only fields from PLUGIN.md
-                metadata = manifest_to_v1_metadata(manifest)
-                # Merge LLM-only fields from PLUGIN.md frontmatter
-                for field_name in _LLM_ONLY_FIELDS:
-                    if field_name in post.metadata:
-                        metadata[field_name] = post.metadata[field_name]
+        try:
+            manifest = load_manifest(plugin_dir)
+        except ValueError as exc:
+            logger.warning("Invalid manifest.json for '{}': {}", plugin_name, exc)
+            return None
 
-                loaded: dict[str, Any] = {
-                    "name": manifest.name,
-                    "metadata": metadata,
-                    "content": post.content,
-                    "path": str(plugin_dir),
-                    "manifest_source": "manifest",
-                    "manifest": manifest,
-                }
-                self._plugin_cache[cache_key] = (combined_sig, copy.deepcopy(loaded))
-                return loaded
+        if manifest is None:
+            logger.warning("Plugin '{}' missing manifest metadata", plugin_name)
+            return None
 
-        # V1 fallback
-        if has_manifest:
-            # manifest.json existed but was invalid — already warned above
-            pass
-        else:
-            logger.warning(
-                "Plugin '{}' has no manifest.json, using V1 fallback", plugin_name
-            )
+        metadata = manifest_to_metadata(manifest)
+        for field_name in _LLM_ONLY_FIELDS:
+            if field_name in post.metadata:
+                metadata[field_name] = post.metadata[field_name]
 
-        loaded = {
-            "name": post.get("name", plugin_name),
-            "metadata": dict(post.metadata),
+        loaded: dict[str, Any] = {
+            "name": manifest.name,
+            "metadata": metadata,
             "content": post.content,
             "path": str(plugin_dir),
-            "manifest_source": "v1_fallback",
-            "manifest": None,
+            "manifest": manifest,
         }
         self._plugin_cache[cache_key] = (combined_sig, copy.deepcopy(loaded))
         return loaded
@@ -523,8 +502,7 @@ class PluginEngine:
     def validate(self, plugins_dir: str) -> list[dict[str, Any]]:
         """Validate all plugins in plugins_dir against spec rules.
 
-        V2 enhanced: when manifest.json exists, validates it; also checks
-        name/version consistency between manifest.json and PLUGIN.md.
+        Every plugin must include both PLUGIN.md and manifest.json.
         """
         from backend.app.core.manifest_loader import load_manifest, validate_manifest
 
@@ -567,112 +545,79 @@ class PluginEngine:
 
             meta = post.metadata
 
-            # V2: validate manifest.json if present
-            if manifest_json.is_file():
-                try:
-                    manifest = load_manifest(child)
-                except ValueError as exc:
-                    errors.append(f"Invalid manifest.json: {exc}")
-                    results.append({"plugin": child.name, "errors": errors})
-                    continue
+            # Rule 3: must have manifest.json
+            if not manifest_json.is_file():
+                errors.append("Missing manifest.json")
+                results.append({"plugin": child.name, "errors": errors})
+                continue
 
-                if manifest is not None:
-                    # Check name/version consistency between manifest and PLUGIN.md
-                    md_name = meta.get("name")
-                    if md_name and md_name != manifest.name:
-                        errors.append(
-                            f"Name mismatch: PLUGIN.md says '{md_name}', "
-                            f"manifest.json says '{manifest.name}'"
-                        )
-                    md_version = meta.get("version")
-                    if md_version and str(md_version) != str(manifest.version):
-                        errors.append(
-                            f"Version mismatch: PLUGIN.md says '{md_version}', "
-                            f"manifest.json says '{manifest.version}'"
-                        )
+            try:
+                manifest = load_manifest(child)
+            except ValueError as exc:
+                errors.append(f"Invalid manifest.json: {exc}")
+                results.append({"plugin": child.name, "errors": errors})
+                continue
 
-                    # Validate manifest against its own rules
-                    import json
-                    raw = json.loads(manifest_json.read_text(encoding="utf-8"))
-                    manifest_errors = validate_manifest(raw, child.name)
-                    errors.extend(manifest_errors)
+            if manifest is None:
+                errors.append("Invalid manifest.json")
+                results.append({"plugin": child.name, "errors": errors})
+                continue
 
-                    # Check prompt template exists (from manifest)
-                    if manifest.prompt and manifest.prompt.get("template"):
-                        tpl = (child / manifest.prompt["template"]).resolve()
-                        if not tpl.is_relative_to(child.resolve()):
-                            errors.append(
-                                f"Prompt template escapes plugin directory: {manifest.prompt['template']}"
-                            )
-                        elif not tpl.is_file():
-                            errors.append(
-                                f"Prompt template not found: {manifest.prompt['template']}"
-                            )
-
-                    # Check capability script paths exist
-                    for cap_id, cap_cfg in manifest.capabilities.items():
-                        impl = cap_cfg.get("implementation", {})
-                        if impl.get("type") == "script":
-                            script = impl.get("script", "")
-                            if script:
-                                script_resolved = (child / script).resolve()
-                                if not script_resolved.is_relative_to(child.resolve()):
-                                    errors.append(
-                                        f"Capability '{cap_id}' script escapes plugin directory: {script}"
-                                    )
-                                elif not script_resolved.is_file():
-                                    errors.append(
-                                        f"Capability '{cap_id}' script not found: {script}"
-                                    )
-
-                    # Check dependencies exist
-                    for dep in manifest.dependencies:
-                        if self._resolve_plugin_dir(dep, plugins_dir) is None:
-                            errors.append(f"Dependency '{dep}' not found")
-
-                    results.append({"plugin": child.name, "errors": errors})
-                    continue
-
-            # V1 fallback validation
-            # Rule 3: required fields
-            for field_name in REQUIRED_FIELDS:
-                if field_name not in meta:
-                    errors.append(f"Missing required field: {field_name}")
-
-            # Rule 4: name matches directory
-            if meta.get("name") != child.name:
+            # Check name/version consistency between manifest and PLUGIN.md
+            md_name = meta.get("name")
+            if md_name and md_name != manifest.name:
                 errors.append(
-                    f"name '{meta.get('name')}' does not match directory '{child.name}'"
+                    f"Name mismatch: PLUGIN.md says '{md_name}', "
+                    f"manifest.json says '{manifest.name}'"
+                )
+            md_version = meta.get("version")
+            if md_version and str(md_version) != str(manifest.version):
+                errors.append(
+                    f"Version mismatch: PLUGIN.md says '{md_version}', "
+                    f"manifest.json says '{manifest.version}'"
                 )
 
-            # Rule 5: name format
-            name = meta.get("name", "")
-            if name and not NAME_RE.match(name):
-                errors.append(
-                    f"name '{name}' must be lowercase alphanumeric + hyphens, "
-                    "not starting/ending with hyphen"
-                )
+            # Validate manifest against its own rules
+            import json
 
-            # Rule 6: dependencies exist
-            for dep in meta.get("dependencies", []):
+            raw = json.loads(manifest_json.read_text(encoding="utf-8"))
+            manifest_errors = validate_manifest(raw, child.name)
+            errors.extend(manifest_errors)
+
+            # Check prompt template exists (from manifest)
+            if manifest.prompt and manifest.prompt.get("template"):
+                tpl = (child / manifest.prompt["template"]).resolve()
+                if not tpl.is_relative_to(child.resolve()):
+                    errors.append(
+                        f"Prompt template escapes plugin directory: {manifest.prompt['template']}"
+                    )
+                elif not tpl.is_file():
+                    errors.append(
+                        f"Prompt template not found: {manifest.prompt['template']}"
+                    )
+
+            # Check capability script paths exist
+            for cap_id, cap_cfg in manifest.capabilities.items():
+                impl = cap_cfg.get("implementation", {})
+                if impl.get("type") != "script":
+                    continue
+                script = impl.get("script", "")
+                if not script:
+                    continue
+                script_resolved = (child / script).resolve()
+                if not script_resolved.is_relative_to(child.resolve()):
+                    errors.append(
+                        f"Capability '{cap_id}' script escapes plugin directory: {script}"
+                    )
+                elif not script_resolved.is_file():
+                    errors.append(
+                        f"Capability '{cap_id}' script not found: {script}"
+                    )
+
+            # Check dependencies exist
+            for dep in manifest.dependencies:
                 if self._resolve_plugin_dir(dep, plugins_dir) is None:
                     errors.append(f"Dependency '{dep}' not found")
-
-            # Rule 7: hook scripts exist
-            hooks = meta.get("hooks", {})
-            for hook_name, script_path in hooks.items():
-                if hook_name == "on-cron":
-                    continue  # cron is a string expression, not a file
-                script_file = child / script_path
-                if not script_file.is_file():
-                    errors.append(f"Hook script not found: {script_path}")
-
-            # Rule 8: prompt template exists
-            prompt_cfg = meta.get("prompt", {})
-            if prompt_cfg and prompt_cfg.get("template"):
-                tpl = child / prompt_cfg["template"]
-                if not tpl.is_file():
-                    errors.append(f"Prompt template not found: {prompt_cfg['template']}")
 
             results.append({"plugin": child.name, "errors": errors})
 
@@ -711,8 +656,7 @@ def _cli() -> None:
             print("No plugins found.")
         for p in plugins:
             required_tag = " [REQUIRED]" if p.get("required") else ""
-            source_tag = f" [{p.get('manifest_source', '?')}]"
-            print(f"  {p['name']:<20} {p['type']:<10}{required_tag}{source_tag}")
+            print(f"  {p['name']:<20} {p['type']:<10}{required_tag}")
             if p.get("description"):
                 desc = p["description"][:80]
                 print(f"    {desc}")
