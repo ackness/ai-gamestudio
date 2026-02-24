@@ -197,6 +197,7 @@ async def process_message(
             state_mgr=state_mgr, autocommit=False, turn_id=turn_id,
             image_overrides=image_overrides, llm_overrides=llm_overrides,
         )
+        _INFRA_BLOCK_TYPES = {"state_update"}
         for block in blocks:
             block_type = str(block.get("type", "unknown"))
             block_data = block.get("data")
@@ -220,6 +221,9 @@ async def process_message(
                 result = await dispatch_block(
                     block, block_context, ctx.block_declarations, None,
                 )
+                # Infrastructure blocks (e.g. state_update) are processed but not sent to frontend
+                if block_type in _INFRA_BLOCK_TYPES:
+                    continue
                 if isinstance(result, list):
                     for r in result:
                         yield {"type": r["type"], "data": r["data"], "turn_id": turn_id}

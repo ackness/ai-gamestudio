@@ -287,9 +287,13 @@ async def _handle_execute_script(args: dict, ctx: _ToolContext) -> Any:
 
 
 def _handle_emit_block(args: dict, ctx: _ToolContext) -> dict:
-    block = {"type": args["type"], "data": args.get("data", {})}
+    # LLM sometimes passes "json:scene_update" instead of "scene_update"; strip prefix.
+    block_type = args["type"]
+    if block_type.startswith("json:"):
+        block_type = block_type[5:]
+    block = {"type": block_type, "data": args.get("data", {})}
     ctx.blocks.append(block)
-    return {"status": "emitted", "type": args["type"]}
+    return {"status": "emitted", "type": block_type}
 
 
 async def _handle_db_tool(name: str, args: dict, ctx: _ToolContext) -> Any:
