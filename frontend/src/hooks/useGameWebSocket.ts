@@ -5,6 +5,7 @@ import { useGameStateStore } from '../stores/gameStateStore'
 import { useProjectStore } from '../stores/projectStore'
 import { useBlockInteractionStore } from '../stores/blockInteractionStore'
 import { useNotificationStore } from '../stores/notificationStore'
+import { useTokenStore } from '../stores/tokenStore'
 import { GameWebSocket } from '../services/websocket'
 import * as api from '../services/api'
 import * as gameStorage from '../services/gameStorage'
@@ -213,6 +214,21 @@ export function useGameWebSocket(currentSession: Session | null) {
     }
 
     ws.onMessageImageLoading = (messageId) => setImageLoading(messageId, true)
+
+    ws.onTokenUsage = (data) => {
+      useTokenStore.getState().updateUsage({
+        promptTokens: Number(data.prompt_tokens || 0),
+        completionTokens: Number(data.completion_tokens || 0),
+        totalTokens: Number(data.total_tokens || 0),
+        turnCost: Number(data.turn_cost || 0),
+        totalCost: Number(data.total_cost || 0),
+        totalPromptTokens: Number(data.total_prompt_tokens || 0),
+        totalCompletionTokens: Number(data.total_completion_tokens || 0),
+        contextUsage: Number(data.context_usage || 0),
+        maxInputTokens: Number(data.max_input_tokens || 0),
+        model: String(data.model || ''),
+      })
+    }
 
     ws.onError = (error) => {
       setStreaming(false)
