@@ -44,6 +44,8 @@ const T = {
     pluginApiKey: '插件 API Key',
     pluginApiBase: '插件 API Base',
     pluginModelHint: '留空则与主模型相同',
+    pluginSameAsMain: '与主模型相同',
+    pluginCustom: '自定义模型',
     imageSection: '图片生成（可选）',
     imageModel: '图片模型',
     imageApiKey: '图片 API Key',
@@ -85,6 +87,8 @@ const T = {
     pluginApiKey: 'Plugin API Key',
     pluginApiBase: 'Plugin API Base',
     pluginModelHint: 'Leave empty to use main model',
+    pluginSameAsMain: 'Same as main model',
+    pluginCustom: 'Custom model',
     imageSection: 'Image Generation (optional)',
     imageModel: 'Image Model',
     imageApiKey: 'Image API Key',
@@ -137,6 +141,7 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
   const [pluginModel, setPluginModel] = useState('')
   const [pluginApiKey, setPluginApiKey] = useState('')
   const [pluginApiBase, setPluginApiBase] = useState('')
+  const [pluginUseSameModel, setPluginUseSameModel] = useState(true)
   const [showPlugin, setShowPlugin] = useState(false)
   const [imageModel, setImageModel] = useState('')
   const [imageApiKey, setImageApiKey] = useState('')
@@ -172,6 +177,7 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
     setPluginModel(local.pluginModel || '')
     setPluginApiKey(local.pluginApiKey || '')
     setPluginApiBase(local.pluginApiBase || '')
+    setPluginUseSameModel(!local.pluginModel)
     setImageModel(local.imageModel || currentProject.image_model || '')
     setImageApiKey(local.imageApiKey || '')
     setImageApiBase(local.imageApiBase || currentProject.image_api_base || '')
@@ -235,9 +241,9 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
         model: effectiveModel || undefined,
         apiKey: apiKey || undefined,
         apiBase: effectiveApiBase || undefined,
-        pluginModel: pluginModel || undefined,
-        pluginApiKey: pluginApiKey || undefined,
-        pluginApiBase: pluginApiBase || undefined,
+        pluginModel: pluginUseSameModel ? undefined : (pluginModel || undefined),
+        pluginApiKey: pluginUseSameModel ? undefined : (pluginApiKey || undefined),
+        pluginApiBase: pluginUseSameModel ? undefined : (pluginApiBase || undefined),
         imageModel: imageModel || undefined,
         imageApiKey: imageApiKey || undefined,
         imageApiBase: imageApiBase || undefined,
@@ -282,6 +288,7 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
       setPluginModel('')
       setPluginApiKey('')
       setPluginApiBase('')
+      setPluginUseSameModel(true)
       setImageModel('')
       setImageApiKey('')
       setImageApiBase('')
@@ -486,36 +493,65 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
 
             {showPlugin && (
               <div className="space-y-4 p-4 bg-muted/20 border rounded-lg">
-                <div className="space-y-2">
-                  <Label htmlFor="pluginModel" className="text-xs text-muted-foreground">{t.pluginModel}</Label>
-                  <Input
-                    id="pluginModel"
-                    value={pluginModel}
-                    onChange={(e) => setPluginModel(e.target.value)}
-                    placeholder={model || t.pluginModelHint}
-                    className="font-mono text-sm h-8"
-                  />
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setPluginUseSameModel(true)}
+                    className={`flex-1 text-xs py-1.5 rounded-md border transition-colors ${
+                      pluginUseSameModel
+                        ? 'bg-primary/10 border-primary/40 text-primary font-medium'
+                        : 'border-input text-muted-foreground hover:text-foreground hover:border-foreground/30'
+                    }`}
+                  >
+                    {t.pluginSameAsMain}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPluginUseSameModel(false)}
+                    className={`flex-1 text-xs py-1.5 rounded-md border transition-colors ${
+                      !pluginUseSameModel
+                        ? 'bg-primary/10 border-primary/40 text-primary font-medium'
+                        : 'border-input text-muted-foreground hover:text-foreground hover:border-foreground/30'
+                    }`}
+                  >
+                    {t.pluginCustom}
+                  </button>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pluginApiKey" className="text-xs text-muted-foreground">{t.pluginApiKey}</Label>
-                  <Input
-                    id="pluginApiKey"
-                    type="password"
-                    value={pluginApiKey}
-                    onChange={(e) => setPluginApiKey(e.target.value)}
-                    placeholder={t.pluginModelHint}
-                    className="font-mono text-sm h-8"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pluginApiBase" className="text-xs text-muted-foreground">{t.pluginApiBase}</Label>
-                  <Input
-                    id="pluginApiBase"
-                    value={pluginApiBase}
-                    onChange={(e) => setPluginApiBase(e.target.value)}
-                    placeholder={apiBase || t.pluginModelHint}
-                    className="font-mono text-sm h-8"
-                  />
+                <div className={`space-y-4 transition-opacity ${pluginUseSameModel ? 'opacity-40 pointer-events-none' : ''}`}>
+                  <div className="space-y-2">
+                    <Label htmlFor="pluginModel" className="text-xs text-muted-foreground">{t.pluginModel}</Label>
+                    <Input
+                      id="pluginModel"
+                      value={pluginModel}
+                      onChange={(e) => setPluginModel(e.target.value)}
+                      placeholder={model || t.pluginModelHint}
+                      disabled={pluginUseSameModel}
+                      className="font-mono text-sm h-8"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="pluginApiKey" className="text-xs text-muted-foreground">{t.pluginApiKey}</Label>
+                    <Input
+                      id="pluginApiKey"
+                      type="password"
+                      value={pluginApiKey}
+                      onChange={(e) => setPluginApiKey(e.target.value)}
+                      placeholder={t.pluginModelHint}
+                      disabled={pluginUseSameModel}
+                      className="font-mono text-sm h-8"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="pluginApiBase" className="text-xs text-muted-foreground">{t.pluginApiBase}</Label>
+                    <Input
+                      id="pluginApiBase"
+                      value={pluginApiBase}
+                      onChange={(e) => setPluginApiBase(e.target.value)}
+                      placeholder={apiBase || t.pluginModelHint}
+                      disabled={pluginUseSameModel}
+                      className="font-mono text-sm h-8"
+                    />
+                  </div>
                 </div>
               </div>
             )}
