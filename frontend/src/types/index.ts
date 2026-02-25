@@ -88,6 +88,15 @@ export interface GameEvent {
   updated_at: string
 }
 
+export interface Quest {
+  quest_id: string
+  title: string
+  description?: string
+  status: 'active' | 'completed' | 'failed'
+  objectives?: { id: string; text: string; completed: boolean }[]
+  rewards?: { xp?: number; gold?: number; items?: string[]; type?: string; value?: string }
+}
+
 export interface Plugin {
   name: string
   description: string

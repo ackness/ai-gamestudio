@@ -200,6 +200,12 @@ export function useWsCallbacks(sessionId: string): WsCallbacks {
       if (isGameEvent(data)) addEvent(data)
       return
     }
+    if (type === 'quest_update' && data && isRecord(data)) {
+      const q = data as { quest_id?: string; title?: string; status?: string; description?: string; objectives?: unknown[]; rewards?: unknown }
+      if (q.quest_id && q.title && q.status) {
+        useGameStateStore.getState().upsertQuest(q as import('../types').Quest)
+      }
+    }
     if (type === 'codex_entry' && data) {
       useCodexStore.getState().addEntry(data as import('../stores/codexStore').CodexEntry)
     }

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Character, GameEvent } from '../types'
+import type { Character, GameEvent, Quest } from '../types'
 import { syncToIdbFireAndForget } from '../services/idbSync'
 import { useSessionStore } from './sessionStore'
 
@@ -7,6 +7,7 @@ interface GameStateStore {
   characters: Character[]
   worldState: Record<string, unknown>
   events: GameEvent[]
+  quests: Quest[]
   setCharacters: (characters: Character[]) => void
   mergeCharacters: (incoming: Character[]) => void
   updateCharacter: (character: Character) => void
@@ -14,6 +15,8 @@ interface GameStateStore {
   setEvents: (events: GameEvent[]) => void
   addEvent: (event: GameEvent) => void
   updateEvent: (event: GameEvent) => void
+  upsertQuest: (quest: Quest) => void
+  setQuests: (quests: Quest[]) => void
 }
 
 function writeCharsToIdb(characters: Character[]) {
@@ -38,6 +41,7 @@ export const useGameStateStore = create<GameStateStore>((set) => ({
   characters: [],
   worldState: {},
   events: [],
+  quests: [],
 
   setCharacters: (characters) => {
     set({ characters })
@@ -93,4 +97,18 @@ export const useGameStateStore = create<GameStateStore>((set) => ({
     }))
     writeEventsToIdb([event])
   },
+
+  upsertQuest: (quest) => {
+    set((state) => {
+      const idx = state.quests.findIndex((q) => q.quest_id === quest.quest_id)
+      if (idx >= 0) {
+        const updated = [...state.quests]
+        updated[idx] = { ...updated[idx], ...quest }
+        return { quests: updated }
+      }
+      return { quests: [...state.quests, quest] }
+    })
+  },
+
+  setQuests: (quests) => set({ quests }),
 }))
