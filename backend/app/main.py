@@ -145,6 +145,7 @@ from backend.app.api.characters import router as characters_router  # noqa: E402
 from backend.app.api.archive import router as archive_router  # noqa: E402
 from backend.app.api.chat import router as chat_router  # noqa: E402
 from backend.app.api.debug_log import router as debug_log_router  # noqa: E402
+from backend.app.api.debug_tables import router as debug_tables_router  # noqa: E402
 from backend.app.api.events import router as events_router  # noqa: E402
 from backend.app.api.llm_profiles import router as llm_profiles_router  # noqa: E402
 from backend.app.api.plugins import router as plugins_router  # noqa: E402
@@ -162,6 +163,7 @@ app.include_router(sessions_router)
 app.include_router(chat_router)
 if settings.DEBUG_ENDPOINTS_ENABLED:
     app.include_router(debug_log_router)
+    app.include_router(debug_tables_router)
 app.include_router(archive_router)
 app.include_router(plugins_router)
 app.include_router(characters_router)
