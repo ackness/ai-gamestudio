@@ -13,14 +13,18 @@ _no_proxy = set(filter(None, os.environ.get("NO_PROXY", os.environ.get("no_proxy
 _no_proxy.update(["localhost", "127.0.0.1", "::1"])
 os.environ["NO_PROXY"] = ",".join(sorted(_no_proxy))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request as _FastAPIRequest
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from starlette.responses import Response
 
 from backend.app.core.config import settings
+
+from backend.app.core.rate_limit import limiter
 from backend.app.core.access_key import access_key_required, is_request_authorized
 from backend.app.core.llm_config import get_effective_config_for_project
 from backend.app.core.logging import setup_logging
@@ -74,6 +78,31 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AI GameStudio", version="0.1.0", lifespan=lifespan)
 
+# Rate limiter
+app.state.limiter = limiter
+
+
+def _rate_limit_exceeded_handler(request: _FastAPIRequest, exc: RateLimitExceeded):
+    return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# Security response headers
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
@@ -97,7 +126,11 @@ class AccessKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if not access_key_required():
             return await call_next(request)
-        if request.url.path in _EXEMPT_PATHS:
+        path = request.url.path
+        if path in _EXEMPT_PATHS:
+            return await call_next(request)
+        # Exempt static resources — only protect /api/ and /ws/ paths
+        if not (path.startswith("/api/") or path.startswith("/ws/")):
             return await call_next(request)
         # For HTTP requests, only accept header-based access key to avoid
         # leaking secrets in URLs/logs. Query-param auth remains for WebSocket.
@@ -127,7 +160,8 @@ from backend.app.api.plugin_invoke import router as plugin_invoke_router  # noqa
 app.include_router(projects_router)
 app.include_router(sessions_router)
 app.include_router(chat_router)
-app.include_router(debug_log_router)
+if settings.DEBUG_ENDPOINTS_ENABLED:
+    app.include_router(debug_log_router)
 app.include_router(archive_router)
 app.include_router(plugins_router)
 app.include_router(characters_router)
@@ -209,7 +243,9 @@ async def get_preset_models():
 
 
 @app.post("/api/llm/test")
+@limiter.limit("30/minute")
 async def test_llm(
+    request: Request,
     x_llm_model: str | None = __import__("fastapi").Header(default=None),
     x_llm_api_key: str | None = __import__("fastapi").Header(default=None),
     x_llm_api_base: str | None = __import__("fastapi").Header(default=None),
