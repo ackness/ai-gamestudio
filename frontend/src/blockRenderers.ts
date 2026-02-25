@@ -19,6 +19,7 @@ import { ReputationRenderer } from './blockRenderers/ReputationRenderer'
 import { StatusEffectRenderer } from './blockRenderers/StatusEffectRenderer'
 import { RelationshipRenderer } from './blockRenderers/RelationshipRenderer'
 import { CodexRenderer } from './blockRenderers/CodexRenderer'
+import { ItemUpdateRenderer } from './blockRenderers/ItemUpdateRenderer'
 
 /**
  * Adapter: converts json:choices data into json:guide format
@@ -55,3 +56,4 @@ registerBlockRenderer('reputation_change', ReputationRenderer)
 registerBlockRenderer('status_effect', StatusEffectRenderer)
 registerBlockRenderer('relationship_change', RelationshipRenderer)
 registerBlockRenderer('codex_entry', CodexRenderer)
+registerBlockRenderer('item_update', ItemUpdateRenderer)
