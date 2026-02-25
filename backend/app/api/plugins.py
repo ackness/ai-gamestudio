@@ -13,6 +13,7 @@ from backend.app.db.engine import get_session
 from backend.app.models.project import Project
 from backend.app.services.plugin_service import (
     get_enabled_plugins,
+    storage_get,
     toggle_plugin,
 )
 
@@ -252,6 +253,24 @@ async def install_plugin(body: ImportInstallBody):
     return {"ok": True, "plugin": plugin_name}
 
 
+@router.get("/codex/{project_id}")
+async def get_codex_entries(
+    project_id: str, db: AsyncSession = Depends(get_session)
+):
+    """Return all codex entries for a project, grouped by category."""
+    raw = await storage_get(db, project_id, "codex", "codex-entries")
+    entries = raw if isinstance(raw, list) else []
+
+    by_category: dict[str, list] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        cat = str(entry.get("category", "unknown"))
+        by_category.setdefault(cat, []).append(entry)
+
+    return {"entries": entries, "by_category": by_category, "total": len(entries)}
+
+
 @router.get("/{plugin_name}/audit")
 async def get_plugin_audit(
     plugin_name: str,
@@ -267,7 +286,7 @@ async def get_plugin_audit(
 
 @router.get("/{plugin_name}/detail")
 async def get_plugin_detail(plugin_name: str):
-    """Return full plugin details: metadata, resolved prompt content, block definitions."""
+    """Return full plugin details: metadata, resolved prompt content, output definitions."""
     pe = get_plugin_engine()
     loaded = pe.load(plugin_name)
     if not loaded:
@@ -297,10 +316,10 @@ async def get_plugin_detail(plugin_name: str):
             "content": content,
         }
 
-    # Block definitions (instruction + schema per block)
-    blocks: dict = {}
-    if manifest and manifest.blocks:
-        blocks = manifest.blocks
+    # Output definitions (instruction + schema per type)
+    outputs: dict = {}
+    if manifest and manifest.outputs:
+        outputs = manifest.outputs
 
     # Capabilities summary
     capabilities: dict = {}
@@ -321,7 +340,7 @@ async def get_plugin_detail(plugin_name: str):
         "supersedes": metadata.get("supersedes", []),
         "dependencies": metadata.get("dependencies", []),
         "prompt": prompt_detail,
-        "blocks": blocks,
+        "outputs": outputs,
         "capabilities": capabilities,
         "i18n": metadata.get("i18n", {}),
     }
