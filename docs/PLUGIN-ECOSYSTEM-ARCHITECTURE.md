@@ -62,6 +62,12 @@
    - 基础设施输出（如 `state_update`）仅后端处理
    - 前端可见输出按 renderer/schema 渲染
 
+Hook 约定（当前实现）：
+
+- 规范名：`pre_model_input` / `post_model_output`（默认）/ `frontend_action` / `post_dispatch`
+- 兼容别名：`pre_narrative` / `post_narrative` / `ui_action`
+- `manual` trigger 仅在显式手动入口下运行（默认主回合链路 `allow_manual=false`）
+
 ## 5. Prompt 上下文契约（Jinja2）
 
 `PluginEngine.get_prompt_injections()` 支持 Jinja2 模板渲染能力，但默认主叙事链路不启用插件模板注入。

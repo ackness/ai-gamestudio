@@ -36,7 +36,7 @@ AI GameStudio 当前采用双阶段回合架构：
 3. 主 LLM 流式输出文本（`chunk` 事件），结束后发 `done`。
 4. 落库 assistant 叙事消息，更新 token/cost 统计（`token_usage`）。
 5. 进入插件阶段（`phase_change: plugins`）。
-6. `run_plugin_agent(hook="post_narrative")` 对声明该 Hook 的插件并行执行工具调用，流式发 `plugin_progress`。
+6. `run_plugin_agent(hook="post_model_output")` 对声明该 Hook 的插件并行执行工具调用，流式发 `plugin_progress`（兼容旧别名 `post_narrative`）。
 7. 插件完成后发 `plugin_summary`，阶段切到 `phase_change: complete`。
 8. 对每个 block：`validate_block_data()` -> `dispatch_block()` -> 发送前端事件。
 9. 持久化消息 metadata 中的 blocks，更新 `plugin_trigger_counts`。
@@ -57,11 +57,13 @@ AI GameStudio 当前采用双阶段回合架构：
 
 - 触发上限：若插件配置 `max_triggers` 且达到会话计数，将跳过该插件本轮执行。
 - Hook 过滤：插件可通过 `manifest.hooks` 声明参与阶段；核心按当前阶段只调度匹配 Hook 的插件。
+- Hook 常量（当前实现）：`pre_model_input` / `post_model_output`（默认）/ `frontend_action` / `post_dispatch`。
+- 兼容别名（旧写法）：`pre_narrative` -> `pre_model_input`，`post_narrative` -> `post_model_output`，`ui_action` -> `frontend_action`。
 - 触发策略：插件可通过 `manifest.trigger` 声明 `always / interval / manual`。
   - 示例：`memory` 可设为每 3 回合执行一次；
   - 示例：`image` 可设为 `manual`，仅走前端按钮触发的图片生成入口。
 - 指令可见性：对 `once_per_session` 等受限 block，核心会在后续轮次从插件 block 指令中隐藏对应提示，减少幻觉与 token 消耗。
-- 产物汇总：返回 `blocks + plugin_summary`，其中 summary 含 `rounds/tool_calls/blocks_emitted/plugins_run`。
+- 产物汇总：返回 `blocks + plugin_summary`，其中 summary 含 `rounds/tool_calls/blocks_emitted/plugins_executed/plugins_emitted`，并保留兼容字段 `plugins_run`。
 
 ## 4. 插件发现、加载与启用
 
@@ -169,8 +171,15 @@ AI GameStudio 当前采用双阶段回合架构：
 - `GET /api/plugins/block-conflicts`
 - `POST /api/plugins/import/validate`
 - `POST /api/plugins/import/install`
+- `GET /api/plugins/codex/{project_id}`
 - `GET /api/plugins/{name}/detail`
 - `GET /api/plugins/{name}/audit`
+
+聊天与命令 API：
+
+- `WS /ws/chat/{session_id}`
+- `POST /api/chat/{session_id}/command`（HTTP fallback，返回同一事件协议）
+- `POST /chat/{session_id}/plugin/{plugin_name}`（独立单插件调用）
 
 运行时设置 API：
 

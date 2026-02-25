@@ -78,12 +78,11 @@ plugins/<group>/<plugin>/
 
 - 版本：`schema_version = "1.0"`
 - 必需字段：`name/version/type/required/description`
-- 可扩展字段：`blocks/capabilities/storage/extensions/i18n/...`
+- 可扩展字段：`outputs/capabilities/storage/extensions/i18n/...`
 
 ### 4.3 Plugin Agent 工具
 
-- `update_and_emit`
-- `emit_block`
+- `emit`
 - `db_read`
 - `db_log_append`
 - `db_log_query`
@@ -98,7 +97,7 @@ plugins/<group>/<plugin>/
 | 前端测试 | `mise run test:frontend` |
 | 插件校验 | `mise run plugin:validate` |
 | 插件测试脚本 | `mise run plugin:test` |
-| 插件测试（全部） | `mise run plugin:test:all` |
+| 插件测试（全部） | `mise run plugin:test -- --all -v` |
 | 插件 dry-run | `mise run plugin:test:dry-run` |
 | Lint | `mise run lint` |
 

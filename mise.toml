@@ -110,7 +110,7 @@ description = "运行后端测试"
 run = "uv run pytest backend/tests/ -v"
 
 [tasks."test:frontend"]
-description = "运行前端测试"
+description = "运行前端完整测试（cd frontend && npm test）"
 run = "cd frontend && npm test"
 
 # =============================================================================
@@ -133,7 +133,7 @@ mise run db:init
 # =============================================================================
 
 [tasks."plugin:validate"]
-description = "验证所有插件的 PLUGIN.md 格式"
+description = "验证所有插件（manifest + PLUGIN.md）"
 run = "uv run python -m backend.app.core.plugin_engine validate plugins/"
 
 [tasks."plugin:list"]
@@ -141,20 +141,12 @@ description = "列出所有已安装插件"
 run = "uv run python -m backend.app.core.plugin_engine list plugins/"
 
 [tasks."plugin:test"]
-description = "测试插件 Agent（使用 .env 中的 PLUGIN_LLM 配置）"
+description = "测试插件 Agent（支持透传参数，如: mise run plugin:test -- --all -v）"
 run = "uv run python scripts/test_plugin_agent.py"
-
-[tasks."plugin:test:all"]
-description = "测试所有插件（每个插件自动选择最佳预设，跳过 image）"
-run = "uv run python scripts/test_plugin_agent.py --all -v"
 
 [tasks."plugin:test:list"]
 description = "列出可测试的插件"
 run = "uv run python scripts/test_plugin_agent.py --list"
-
-[tasks."plugin:test:verbose"]
-description = "详细模式测试插件 Agent（显示 tool call 日志）"
-run = "uv run python scripts/test_plugin_agent.py -v"
 
 [tasks."plugin:test:dry-run"]
 description = "插件测试 dry-run（只显示配置，不调用模型）"
@@ -172,7 +164,6 @@ run = "uv run python scripts/kill_port.py 8000"
 description = "清理构建产物和缓存"
 run = """
 rm -rf frontend/dist
-rm -rf backend/__pycache__
 rm -rf .pytest_cache
 rm -rf .ruff_cache
 find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
