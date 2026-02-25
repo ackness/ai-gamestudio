@@ -631,6 +631,7 @@ async def _run_one_plugin(
         "tool_calls": len(tool_call_names),
         "block_count": len(blocks),
         "block_types": [b.get("type") for b in blocks],
+        "messages": messages,
     }
     return blocks, total_rounds, tool_call_names, metrics
 

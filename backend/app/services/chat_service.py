@@ -14,6 +14,10 @@ from backend.app.core.block_validation import validate_block_data
 from backend.app.core.game_state import GameStateManager
 from backend.app.core.json_utils import safe_json_loads
 from backend.app.core.llm_config import resolve_llm_config, resolve_plugin_llm_config
+from backend.app.core.plugin_trigger import (
+    BLOCK_TRIGGER_ONCE_PER_SESSION,
+    normalize_block_trigger_policy,
+)
 from backend.app.core.llm_gateway import completion_with_config, create_stream_result  # noqa: F401 — tests patch this
 from backend.app.db.engine import engine  # noqa: F401 — tests patch this
 from backend.app.services.archive_service import maybe_auto_archive_summary
@@ -55,6 +59,407 @@ def _plugins_to_count(plugin_summary: dict[str, Any]) -> list[str]:
         if name:
             out.append(name)
     return out
+
+
+_INFRA_BLOCK_TYPES = {"state_update"}
+
+
+def _load_turn_count(game_state_json: str | None, session_id: str) -> int:
+    """Return current session turn count from persisted game state."""
+    state_data = safe_json_loads(
+        game_state_json,
+        fallback={},
+        context=f"GameSession state ({session_id})",
+    )
+    if not isinstance(state_data, dict):
+        return 0
+    try:
+        return max(0, int(state_data.get("turn_count", 0) or 0))
+    except Exception:
+        return 0
+
+
+def _load_plugin_trigger_counts(game_state_json: str | None, session_id: str) -> dict[str, int]:
+    """Load canonical/legacy plugin trigger counters from session state."""
+    state_data = safe_json_loads(
+        game_state_json,
+        fallback={},
+        context=f"GameSession state ({session_id})",
+    )
+    if not isinstance(state_data, dict):
+        return {}
+    counts = _normalize_plugin_counts(state_data.get("plugin_execution_counts"))
+    if counts:
+        return counts
+    return _normalize_plugin_counts(state_data.get("plugin_trigger_counts"))
+
+
+def _increment_plugin_trigger_counts(
+    game_state_json: str | None,
+    session_id: str,
+    plugins_counted: list[str],
+) -> str:
+    """Increment per-plugin execution counters in canonical + legacy keys."""
+    latest_state = safe_json_loads(
+        game_state_json,
+        fallback={},
+        context=f"GameSession state ({session_id})",
+    )
+    if not isinstance(latest_state, dict):
+        latest_state = {}
+    latest_counts = _normalize_plugin_counts(latest_state.get("plugin_execution_counts"))
+    if not latest_counts:
+        latest_counts = _normalize_plugin_counts(latest_state.get("plugin_trigger_counts"))
+    for pname in plugins_counted:
+        latest_counts[pname] = int(latest_counts.get(pname, 0) or 0) + 1
+    latest_state["plugin_execution_counts"] = latest_counts
+    latest_state["plugin_trigger_counts"] = latest_counts
+    return json.dumps(latest_state)
+
+
+def _load_block_trigger_counts(game_state_json: str | None, session_id: str) -> dict[str, int]:
+    """Load per-block trigger counters from session state."""
+    state_data = safe_json_loads(
+        game_state_json,
+        fallback={},
+        context=f"GameSession state ({session_id})",
+    )
+    if not isinstance(state_data, dict):
+        return {}
+    return _normalize_plugin_counts(state_data.get("block_trigger_counts"))
+
+
+def _set_block_trigger_counts(
+    game_state_json: str | None,
+    session_id: str,
+    block_trigger_counts: dict[str, int],
+) -> str:
+    """Persist per-block trigger counters into session state JSON."""
+    latest_state = safe_json_loads(
+        game_state_json,
+        fallback={},
+        context=f"GameSession state ({session_id})",
+    )
+    if not isinstance(latest_state, dict):
+        latest_state = {}
+    latest_state["block_trigger_counts"] = _normalize_plugin_counts(block_trigger_counts)
+    return json.dumps(latest_state)
+
+
+async def _filter_plugin_blocks(
+    blocks: list[dict[str, Any]],
+    *,
+    state_mgr: GameStateManager,
+    session_id: str,
+    log_prefix: str,
+) -> list[dict[str, Any]]:
+    """Apply cross-block conflict rules before dispatch."""
+    filtered = list(blocks)
+    block_types = {b.get("type") for b in filtered}
+    if "character_sheet" in block_types:
+        suppressed = {"guide", "choices", "auto_guide"}
+        before_count = len(filtered)
+        filtered = [b for b in filtered if b.get("type") not in suppressed]
+        if len(filtered) < before_count:
+            logger.debug("{}: suppressed guide/choices blocks due to character_sheet", log_prefix)
+
+    if "character_sheet" in block_types:
+        existing_chars = await state_mgr.get_characters(session_id)
+        has_player = any(c.role == "player" for c in existing_chars)
+        if has_player:
+            before_count = len(filtered)
+            filtered = [b for b in filtered if b.get("type") != "character_sheet"]
+            if len(filtered) < before_count:
+                logger.debug("{}: suppressed character_sheet (player exists)", log_prefix)
+
+    return filtered
+
+
+async def _dispatch_blocks_stage(
+    blocks: list[dict[str, Any]],
+    *,
+    block_context: BlockContext,
+    block_declarations: dict[str, Any],
+    turn_id: str,
+    emit_front_events: bool,
+    log_prefix: str,
+    block_trigger_counts: dict[str, int] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Validate + dispatch blocks, returning events and metadata payload candidates."""
+    events: list[dict[str, Any]] = []
+    persisted_blocks: list[dict[str, Any]] = []
+
+    for i, block in enumerate(blocks):
+        block_type = str(block.get("type", "unknown"))
+        block_data = block.get("data")
+        block_id = str(block.get("id") or "").strip() or None
+        block_version = str(block.get("version") or "1.0").strip() or "1.0"
+        block_meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
+        block_status = str(block.get("status") or "done").strip() or "done"
+        declaration = block_declarations.get(block_type) if block_declarations else None
+        trigger_policy = normalize_block_trigger_policy(
+            getattr(declaration, "trigger", None) if declaration else None
+        )
+        if (
+            trigger_policy.get("mode") == BLOCK_TRIGGER_ONCE_PER_SESSION
+            and isinstance(block_trigger_counts, dict)
+            and int(block_trigger_counts.get(block_type, 0) or 0) > 0
+        ):
+            logger.debug(
+                "Skip block '{}' on {}: once_per_session already consumed",
+                block_type,
+                log_prefix,
+            )
+            continue
+
+        validation_errors = validate_block_data(block_type, block_data, declaration)
+        if validation_errors:
+            logger.warning(
+                "Invalid block on {}: type={}, errors={}",
+                log_prefix,
+                block_type,
+                validation_errors,
+            )
+            if emit_front_events:
+                events.append(
+                    {
+                        "type": "notification",
+                        "data": {
+                            "level": "warning",
+                            "title": "Block 数据不完整",
+                            "content": f"{block_type}: {'; '.join(validation_errors[:2])}",
+                        },
+                        "turn_id": turn_id,
+                    }
+                )
+            continue
+
+        try:
+            result = await dispatch_block(block, block_context, block_declarations, None)
+        except Exception:
+            logger.exception("Block dispatch failed on {}: {}", log_prefix, block_type)
+            continue
+
+        if isinstance(block_trigger_counts, dict):
+            block_trigger_counts[block_type] = int(block_trigger_counts.get(block_type, 0) or 0) + 1
+
+        if block_type in _INFRA_BLOCK_TYPES:
+            continue
+
+        persisted_blocks.append(
+            {
+                "type": block_type,
+                "data": block_data,
+                "index": i,
+                "id": block_id,
+                "version": block_version,
+                "meta": block_meta,
+                "status": block_status,
+            }
+        )
+        if not emit_front_events:
+            continue
+
+        if isinstance(result, list):
+            for r in result:
+                r_type = str(r.get("type", "unknown"))
+                r_data = r.get("data")
+                r_id = str(r.get("id") or "").strip() or None
+                r_version = str(r.get("version") or "1.0").strip() or "1.0"
+                r_meta = r.get("meta") if isinstance(r.get("meta"), dict) else {}
+                r_status = str(r.get("status") or "done").strip() or "done"
+                events.append(
+                    {
+                        "type": r_type,
+                        "data": r_data,
+                        "turn_id": turn_id,
+                        "block_id": r_id,
+                        "output": {
+                            "id": r_id,
+                            "version": r_version,
+                            "type": r_type,
+                            "data": r_data,
+                            "meta": r_meta,
+                            "status": r_status,
+                        },
+                    }
+                )
+        else:
+            events.append(
+                {
+                    "type": block_type,
+                    "data": block_data,
+                    "turn_id": turn_id,
+                    "block_id": block_id,
+                    "output": {
+                        "id": block_id,
+                        "version": block_version,
+                        "type": block_type,
+                        "data": block_data,
+                        "meta": block_meta,
+                        "status": block_status,
+                    },
+                }
+            )
+
+    return events, persisted_blocks
+
+
+def _to_message_blocks(message_id: str, persisted_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert dispatched block payloads to stored message metadata format."""
+    out: list[dict[str, Any]] = []
+    for b in persisted_blocks:
+        block_id = str(b.get("id") or "").strip() or f"{message_id}:{b.get('index', 0)}"
+        block_type = b.get("type")
+        block_data = b.get("data")
+        block_meta = b.get("meta") if isinstance(b.get("meta"), dict) else {}
+        block_status = str(b.get("status") or "done")
+        block_version = str(b.get("version") or "1.0")
+        out.append(
+            {
+                "type": block_type,
+                "data": block_data,
+                "block_id": block_id,
+                "output": {
+                    "id": block_id,
+                    "version": block_version,
+                    "type": block_type,
+                    "data": block_data,
+                    "meta": block_meta,
+                    "status": block_status,
+                },
+            }
+        )
+    return out
+
+
+def _merge_blocks_into_metadata(
+    metadata_json: str | None,
+    message_id: str,
+    blocks: list[dict[str, Any]],
+    llm_calls: dict[str, Any] | None = None,
+) -> str:
+    existing_meta = safe_json_loads(
+        metadata_json,
+        fallback={},
+        context=f"Message metadata ({message_id})",
+    )
+    if not isinstance(existing_meta, dict):
+        existing_meta = {}
+    existing_meta["blocks"] = blocks
+    if llm_calls:
+        existing_meta["llm_calls"] = llm_calls
+    return json.dumps(existing_meta, ensure_ascii=False, default=str)
+
+
+async def _finalize_turn_stage(
+    *,
+    db: SQLModelAsyncSession,
+    ctx: Any,
+    state_mgr: GameStateManager,
+    session_id: str,
+    should_increment_turn: bool,
+    context_usage: float,
+    model: str,
+    llm_overrides: dict[str, str] | None,
+    turn_id: str,
+) -> list[dict[str, Any]]:
+    """Run post-turn finalize hooks (auto-archive + auto-compress)."""
+    events: list[dict[str, Any]] = []
+
+    # Auto archive (memory plugin subsumes archive)
+    if should_increment_turn and "memory" in ctx.enabled_names:
+        try:
+            created = await maybe_auto_archive_summary(db, ctx.project, ctx.session)
+            if created:
+                events.append(
+                    {
+                        "type": "notification",
+                        "data": {
+                            "level": "info",
+                            "title": "存档已更新",
+                            "content": f"自动生成版本 v{created['version']}",
+                        },
+                        "turn_id": turn_id,
+                    }
+                )
+        except Exception:
+            logger.exception("Auto archive summary failed")
+
+    # Auto compress check (memory plugin subsumes auto-compress)
+    if "memory" not in ctx.enabled_names or context_usage <= 0:
+        return events
+
+    from backend.app.services.compress_service import should_compress, compress_history
+
+    ac_settings = ctx.runtime_settings_by_plugin.get("memory", {})
+    threshold = float(ac_settings.get("compression_threshold", 0.7))
+    keep_recent = int(ac_settings.get("keep_recent_messages", 6))
+    if not should_compress(context_usage, threshold):
+        return events
+
+    try:
+        all_messages = await state_mgr.get_messages(session_id, limit=100)
+        if len(all_messages) <= keep_recent:
+            return events
+
+        messages_to_compress = all_messages[:-keep_recent]
+        existing_summary = ctx.compression_summary
+        compress_result = await compress_history(
+            messages_to_compress,
+            existing_summary,
+            model=model,
+            llm_overrides=llm_overrides,
+        )
+
+        await storage_set(
+            db,
+            ctx.project.id,
+            "auto-compress",
+            "compression-summary",
+            {"summary": compress_result["summary"]},
+            autocommit=True,
+        )
+
+        prev_state = await _storage_get(
+            db,
+            ctx.project.id,
+            "auto-compress",
+            "compression-state",
+        )
+        prev_count = (
+            (prev_state or {}).get("total_compressions", 0)
+            if isinstance(prev_state, dict)
+            else 0
+        )
+        await storage_set(
+            db,
+            ctx.project.id,
+            "auto-compress",
+            "compression-state",
+            {
+                "last_compressed_message_count": len(messages_to_compress),
+                "total_compressions": prev_count + 1,
+            },
+            autocommit=True,
+        )
+
+        events.append(
+            {
+                "type": "notification",
+                "data": {
+                    "level": "info",
+                    "title": "上下文已压缩",
+                    "content": f"已将 {len(messages_to_compress)} 条旧消息压缩为摘要",
+                },
+                "turn_id": turn_id,
+            }
+        )
+        logger.info("Auto-compressed {} messages for session {}", len(messages_to_compress), session_id)
+    except Exception:
+        logger.exception("Auto-compress failed for session {}", session_id)
+
+    return events
 
 
 async def process_message(
@@ -134,6 +539,16 @@ async def process_message(
         turn_cost = calculate_turn_cost(config.model, prompt_tokens, completion_tokens)
         context_usage = prompt_tokens / max_input if max_input > 0 else 0.0
 
+        # Collect narrative LLM call data for storage
+        llm_calls: dict[str, Any] = {
+            "narrative": {
+                "messages": messages,
+                "response": full_response,
+                "model": config.model,
+                "tokens": {"prompt": prompt_tokens, "completion": completion_tokens},
+            },
+        }
+
         saved_message_id: str | None = None
         should_increment_turn = bool(save_assistant_msg and full_response.strip())
 
@@ -164,6 +579,7 @@ async def process_message(
             db.add(ctx.session)
 
         await db.commit()
+        current_turn = _load_turn_count(ctx.session.game_state_json, session_id)
 
         yield {
             "type": "token_usage", "turn_id": turn_id,
@@ -189,20 +605,15 @@ async def process_message(
         plugin_summary: dict[str, Any] = {}
 
         # Load per-session plugin trigger counts
-        game_state_data = safe_json_loads(
+        trigger_counts = _load_plugin_trigger_counts(
             ctx.session.game_state_json,
-            fallback={},
-            context=f"GameSession state ({session_id})",
+            session_id,
         )
-        if not isinstance(game_state_data, dict):
-            game_state_data = {}
-        trigger_counts = _normalize_plugin_counts(
-            game_state_data.get("plugin_execution_counts")
+        block_trigger_counts = _load_block_trigger_counts(
+            ctx.session.game_state_json,
+            session_id,
         )
-        if not trigger_counts:
-            trigger_counts = _normalize_plugin_counts(
-                game_state_data.get("plugin_trigger_counts")
-            )
+        has_player_character = any(getattr(ch, "role", None) == "player" for ch in ctx.characters)
 
         # Use asyncio.Queue to stream plugin progress in real-time
         progress_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
@@ -216,6 +627,12 @@ async def process_message(
                 game_db=game_db,
                 pe=ctx.pe,
                 config=plugin_config,
+                current_turn=current_turn,
+                session_phase=getattr(ctx.session, "phase", None),
+                runtime_settings_by_plugin=ctx.runtime_settings_by_plugin,
+                block_trigger_counts=block_trigger_counts,
+                has_player_character=has_player_character,
+                turn_id=turn_id,
                 on_progress=progress_queue.put_nowait,
                 trigger_counts=trigger_counts,
             )
@@ -239,24 +656,12 @@ async def process_message(
             if not agent_task.done():
                 agent_task.cancel()
 
-        # Filter conflicting blocks: suppress guide/choices when character_sheet is present
-        block_types = {b.get("type") for b in blocks}
-        if "character_sheet" in block_types:
-            suppressed = {"guide", "choices", "auto_guide"}
-            before_count = len(blocks)
-            blocks = [b for b in blocks if b.get("type") not in suppressed]
-            if len(blocks) < before_count:
-                logger.debug("Suppressed guide/choices blocks due to character_sheet presence")
-
-        # Suppress character_sheet if a player character already exists
-        if "character_sheet" in block_types:
-            existing_chars = await state_mgr.get_characters(session_id)
-            has_player = any(c.role == "player" for c in existing_chars)
-            if has_player:
-                before_count = len(blocks)
-                blocks = [b for b in blocks if b.get("type") != "character_sheet"]
-                if len(blocks) < before_count:
-                    logger.debug("Suppressed character_sheet: player character already exists")
+        blocks = await _filter_plugin_blocks(
+            blocks,
+            state_mgr=state_mgr,
+            session_id=session_id,
+            log_prefix="Plugin Agent",
+        )
 
         # Debug: log Plugin Agent results
         logger.debug(
@@ -275,92 +680,70 @@ async def process_message(
         if plugin_summary:
             yield {"type": "plugin_summary", "data": plugin_summary, "turn_id": turn_id}
 
+        # Collect plugin LLM call data
+        if plugin_summary:
+            plugin_calls: dict[str, Any] = {}
+            for pm in plugin_summary.get("plugin_metrics", []):
+                pname = pm.get("plugin", "")
+                if pname and "messages" in pm:
+                    plugin_calls[pname] = {
+                        "messages": pm.pop("messages"),
+                        "rounds": pm.get("rounds", 0),
+                        "model": plugin_config.model,
+                    }
+            if plugin_calls:
+                llm_calls["plugins"] = plugin_calls
+
         # 7. Dispatch blocks
+        block_trigger_counts_before = dict(block_trigger_counts)
         block_context = BlockContext(
             session_id=session_id, project_id=ctx.project.id, db=db,
             state_mgr=state_mgr, autocommit=False, turn_id=turn_id,
             image_overrides=image_overrides, llm_overrides=llm_overrides,
         )
-        _INFRA_BLOCK_TYPES = {"state_update"}
-        for block in blocks:
-            block_type = str(block.get("type", "unknown"))
-            block_data = block.get("data")
-            declaration = ctx.block_declarations.get(block_type) if ctx.block_declarations else None
-
-            validation_errors = validate_block_data(block_type, block_data, declaration)
-            if validation_errors:
-                logger.warning("Invalid block from Plugin Agent: type={}, errors={}", block_type, validation_errors)
-                yield {
-                    "type": "notification",
-                    "data": {
-                        "level": "warning",
-                        "title": "Block 数据不完整",
-                        "content": f"{block_type}: {'; '.join(validation_errors[:2])}",
-                    },
-                    "turn_id": turn_id,
-                }
-                continue
-
-            try:
-                result = await dispatch_block(
-                    block, block_context, ctx.block_declarations, None,
-                )
-                # Infrastructure blocks (e.g. state_update) are processed but not sent to frontend
-                if block_type in _INFRA_BLOCK_TYPES:
-                    continue
-                if isinstance(result, list):
-                    for r in result:
-                        yield {"type": r["type"], "data": r["data"], "turn_id": turn_id}
-                else:
-                    yield {"type": block["type"], "data": block["data"], "turn_id": turn_id}
-            except Exception:
-                logger.exception("Block dispatch failed: {}", block.get("type"))
+        stage_events, persisted_blocks = await _dispatch_blocks_stage(
+            blocks,
+            block_context=block_context,
+            block_declarations=ctx.block_declarations,
+            turn_id=turn_id,
+            emit_front_events=True,
+            log_prefix="process_message",
+            block_trigger_counts=block_trigger_counts,
+        )
+        for evt in stage_events:
+            yield evt
 
         # 7b. Persist blocks to message metadata for reload recovery
-        if saved_message_id and blocks:
-            dispatched_blocks = [
-                {"type": b.get("type"), "data": b.get("data"), "block_id": f"{saved_message_id}:{i}"}
-                for i, b in enumerate(blocks)
-                if b.get("type") not in {"state_update"}  # infra blocks excluded
-            ]
-            if dispatched_blocks:
-                from backend.app.models.message import Message
-                msg_obj = await db.get(Message, saved_message_id)
-                if msg_obj:
-                    existing_meta = safe_json_loads(
-                        msg_obj.metadata_json,
-                        fallback={},
-                        context=f"Message metadata ({saved_message_id})",
-                    )
-                    if not isinstance(existing_meta, dict):
-                        existing_meta = {}
-                    existing_meta["blocks"] = dispatched_blocks
-                    msg_obj.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
-                    db.add(msg_obj)
+        if saved_message_id and persisted_blocks:
+            dispatched_blocks = _to_message_blocks(saved_message_id, persisted_blocks)
+            from backend.app.models.message import Message
+
+            msg_obj = await db.get(Message, saved_message_id)
+            if msg_obj:
+                msg_obj.metadata_json = _merge_blocks_into_metadata(
+                    msg_obj.metadata_json,
+                    saved_message_id,
+                    dispatched_blocks,
+                    llm_calls=llm_calls,
+                )
+                db.add(msg_obj)
+
+        if block_trigger_counts != block_trigger_counts_before:
+            ctx.session.game_state_json = _set_block_trigger_counts(
+                ctx.session.game_state_json,
+                session_id,
+                block_trigger_counts,
+            )
+            db.add(ctx.session)
 
         # Update trigger counts for plugins that emitted blocks
         plugins_counted = _plugins_to_count(plugin_summary)
         if plugins_counted:
-            latest_state = safe_json_loads(
+            ctx.session.game_state_json = _increment_plugin_trigger_counts(
                 ctx.session.game_state_json,
-                fallback={},
-                context=f"GameSession state ({session_id})",
+                session_id,
+                plugins_counted,
             )
-            if not isinstance(latest_state, dict):
-                latest_state = {}
-            latest_trigger_counts = _normalize_plugin_counts(
-                latest_state.get("plugin_execution_counts")
-            )
-            if not latest_trigger_counts:
-                latest_trigger_counts = _normalize_plugin_counts(
-                    latest_state.get("plugin_trigger_counts")
-                )
-            for pname in plugins_counted:
-                latest_trigger_counts[pname] = int(latest_trigger_counts.get(pname, 0) or 0) + 1
-            # New canonical key + legacy compatibility key.
-            latest_state["plugin_execution_counts"] = latest_trigger_counts
-            latest_state["plugin_trigger_counts"] = latest_trigger_counts
-            ctx.session.game_state_json = json.dumps(latest_state)
             db.add(ctx.session)
 
         await db.commit()
@@ -368,72 +751,19 @@ async def process_message(
         if saved_message_id:
             yield {"type": "_message_saved", "message_id": saved_message_id, "turn_id": turn_id}
 
-        # 8. Auto archive (memory plugin subsumes archive)
-        if should_increment_turn and "memory" in ctx.enabled_names:
-            try:
-                created = await maybe_auto_archive_summary(db, ctx.project, ctx.session)
-                if created:
-                    yield {
-                        "type": "notification",
-                        "data": {"level": "info", "title": "存档已更新", "content": f"自动生成版本 v{created['version']}"},
-                        "turn_id": turn_id,
-                    }
-            except Exception:
-                logger.exception("Auto archive summary failed")
-
-        # 9. Auto compress check (memory plugin subsumes auto-compress)
-        if "memory" in ctx.enabled_names and context_usage > 0:
-            from backend.app.services.compress_service import should_compress, compress_history
-
-            ac_settings = ctx.runtime_settings_by_plugin.get("memory", {})
-            threshold = float(ac_settings.get("compression_threshold", 0.7))
-            keep_recent = int(ac_settings.get("keep_recent_messages", 6))
-
-            if should_compress(context_usage, threshold):
-                try:
-                    all_messages = await state_mgr.get_messages(session_id, limit=100)
-                    if len(all_messages) > keep_recent:
-                        messages_to_compress = all_messages[:-keep_recent]
-                        existing_summary = ctx.compression_summary
-
-                        compress_result = await compress_history(
-                            messages_to_compress,
-                            existing_summary,
-                            model=config.model,
-                            llm_overrides=llm_overrides,
-                        )
-
-                        await storage_set(
-                            db, ctx.project.id, "auto-compress",
-                            "compression-summary",
-                            {"summary": compress_result["summary"]},
-                            autocommit=True,
-                        )
-
-                        prev_state = await _storage_get(db, ctx.project.id, "auto-compress", "compression-state")
-                        prev_count = (prev_state or {}).get("total_compressions", 0) if isinstance(prev_state, dict) else 0
-                        await storage_set(
-                            db, ctx.project.id, "auto-compress",
-                            "compression-state",
-                            {
-                                "last_compressed_message_count": len(messages_to_compress),
-                                "total_compressions": prev_count + 1,
-                            },
-                            autocommit=True,
-                        )
-
-                        yield {
-                            "type": "notification",
-                            "data": {
-                                "level": "info",
-                                "title": "上下文已压缩",
-                                "content": f"已将 {len(messages_to_compress)} 条旧消息压缩为摘要",
-                            },
-                            "turn_id": turn_id,
-                        }
-                        logger.info("Auto-compressed {} messages for session {}", len(messages_to_compress), session_id)
-                except Exception:
-                    logger.exception("Auto-compress failed for session {}", session_id)
+        finalize_events = await _finalize_turn_stage(
+            db=db,
+            ctx=ctx,
+            state_mgr=state_mgr,
+            session_id=session_id,
+            should_increment_turn=should_increment_turn,
+            context_usage=context_usage,
+            model=config.model,
+            llm_overrides=llm_overrides,
+            turn_id=turn_id,
+        )
+        for evt in finalize_events:
+            yield evt
 
         yield {"type": "turn_end", "turn_id": turn_id}
 
@@ -504,20 +834,16 @@ async def retrigger_plugins(
         plugin_summary: dict[str, Any] = {}
 
         # Load per-session plugin trigger counts
-        retrigger_gs_data = safe_json_loads(
+        retrigger_trigger_counts = _load_plugin_trigger_counts(
             ctx.session.game_state_json,
-            fallback={},
-            context=f"GameSession state ({session_id})",
+            session_id,
         )
-        if not isinstance(retrigger_gs_data, dict):
-            retrigger_gs_data = {}
-        retrigger_trigger_counts = _normalize_plugin_counts(
-            retrigger_gs_data.get("plugin_execution_counts")
+        current_turn = _load_turn_count(ctx.session.game_state_json, session_id)
+        block_trigger_counts = _load_block_trigger_counts(
+            ctx.session.game_state_json,
+            session_id,
         )
-        if not retrigger_trigger_counts:
-            retrigger_trigger_counts = _normalize_plugin_counts(
-                retrigger_gs_data.get("plugin_trigger_counts")
-            )
+        has_player_character = any(getattr(ch, "role", None) == "player" for ch in ctx.characters)
 
         try:
             blocks, plugin_summary = await run_plugin_agent(
@@ -528,25 +854,24 @@ async def retrigger_plugins(
                 game_db=game_db,
                 pe=ctx.pe,
                 config=plugin_config,
+                current_turn=current_turn,
+                session_phase=getattr(ctx.session, "phase", None),
+                runtime_settings_by_plugin=ctx.runtime_settings_by_plugin,
+                block_trigger_counts=block_trigger_counts,
+                has_player_character=has_player_character,
+                turn_id=turn_id,
                 trigger_counts=retrigger_trigger_counts,
             )
         except Exception:
             logger.exception("Plugin Agent retrigger failed for session {}", session_id)
             blocks = []
 
-        # Filter conflicting blocks
-        block_types = {b.get("type") for b in blocks}
-        if "character_sheet" in block_types:
-            suppressed = {"guide", "choices", "auto_guide"}
-            blocks = [b for b in blocks if b.get("type") not in suppressed]
-
-        # Suppress character_sheet if a player character already exists
-        if "character_sheet" in block_types:
-            existing_chars = await state_mgr.get_characters(session_id)
-            has_player = any(c.role == "player" for c in existing_chars)
-            if has_player:
-                blocks = [b for b in blocks if b.get("type") != "character_sheet"]
-                logger.debug("Retrigger: suppressed character_sheet (player exists)")
+        blocks = await _filter_plugin_blocks(
+            blocks,
+            state_mgr=state_mgr,
+            session_id=session_id,
+            log_prefix="Retrigger",
+        )
 
         logger.info("Retrigger: {} blocks emitted for message {}", len(blocks), message_id)
 
@@ -556,70 +881,48 @@ async def retrigger_plugins(
             yield {"type": "plugin_summary", "data": plugin_summary, "turn_id": turn_id}
 
         # Dispatch blocks (side effects like DB writes) but collect for batch update
+        block_trigger_counts_before = dict(block_trigger_counts)
         block_context = BlockContext(
             session_id=session_id, project_id=ctx.project.id, db=db,
             state_mgr=state_mgr, autocommit=False, turn_id=turn_id,
             image_overrides=image_overrides, llm_overrides=llm_overrides,
         )
-        dispatched_blocks: list[dict] = []
-        for i, block in enumerate(blocks):
-            block_type = str(block.get("type", "unknown"))
-            block_data = block.get("data")
-            declaration = ctx.block_declarations.get(block_type) if ctx.block_declarations else None
-
-            validation_errors = validate_block_data(block_type, block_data, declaration)
-            if validation_errors:
-                logger.warning("Invalid block on retrigger: type={}, errors={}", block_type, validation_errors)
-                continue
-
-            try:
-                await dispatch_block(block, block_context, ctx.block_declarations, None)
-            except Exception:
-                logger.exception("Block dispatch failed on retrigger: {}", block.get("type"))
-                continue
-
-            if block_type not in {"state_update"}:
-                dispatched_blocks.append({
-                    "type": block_type,
-                    "data": block_data,
-                    "block_id": f"{message_id}:{i}",
-                })
+        _, persisted_blocks = await _dispatch_blocks_stage(
+            blocks,
+            block_context=block_context,
+            block_declarations=ctx.block_declarations,
+            turn_id=turn_id,
+            emit_front_events=False,
+            log_prefix="retrigger",
+            block_trigger_counts=block_trigger_counts,
+        )
+        dispatched_blocks = _to_message_blocks(message_id, persisted_blocks)
 
         # Persist blocks to message metadata
         if dispatched_blocks:
-            existing_meta = safe_json_loads(
+            msg_obj.metadata_json = _merge_blocks_into_metadata(
                 msg_obj.metadata_json,
-                fallback={},
-                context=f"Message metadata ({message_id})",
+                message_id,
+                dispatched_blocks,
             )
-            if not isinstance(existing_meta, dict):
-                existing_meta = {}
-            existing_meta["blocks"] = dispatched_blocks
-            msg_obj.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
             db.add(msg_obj)
+
+        if block_trigger_counts != block_trigger_counts_before:
+            ctx.session.game_state_json = _set_block_trigger_counts(
+                ctx.session.game_state_json,
+                session_id,
+                block_trigger_counts,
+            )
+            db.add(ctx.session)
 
         # Update trigger counts for plugins that emitted blocks
         plugins_counted = _plugins_to_count(plugin_summary)
         if plugins_counted:
-            latest_state = safe_json_loads(
+            ctx.session.game_state_json = _increment_plugin_trigger_counts(
                 ctx.session.game_state_json,
-                fallback={},
-                context=f"GameSession state ({session_id})",
+                session_id,
+                plugins_counted,
             )
-            if not isinstance(latest_state, dict):
-                latest_state = {}
-            latest_trigger_counts = _normalize_plugin_counts(
-                latest_state.get("plugin_execution_counts")
-            )
-            if not latest_trigger_counts:
-                latest_trigger_counts = _normalize_plugin_counts(
-                    latest_state.get("plugin_trigger_counts")
-                )
-            for pname in plugins_counted:
-                latest_trigger_counts[pname] = int(latest_trigger_counts.get(pname, 0) or 0) + 1
-            latest_state["plugin_execution_counts"] = latest_trigger_counts
-            latest_state["plugin_trigger_counts"] = latest_trigger_counts
-            ctx.session.game_state_json = json.dumps(latest_state)
             db.add(ctx.session)
 
         await db.commit()
