@@ -8,6 +8,11 @@ from typing import Any
 
 from loguru import logger
 
+from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
+
+from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
+
 from backend.app.core.game_state import GameStateManager
 from backend.app.core.json_utils import safe_json_loads
 from backend.app.db.engine import engine
@@ -19,6 +24,30 @@ from typing import Protocol
 
 class EventSink(Protocol):
     async def send_json(self, data: dict) -> None: ...
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers — reduce repeated session-lookup boilerplate
+# ---------------------------------------------------------------------------
+
+@asynccontextmanager
+async def _with_session() -> AsyncIterator[SQLModelAsyncSession]:
+    """Open a short-lived DB session (replaces repeated ``async with SQLModelAsyncSession(engine, ...)`` blocks)."""
+    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+        yield db
+
+
+async def _get_session_or_error(
+    sink: EventSink,
+    session_id: str,
+    db: SQLModelAsyncSession,
+) -> GameSession | None:
+    """Fetch a GameSession by id, sending an error event and returning None if missing."""
+    game_session = await db.get(GameSession, session_id)
+    if not game_session:
+        await sink.send_json({"type": "error", "content": "Session not found"})
+        return None
+    return game_session
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -86,7 +115,6 @@ async def _handle_generate_message_image(
 ) -> None:
     """Handle per-message image generation — no LLM round-trip."""
     from sqlmodel import select
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
     from backend.app.models.message import Message
     from backend.app.services.image_service import generate_message_image
@@ -98,7 +126,7 @@ async def _handle_generate_message_image(
         )
         return
 
-    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+    async with _with_session() as db:
         msg = await db.get(Message, message_id)
         if not msg or msg.session_id != session_id or msg.role != "assistant":
             await sink.send_json(
@@ -114,11 +142,8 @@ async def _handle_generate_message_image(
             )
             return
 
-        game_session = await db.get(GameSession, session_id)
+        game_session = await _get_session_or_error(sink, session_id, db)
         if not game_session:
-            await sink.send_json(
-                {"type": "error", "content": "Session not found"}
-            )
             return
 
         # Send loading event
@@ -188,13 +213,11 @@ async def _handle_init_game(
     image_overrides: dict[str, str] | None = None,
 ) -> None:
     """Handle game initialization — transition to character_creation or playing."""
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
     from backend.app.models.project import Project
 
-    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
-        game_session = await db.get(GameSession, session_id)
+    async with _with_session() as db:
+        game_session = await _get_session_or_error(sink, session_id, db)
         if not game_session:
-            await sink.send_json({"type": "error", "content": "Session not found"})
             return
 
         project = await db.get(Project, game_session.project_id)
@@ -227,17 +250,14 @@ async def _handle_form_submit(
     image_overrides: dict[str, str] | None = None,
 ) -> None:
     """Handle form submission — may trigger character creation or other actions."""
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-
     form_id = data.get("form_id", "")
     values = data.get("values", {})
 
     if form_id == "character_creation":
-        async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+        async with _with_session() as db:
             state_mgr = GameStateManager(db)
-            game_session = await db.get(GameSession, session_id)
+            game_session = await _get_session_or_error(sink, session_id, db)
             if not game_session:
-                await sink.send_json({"type": "error", "content": "Session not found"})
                 return
 
             char = await state_mgr.upsert_character(
@@ -287,8 +307,6 @@ async def _handle_character_edit(
     image_overrides: dict[str, str] | None = None,
 ) -> None:
     """Handle character edits — no LLM call, direct DB update."""
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-
     character_id = data.get("character_id")
     changes = data.get("changes", {})
 
@@ -303,7 +321,7 @@ async def _handle_character_edit(
             {"type": "character_confirmed", "data": {"character_id": character_id}}
         )
 
-        async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+        async with _with_session() as db:
             game_session = await db.get(GameSession, session_id)
             if game_session and game_session.phase == "character_creation":
                 game_session.phase = "playing"
@@ -329,11 +347,10 @@ async def _handle_character_edit(
 
     transitioned_from_creation = False
 
-    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+    async with _with_session() as db:
         state_mgr = GameStateManager(db)
-        game_session = await db.get(GameSession, session_id)
+        game_session = await _get_session_or_error(sink, session_id, db)
         if not game_session:
-            await sink.send_json({"type": "error", "content": "Session not found"})
             return
 
         char_data = {"character_id": character_id, **changes}
@@ -399,8 +416,6 @@ async def _handle_scene_switch(
     image_overrides: dict[str, str] | None = None,
 ) -> None:
     """Handle scene switching — update current scene and trigger DM narration."""
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-
     scene_id = data.get("scene_id")
     if not scene_id:
         await sink.send_json(
@@ -408,7 +423,7 @@ async def _handle_scene_switch(
         )
         return
 
-    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+    async with _with_session() as db:
         from backend.app.models.scene import Scene
 
         scene = await db.get(Scene, scene_id)
@@ -456,16 +471,13 @@ async def _handle_block_response(
     transport_mode: str = "websocket",
 ) -> None:
     """Handle a user's response to an interactive block (requires_response=true)."""
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-
     block_type = data.get("block_type", "unknown")
     block_id = data.get("block_id", "")
     response_data = data.get("data", {})
 
-    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
-        game_session = await db.get(GameSession, session_id)
+    async with _with_session() as db:
+        game_session = await _get_session_or_error(sink, session_id, db)
         if not game_session:
-            await sink.send_json({"type": "error", "content": "Session not found"})
             return
 
         if (
@@ -579,15 +591,13 @@ async def _background_regen_image(
     llm_overrides: dict[str, str] | None = None,
 ) -> None:
     """Run story image regeneration in the background."""
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-
     from backend.app.services.image_service import (
         generate_story_image,
         regenerate_story_image,
     )
 
     try:
-        async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+        async with _with_session() as db:
             if image_id:
                 regenerated = await regenerate_story_image(
                     db,

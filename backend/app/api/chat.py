@@ -7,13 +7,14 @@ from typing import Any, Awaitable, Callable, Literal, Protocol
 
 from loguru import logger
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from backend.app.core.access_key import is_request_authorized
+from backend.app.core.rate_limit import limiter as _limiter
 from backend.app.db.engine import engine
 from backend.app.models.session import GameSession
-from backend.app.services.chat_service import process_message, retrigger_plugins
+from backend.app.services.chat_service import process_message, retrigger_plugins, stream_process_message  # noqa: F401 — tests patch process_message
 
 from backend.app.api.debug_log import _add_log, _touch_log_session, _cleanup_log_sessions
 from backend.app.services.command_handlers import (
@@ -169,31 +170,6 @@ async def _ensure_http_terminal_event(ctx: CommandContext) -> None:
     await ctx.sink.send_json(done_event)
 
 
-async def _stream_process_message(
-    sink: EventSink,
-    session_id: str,
-    content: str,
-    *,
-    save_user_msg: bool = True,
-    save_assistant_msg: bool = True,
-    llm_overrides: dict[str, str] | None = None,
-    image_overrides: dict[str, str] | None = None,
-) -> None:
-    """Stream process_message events (narrative + plugin agent) to sink."""
-    async for event in process_message(
-        session_id, content,
-        save_user_msg=save_user_msg,
-        save_assistant_msg=save_assistant_msg,
-        llm_overrides=llm_overrides,
-        image_overrides=image_overrides,
-    ):
-        etype = event.get("type", "")
-        if etype == "_message_saved":
-            continue  # internal event, don't forward
-        _add_log(session_id, "send", event)
-        await sink.send_json(event)
-
-
 async def _session_exists(session_id: str) -> bool:
     from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
@@ -207,7 +183,7 @@ async def _handle_message(ctx: CommandContext) -> None:
     if not content:
         await _send_error(ctx.sink, "Empty message")
         return
-    await _stream_process_message(
+    await stream_process_message(
         ctx.sink,
         ctx.session_id,
         content,
@@ -345,7 +321,8 @@ async def _dispatch_incoming_message(
 
 
 @router.post("/api/chat/{session_id}/command", response_model=ChatCommandResponse)
-async def chat_command(session_id: str, data: dict[str, Any]) -> ChatCommandResponse:
+@_limiter.limit("60/minute")
+async def chat_command(request: Request, session_id: str, data: dict[str, Any]) -> ChatCommandResponse:
     """HTTP fallback for chat commands (Vercel-compatible, no WebSocket required)."""
     if not await _session_exists(session_id):
         events = [{"type": "error", "content": "Session not found"}]
@@ -381,6 +358,9 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
     try:
         while True:
             raw = await websocket.receive_text()
+            if len(raw) > 1_000_000:
+                await websocket.send_json({"type": "error", "content": "Message too large (>1MB)"})
+                continue
             try:
                 data = json.loads(raw)
             except json.JSONDecodeError:
