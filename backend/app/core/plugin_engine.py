@@ -18,7 +18,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import frontmatter
-from jinja2 import BaseLoader, Environment
+from jinja2 import BaseLoader
+from jinja2.sandbox import SandboxedEnvironment
 from loguru import logger
 
 if TYPE_CHECKING:
@@ -327,7 +328,7 @@ class PluginEngine:
         ordered = self.resolve_dependencies(enabled_plugins, plugins_dir)
         injections: list[dict[str, Any]] = []
 
-        jinja_env = Environment(loader=BaseLoader(), autoescape=False)
+        jinja_env = SandboxedEnvironment(loader=BaseLoader(), autoescape=True)
 
         for name in ordered:
             data = self.load(name, plugins_dir)

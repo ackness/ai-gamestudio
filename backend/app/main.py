@@ -57,6 +57,15 @@ async def lifespan(app: FastAPI):
     pathlib.Path(settings.DATA_DIR).mkdir(parents=True, exist_ok=True)
     await init_db()
 
+    # Warn if no access key is configured
+    if not access_key_required():
+        from loguru import logger as _logger
+
+        _logger.warning(
+            "ACCESS_KEY is not set — all API endpoints are publicly accessible. "
+            "Set ACCESS_KEY in .env for production deployments."
+        )
+
     port = int(os.getenv("PORT", "8000"))
     _print_startup_banner(port)
 
@@ -70,8 +79,15 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Access-Key",
+        "X-LLM-Model",
+        "X-LLM-Api-Key",
+        "X-LLM-Api-Base",
+    ],
 )
 
 # Access key protection (optional — only active when ACCESS_KEY env var is set)

@@ -217,7 +217,18 @@ class ImportInstallBody(BaseModel):
 @router.post("/import/install")
 async def install_plugin(body: ImportInstallBody):
     """Validate and install a plugin from source directory."""
-    source = pathlib.Path(body.source_dir)
+    source = pathlib.Path(body.source_dir).resolve()
+    # Security: restrict source_dir to the configured plugins directory
+    # or a known safe staging area to prevent arbitrary file read
+    allowed_roots = [
+        pathlib.Path(settings.PLUGINS_DIR).resolve(),
+        pathlib.Path("/tmp").resolve(),
+    ]
+    if not any(source.is_relative_to(root) for root in allowed_roots):
+        raise HTTPException(
+            status_code=403,
+            detail="source_dir must be within the plugins directory or /tmp",
+        )
     if not source.is_dir():
         raise HTTPException(status_code=400, detail="Source directory not found")
 

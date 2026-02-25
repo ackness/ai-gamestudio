@@ -68,6 +68,10 @@ def resolve_llm_config(
         override_model = str(overrides.get("model") or "").strip()
         override_api_key = str(overrides.get("api_key") or "").strip()
         override_api_base = str(overrides.get("api_base") or "").strip()
+        # Security: if api_base is overridden, require api_key too
+        # to prevent leaking the server's default key to attacker-controlled URLs
+        if override_api_base and not override_api_key:
+            override_api_base = ""  # ignore api_base override without api_key
         return ResolvedLlmConfig(
             model=override_model or settings.LLM_MODEL or "gpt-4o-mini",
             api_key=override_api_key if override_api_key else settings.LLM_API_KEY,

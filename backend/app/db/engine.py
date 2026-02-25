@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from loguru import logger
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
@@ -52,9 +53,11 @@ async def _migrate(conn) -> None:
         try:
             await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
             logger.info("Migration: added column {}.{}", table, column)
-        except Exception:
+        except OperationalError:
             # Column already exists — ignore
             pass
+        except Exception:
+            logger.warning("Migration failed for {}.{}: unexpected error", table, column, exc_info=True)
 
 
 async def _migrate_plaintext_api_keys() -> None:

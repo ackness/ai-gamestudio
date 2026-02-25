@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import pathlib
+import sys
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -78,12 +79,23 @@ class PythonScriptRunner(BaseScriptRunner):
         start = asyncio.get_event_loop().time()
 
         try:
+            # Security: run plugin scripts in isolated mode with minimal env
+            # to prevent access to server secrets and API keys
+            safe_env = {
+                "PATH": "/usr/bin:/bin",
+                "PYTHONPATH": "",
+                "HOME": "/tmp",
+                "LANG": "en_US.UTF-8",
+            }
             process = await asyncio.create_subprocess_exec(
-                "python",
+                sys.executable,
+                "-I",  # isolated mode: no user site-packages, no PYTHON* env vars
                 str(script_path),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=safe_env,
+                cwd=str(script_path.parent),
             )
 
             try:

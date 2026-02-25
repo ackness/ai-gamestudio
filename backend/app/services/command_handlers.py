@@ -573,7 +573,8 @@ async def _handle_story_image_regen(
     if transport_mode == "http":
         await regen_coro
     else:
-        asyncio.create_task(regen_coro)
+        task = asyncio.create_task(regen_coro)
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
 
 async def _background_regen_image(

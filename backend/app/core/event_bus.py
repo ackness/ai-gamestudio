@@ -1,6 +1,7 @@
 """Request-scoped plugin event bus for inter-plugin communication."""
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
@@ -25,7 +26,7 @@ class PluginEventBus:
     """
 
     _listeners: dict[str, list[EventCallback]] = field(default_factory=dict)
-    _queue: list[tuple[str, dict]] = field(default_factory=list)
+    _queue: deque[tuple[str, dict]] = field(default_factory=deque)
 
     def register(self, event_type: str, callback: EventCallback) -> None:
         """Register a listener for an event type."""
@@ -43,7 +44,7 @@ class PluginEventBus:
         max_iterations = 100  # safety limit to prevent infinite loops
         iterations = 0
         while self._queue and iterations < max_iterations:
-            event_type, data = self._queue.pop(0)
+            event_type, data = self._queue.popleft()
             iterations += 1
             for cb in self._listeners.get(event_type, []):
                 try:
