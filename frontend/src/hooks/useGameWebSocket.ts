@@ -6,6 +6,7 @@ import { useProjectStore } from '../stores/projectStore'
 import { useBlockInteractionStore } from '../stores/blockInteractionStore'
 import { useNotificationStore } from '../stores/notificationStore'
 import { useTokenStore } from '../stores/tokenStore'
+import { useCodexStore } from '../stores/codexStore'
 import { GameWebSocket } from '../services/websocket'
 import { StorageFactory } from '../services/settingsStorage'
 import { useUiStore } from '../stores/uiStore'
@@ -203,13 +204,16 @@ export function useGameWebSocket(currentSession: Session | null) {
       )
     }
 
-    ws.onBlock = (type, data, turnId, blockId) => {
+    ws.onBlock = (type, data, turnId, blockId, output) => {
       if (type === 'state_update') return
       if (type === 'scene_update') return
       if (type === 'character_confirmed') return
       if (type === 'event') {
         if (isGameEvent(data)) addEvent(data)
         return
+      }
+      if (type === 'codex_entry' && data) {
+        useCodexStore.getState().addEntry(data as import('../stores/codexStore').CodexEntry)
       }
       const enrichedData =
         data && typeof data === 'object' && !Array.isArray(data)
@@ -230,7 +234,13 @@ export function useGameWebSocket(currentSession: Session | null) {
         }
       }
 
-      addPendingBlock({ type, data: enrichedData, turnId: turnId || undefined, blockId: resolvedBlockId })
+      addPendingBlock({
+        type,
+        data: enrichedData,
+        output: output || undefined,
+        turnId: turnId || undefined,
+        blockId: resolvedBlockId,
+      })
     }
 
     ws.onMessageBlocksUpdated = (messageId, blocks) => {
