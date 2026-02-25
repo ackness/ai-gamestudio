@@ -29,6 +29,15 @@ const modelPanelText: Record<string, Record<string, string>> = {
     model: '模型',
     apiKey: 'API Key',
     apiBase: 'API Base',
+    pluginLlm: '插件模型（可选）',
+    pluginModel: '插件模型',
+    pluginApiKey: '插件 API Key',
+    pluginApiBase: '插件 API Base',
+    pluginModelPlaceholder: '例：openai/llama3.2',
+    pluginApiKeyPlaceholder: '输入 API Key',
+    pluginApiBasePlaceholder: '例：http://localhost:11434/v1',
+    pluginSameAsMain: '与主模型相同',
+    pluginCustom: '自定义模型',
     imageGeneration: '图片生成',
     imageModel: '图片模型',
     imageApiKey: '图片 API Key',
@@ -50,6 +59,8 @@ const modelPanelText: Record<string, Record<string, string>> = {
     keySetInEnv: '(在 .env 中已设置)',
     keySetInBrowser: '(在浏览器中已设置)',
     keySetInProjectEnv: '(在项目/.env 中已设置)',
+    testConnection: '测试连接',
+    testing: '测试中...',
   },
   en: {
     title: 'Model Configuration',
@@ -63,6 +74,15 @@ const modelPanelText: Record<string, Record<string, string>> = {
     model: 'Model',
     apiKey: 'API Key',
     apiBase: 'API Base',
+    pluginLlm: 'Plugin Model (optional)',
+    pluginModel: 'Plugin Model',
+    pluginApiKey: 'Plugin API Key',
+    pluginApiBase: 'Plugin API Base',
+    pluginModelPlaceholder: 'e.g. openai/llama3.2',
+    pluginApiKeyPlaceholder: 'Enter API Key',
+    pluginApiBasePlaceholder: 'e.g. http://localhost:11434/v1',
+    pluginSameAsMain: 'Same as main model',
+    pluginCustom: 'Custom model',
     imageGeneration: 'Image Generation',
     imageModel: 'Image Model',
     imageApiKey: 'Image API Key',
@@ -84,6 +104,8 @@ const modelPanelText: Record<string, Record<string, string>> = {
     keySetInEnv: '(set in .env)',
     keySetInBrowser: '(set in browser)',
     keySetInProjectEnv: '(set in project/.env)',
+    testConnection: 'Test',
+    testing: 'Testing...',
   },
 }
 
@@ -100,6 +122,10 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [apiBase, setApiBase] = useState('')
+  const [pluginModel, setPluginModel] = useState('')
+  const [pluginApiKey, setPluginApiKey] = useState('')
+  const [pluginApiBase, setPluginApiBase] = useState('')
+  const [pluginUseSameModel, setPluginUseSameModel] = useState(true)
   const [imageModel, setImageModel] = useState('')
   const [imageApiKey, setImageApiKey] = useState('')
   const [imageApiBase, setImageApiBase] = useState('')
@@ -108,6 +134,45 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
   const [saveProfileName, setSaveProfileName] = useState('')
   const [showSaveProfile, setShowSaveProfile] = useState(false)
   const browserConfig = currentProject ? getBrowserLlmConfig(currentProject.id) : {}
+
+  // Test connection state
+  const [mainTestResult, setMainTestResult] = useState<{ok: boolean; latency_ms?: number; error?: string} | null>(null)
+  const [mainTesting, setMainTesting] = useState(false)
+  const [pluginTestResult, setPluginTestResult] = useState<{ok: boolean; latency_ms?: number; error?: string} | null>(null)
+  const [pluginTesting, setPluginTesting] = useState(false)
+
+  const testModel = async (m: string, key: string, base: string): Promise<{ok: boolean; reply?: string; error?: string; latency_ms?: number}> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (m) headers['x-llm-model'] = m
+    if (key) headers['x-llm-api-key'] = key
+    if (base) headers['x-llm-api-base'] = base
+    const res = await fetch('/api/llm/test', { method: 'POST', headers })
+    return res.json()
+  }
+
+  const handleTestMain = async () => {
+    setMainTesting(true)
+    setMainTestResult(null)
+    try {
+      const result = await testModel(model, apiKey, apiBase)
+      setMainTestResult(result)
+    } catch {
+      setMainTestResult({ ok: false, error: 'Network error' })
+    }
+    setMainTesting(false)
+  }
+
+  const handleTestPlugin = async () => {
+    setPluginTesting(true)
+    setPluginTestResult(null)
+    try {
+      const result = await testModel(pluginModel, pluginApiKey, pluginApiBase)
+      setPluginTestResult(result)
+    } catch {
+      setPluginTestResult({ ok: false, error: 'Network error' })
+    }
+    setPluginTesting(false)
+  }
 
   // Load profiles and preset models on mount
   useEffect(() => {
@@ -142,6 +207,10 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
       setModel(local.model || currentProject.llm_model || '')
       setApiKey(local.apiKey || '')
       setApiBase(local.apiBase || currentProject.llm_api_base || '')
+      setPluginModel(local.pluginModel || '')
+      setPluginApiKey(local.pluginApiKey || '')
+      setPluginApiBase(local.pluginApiBase || '')
+      setPluginUseSameModel(!local.pluginModel)
       setImageModel(local.imageModel || currentProject.image_model || '')
       setImageApiKey(local.imageApiKey || '')
       setImageApiBase(local.imageApiBase || currentProject.image_api_base || '')
@@ -259,6 +328,9 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
         model,
         apiKey,
         apiBase,
+        pluginModel: pluginUseSameModel ? undefined : (pluginModel || undefined),
+        pluginApiKey: pluginUseSameModel ? undefined : (pluginApiKey || undefined),
+        pluginApiBase: pluginUseSameModel ? undefined : (pluginApiBase || undefined),
         imageModel,
         imageApiKey,
         imageApiBase,
@@ -330,6 +402,10 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
       setModel('')
       setApiKey('')
       setApiBase('')
+      setPluginModel('')
+      setPluginApiKey('')
+      setPluginApiBase('')
+      setPluginUseSameModel(true)
       setImageModel('')
       setImageApiKey('')
       setImageApiBase('')
@@ -391,7 +467,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
                 .filter((p) => p.provider === 'deepseek')
                 .map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}
+                    {language === 'en' && p.name_en ? p.name_en : p.name}
                   </option>
                 ))}
             </optgroup>
@@ -400,7 +476,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
                 .filter((p) => p.provider === 'openrouter')
                 .map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}
+                    {language === 'en' && p.name_en ? p.name_en : p.name}
                   </option>
                 ))}
             </optgroup>
@@ -491,6 +567,111 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
             placeholder={llmInfo?.api_base || 'https://api.openai.com/v1'}
             className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
+        </div>
+
+        {/* Test main model connection */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleTestMain}
+            disabled={mainTesting || !model}
+            className="px-2.5 py-1 text-xs border rounded hover:bg-muted disabled:opacity-50 transition-colors"
+          >
+            {mainTesting ? t.testing : t.testConnection}
+          </button>
+          {mainTestResult && (
+            <span className={`text-xs ${mainTestResult.ok ? 'text-emerald-500' : 'text-destructive'}`}>
+              {mainTestResult.ok ? `OK ${mainTestResult.latency_ms}ms` : mainTestResult.error}
+            </span>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="pt-1 border-t" />
+
+        {/* Plugin Agent model config */}
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground">{t.pluginLlm}</div>
+
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => setPluginUseSameModel(true)}
+              className={`flex-1 text-xs py-1.5 rounded-md border transition-colors ${
+                pluginUseSameModel
+                  ? 'bg-primary/10 border-primary/40 text-primary font-medium'
+                  : 'border-input text-muted-foreground hover:text-foreground hover:border-foreground/30'
+              }`}
+            >
+              {t.pluginSameAsMain}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPluginUseSameModel(false)}
+              className={`flex-1 text-xs py-1.5 rounded-md border transition-colors ${
+                !pluginUseSameModel
+                  ? 'bg-primary/10 border-primary/40 text-primary font-medium'
+                  : 'border-input text-muted-foreground hover:text-foreground hover:border-foreground/30'
+              }`}
+            >
+              {t.pluginCustom}
+            </button>
+          </div>
+
+          <div className={`space-y-2 transition-opacity ${pluginUseSameModel ? 'opacity-40 pointer-events-none' : ''}`}>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">{t.pluginModel}</label>
+              <input
+                type="text"
+                value={pluginModel}
+                onChange={(e) => setPluginModel(e.target.value)}
+                placeholder={t.pluginModelPlaceholder}
+                disabled={pluginUseSameModel}
+                className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">{t.pluginApiKey}</label>
+              <input
+                type="password"
+                value={pluginApiKey}
+                onChange={(e) => setPluginApiKey(e.target.value)}
+                placeholder={t.pluginApiKeyPlaceholder}
+                disabled={pluginUseSameModel}
+                className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">{t.pluginApiBase}</label>
+              <input
+                type="text"
+                value={pluginApiBase}
+                onChange={(e) => setPluginApiBase(e.target.value)}
+                placeholder={t.pluginApiBasePlaceholder}
+                disabled={pluginUseSameModel}
+                className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+              />
+            </div>
+
+            {/* Test plugin model connection */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTestPlugin}
+                disabled={pluginTesting || pluginUseSameModel || !pluginModel}
+                className="px-2.5 py-1 text-xs border rounded hover:bg-muted disabled:opacity-50 transition-colors"
+              >
+                {pluginTesting ? t.testing : t.testConnection}
+              </button>
+              {pluginTestResult && (
+                <span className={`text-xs ${pluginTestResult.ok ? 'text-emerald-500' : 'text-destructive'}`}>
+                  {pluginTestResult.ok ? `OK ${pluginTestResult.latency_ms}ms` : pluginTestResult.error}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Actions */}

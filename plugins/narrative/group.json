@@ -1,0 +1,7 @@
+{
+  "name": "narrative",
+  "description": "叙事辅助插件组，提供行动引导、知识图鉴和故事图像生成",
+  "shared_prompt": "You enhance the narrative experience. Provide action suggestions, track discovered knowledge, and generate visual representations of key story moments.",
+  "execution_mode": "merged",
+  "plugins": ["guide", "codex", "image"]
+}

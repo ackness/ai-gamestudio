@@ -1,0 +1,296 @@
+{
+  "schema_version": "1.0",
+  "version": "0.1.0",
+  "name": "inventory",
+  "type": "gameplay",
+  "required": false,
+  "description": "Item, equipment, and loot management system.",
+  "dependencies": [
+    "state"
+  ],
+  "prompt": {
+    "position": "pre-response",
+    "priority": 76,
+    "template": "prompts/inventory-instruction.md"
+  },
+  "capabilities": {
+    "inventory.use_item": {
+      "description": "使用消耗品或装备物品，计算效果并返回结果",
+      "implementation": {
+        "type": "script",
+        "script": "scripts/use_item.py",
+        "timeout_ms": 5000
+      },
+      "result_block_type": "item_effect"
+    }
+  },
+  "outputs": {
+    "item_update": {
+      "instruction": "当物品获得、失去、使用、装备或卸下时，用 `emit.items` 输出 `item_update`。",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "gain",
+              "lose",
+              "use",
+              "equip",
+              "unequip"
+            ]
+          },
+          "item_name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer"
+          },
+          "item_type": {
+            "type": "string",
+            "enum": [
+              "weapon",
+              "armor",
+              "consumable",
+              "quest",
+              "misc",
+              "currency",
+              "material",
+              "key"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "stats": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "action",
+          "item_name",
+          "quantity",
+          "item_type"
+        ]
+      },
+      "handler": {
+        "actions": [
+          {
+            "type": "storage_write",
+            "key": "inventory"
+          },
+          {
+            "type": "emit_event",
+            "event": "item-gained"
+          }
+        ]
+      },
+      "ui": {
+        "component": "card",
+        "title": "{{ action }} — {{ item_name }}",
+        "sections": [
+          {
+            "type": "key-value",
+            "fields": [
+              "item_name",
+              "quantity",
+              "item_type",
+              "description"
+            ]
+          }
+        ]
+      },
+      "requires_response": false
+    },
+    "loot": {
+      "instruction": "战斗或探索获得战利品时，用 `emit.items` 输出 `loot`。",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "integer"
+                },
+                "rarity": {
+                  "type": "string",
+                  "enum": [
+                    "common",
+                    "uncommon",
+                    "rare",
+                    "epic",
+                    "legendary"
+                  ]
+                },
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "quantity",
+                "rarity"
+              ]
+            }
+          },
+          "gold": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "source",
+          "items"
+        ]
+      },
+      "handler": {
+        "actions": [
+          {
+            "type": "storage_write",
+            "key": "inventory"
+          },
+          {
+            "type": "emit_event",
+            "event": "item-gained"
+          }
+        ]
+      },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "loot"
+      },
+      "requires_response": false
+    }
+  },
+  "events": {
+    "emit": [
+      "item-gained",
+      "item-used"
+    ],
+    "listen": []
+  },
+  "storage": {
+    "keys": [
+      "inventory",
+      "item-catalog",
+      "equipment-slots"
+    ]
+  },
+  "permissions": {
+    "network": false,
+    "filesystem_scope": [
+      "plugin",
+      "data"
+    ],
+    "script_languages": [
+      "python"
+    ]
+  },
+  "extensions": {
+    "runtime_settings": {
+      "fields": {
+        "loot_frequency": {
+          "type": "enum",
+          "label": "Loot Frequency",
+          "description": "How often loot drops appear.",
+          "default": "normal",
+          "options": [
+            {
+              "value": "scarce",
+              "label": "Scarce",
+              "i18n": {
+                "zh": {
+                  "label": "稀少"
+                }
+              }
+            },
+            {
+              "value": "normal",
+              "label": "Normal",
+              "i18n": {
+                "zh": {
+                  "label": "正常"
+                }
+              }
+            },
+            {
+              "value": "abundant",
+              "label": "Abundant",
+              "i18n": {
+                "zh": {
+                  "label": "丰富"
+                }
+              }
+            }
+          ],
+          "affects": [
+            "loot"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "掉落频率",
+              "description": "战利品掉落的频率。"
+            }
+          }
+        },
+        "show_item_stats": {
+          "type": "enum",
+          "label": "Show Item Stats",
+          "description": "Whether to display item stat effects.",
+          "default": "visible",
+          "options": [
+            {
+              "value": "hidden",
+              "label": "Hidden",
+              "i18n": {
+                "zh": {
+                  "label": "隐藏"
+                }
+              }
+            },
+            {
+              "value": "visible",
+              "label": "Visible",
+              "i18n": {
+                "zh": {
+                  "label": "显示"
+                }
+              }
+            }
+          ],
+          "affects": [
+            "inventory"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "显示物品属性",
+              "description": "是否显示物品的属性效果。"
+            }
+          }
+        }
+      }
+    }
+  },
+  "i18n": {
+    "en": {
+      "name": "Inventory",
+      "description": "Item, equipment, and loot management system."
+    },
+    "zh": {
+      "name": "物品与装备",
+      "description": "物品获取、使用、装备与战利品管理系统。"
+    }
+  }
+}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Save, Bug, Plus, RefreshCcw, XCircle, MonitorPlay, History } from 'lucide-react'
 import type { Session } from '../../types'
 import { useSessionStore } from '../../stores/sessionStore'
+import { useSceneStore } from '../../stores/sceneStore'
 import { useGameStateStore } from '../../stores/gameStateStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { useBlockSchemaStore } from '../../stores/blockSchemaStore'
@@ -15,7 +16,10 @@ import { WelcomeScreen } from './WelcomeScreen'
 import { DebugLogPanel } from './DebugLogPanel'
 import { SessionSelector } from './SessionSelector'
 import type { LlmInfo } from '../../services/api'
+import * as api from '../../services/api'
+import { useTokenStore } from '../../stores/tokenStore'
 import { useUiStore } from '../../stores/uiStore'
+import { TokenUsageBar } from './TokenUsageBar'
 import { useGameWebSocket } from '../../hooks/useGameWebSocket'
 import { useGameActions } from '../../hooks/useGameActions'
 import { useArchive } from '../../hooks/useArchive'
@@ -65,13 +69,11 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
     messages,
     isStreaming,
     phase,
-    currentScene,
-    scenes,
+    pluginProcessing,
     switchSession,
     deleteSession,
-    setScenes,
-    setCurrentScene,
   } = useSessionStore()
+  const { currentScene, scenes, setScenes, setCurrentScene } = useSceneStore()
   const { setCharacters, setWorldState, setEvents } = useGameStateStore()
 
   // Fetch block schemas when project changes
@@ -83,6 +85,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
       clearSchemas()
     }
   }, [currentProject?.id, fetchSchemas, clearSchemas])
+
 
   // Hydrate notifications from messages
   useEffect(() => {
@@ -112,6 +115,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
     handleForceTrigger,
     handleGenerateImage,
     handleSceneSwitch,
+    handleRetriggerPlugins,
   } = useGameActions(currentSession, wsRef, clearInitError)
   const {
     archiveVersions,
@@ -126,6 +130,26 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
   const effectiveModel = llmInfo?.model || ''
   const effectiveProvider = llmInfo?.provider || 'openai'
   const effectiveModelName = llmInfo?.model_name || ''
+
+  const setModelInfo = useTokenStore((s) => s.setModelInfo)
+
+  useEffect(() => {
+    if (!effectiveModel) return
+    api.getModelInfo(effectiveModel).then((info) => {
+      setModelInfo({
+        model: info.model,
+        maxInputTokens: info.max_input_tokens,
+        maxOutputTokens: info.max_output_tokens,
+        maxInputTokensDisplay: info.max_input_tokens_display,
+        inputCostPerToken: info.input_cost_per_token,
+        outputCostPerToken: info.output_cost_per_token,
+        known: info.known,
+      })
+    }).catch(() => {
+      // Silently ignore — model info is optional
+    })
+  }, [effectiveModel, setModelInfo])
+
   const modelBadge = effectiveModel ? (
     <Badge variant="outline" className="text-[10px] font-mono font-normal tracking-tight h-5 truncate max-w-[200px]" title={effectiveModel}>
       {effectiveProvider}/{effectiveModelName}
@@ -135,13 +159,12 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
   if (!currentSession) {
     return (
       <div className="h-full flex flex-col overflow-hidden bg-background relative">
-        <div className="h-12 flex items-center justify-between px-4 bg-muted/20 border-b shrink-0 z-10">
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="text-sm font-semibold flex items-center gap-2">
-              <MonitorPlay className="w-4 h-4 text-muted-foreground" />
-              {gpt.noSession}
-            </span>
-            {modelBadge}
+        <div className="@container h-12 flex items-center justify-between px-4 bg-muted/20 border-b shrink-0 z-10">
+          <div className="flex items-center gap-2 min-w-0">
+            <MonitorPlay className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span className="hidden @md:inline text-sm font-semibold truncate">{gpt.noSession}</span>
+            <span className="hidden @md:inline">{modelBadge}</span>
+            <span className="hidden @md:inline-flex"><TokenUsageBar /></span>
           </div>
           <SessionSelector
             sessions={sessions}
@@ -161,15 +184,14 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-background relative">
-      <div className="h-12 flex items-center justify-between px-4 bg-muted/20 border-b shrink-0 z-10">
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="text-sm font-semibold flex items-center gap-2">
-            <MonitorPlay className="w-4 h-4 text-primary" />
-            {gpt.gameSession}
-          </span>
-          {modelBadge}
+      <div className="@container h-12 flex items-center justify-between px-4 bg-muted/20 border-b shrink-0 z-10">
+        <div className="flex items-center gap-2 min-w-0">
+          <MonitorPlay className="w-4 h-4 text-primary shrink-0" />
+          <span className="hidden @md:inline text-sm font-semibold truncate">{gpt.gameSession}</span>
+          <span className="hidden @md:inline">{modelBadge}</span>
+          <span className="hidden @md:inline-flex"><TokenUsageBar /></span>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -180,7 +202,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
                 disabled={archiveBusy || !currentSession}
               >
                 {archiveBusy ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                <span className="hidden sm:inline">{gpt.save}</span>
+                <span className="hidden @md:inline">{gpt.save}</span>
               </Button>
             </TooltipTrigger>
             <TooltipContent><p>{gpt.saveTip}</p></TooltipContent>
@@ -196,7 +218,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
                 disabled={archiveBusy || !currentSession}
               >
                 <History className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{gpt.restore}</span>
+                <span className="hidden @md:inline">{gpt.restore}</span>
               </Button>
             </TooltipTrigger>
             <TooltipContent><p>{gpt.restoreTip}</p></TooltipContent>
@@ -211,7 +233,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
                 onClick={() => setShowDebugLog((v) => !v)}
               >
                 <Bug className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{gpt.debug}</span>
+                <span className="hidden @md:inline">{gpt.debug}</span>
               </Button>
             </TooltipTrigger>
             <TooltipContent><p>{gpt.debugTip}</p></TooltipContent>
@@ -252,7 +274,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
 
         {phase === 'ended' && (
           <div className="flex flex-col h-full">
-            <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} />
+            <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} onRetriggerPlugins={handleRetriggerPlugins} />
             <div className="px-4 py-4 bg-muted/30 border-t text-center shrink-0">
               <p className="text-muted-foreground text-sm mb-3">游戏结束</p>
               <Button onClick={onNewSession} className="gap-2">
@@ -267,9 +289,9 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
             {currentScene && (
               <SceneBar currentScene={currentScene} scenes={scenes} onSceneSwitch={handleSceneSwitch} />
             )}
-            <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} />
-            <QuickActions onTrigger={handleForceTrigger} disabled={isStreaming} />
-            <ChatInput onSend={handleSend} disabled={isStreaming} />
+            <ChatMessages onAction={handleSend} onRetry={handleRetry} onGenerateImage={handleGenerateImage} onRetriggerPlugins={handleRetriggerPlugins} />
+            <QuickActions onTrigger={handleForceTrigger} disabled={isStreaming || pluginProcessing} />
+            <ChatInput onSend={handleSend} disabled={isStreaming || pluginProcessing} />
           </div>
         )}
 

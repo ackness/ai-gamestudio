@@ -13,6 +13,7 @@ from backend.app.db.engine import get_session
 from backend.app.models.project import Project
 from backend.app.services.plugin_service import (
     get_enabled_plugins,
+    storage_get,
     toggle_plugin,
 )
 
@@ -182,10 +183,10 @@ async def validate_plugin_import(
         errors.append("Missing PLUGIN.md")
         return ImportValidationResult(valid=False, errors=errors, warnings=warnings)
 
-    # Must have manifest.json for V2
+    # Must have manifest.json
     manifest_path = path / "manifest.json"
     if not manifest_path.is_file():
-        warnings.append("No manifest.json found; plugin will use V1 fallback")
+        errors.append("Missing manifest.json")
     else:
         from backend.app.core.manifest_loader import load_manifest
 
@@ -216,7 +217,18 @@ class ImportInstallBody(BaseModel):
 @router.post("/import/install")
 async def install_plugin(body: ImportInstallBody):
     """Validate and install a plugin from source directory."""
-    source = pathlib.Path(body.source_dir)
+    source = pathlib.Path(body.source_dir).resolve()
+    # Security: restrict source_dir to the configured plugins directory
+    # or a known safe staging area to prevent arbitrary file read
+    allowed_roots = [
+        pathlib.Path(settings.PLUGINS_DIR).resolve(),
+        pathlib.Path("/tmp").resolve(),
+    ]
+    if not any(source.is_relative_to(root) for root in allowed_roots):
+        raise HTTPException(
+            status_code=403,
+            detail="source_dir must be within the plugins directory or /tmp",
+        )
     if not source.is_dir():
         raise HTTPException(status_code=400, detail="Source directory not found")
 
@@ -252,6 +264,24 @@ async def install_plugin(body: ImportInstallBody):
     return {"ok": True, "plugin": plugin_name}
 
 
+@router.get("/codex/{project_id}")
+async def get_codex_entries(
+    project_id: str, db: AsyncSession = Depends(get_session)
+):
+    """Return all codex entries for a project, grouped by category."""
+    raw = await storage_get(db, project_id, "codex", "codex-entries")
+    entries = raw if isinstance(raw, list) else []
+
+    by_category: dict[str, list] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        cat = str(entry.get("category", "unknown"))
+        by_category.setdefault(cat, []).append(entry)
+
+    return {"entries": entries, "by_category": by_category, "total": len(entries)}
+
+
 @router.get("/{plugin_name}/audit")
 async def get_plugin_audit(
     plugin_name: str,
@@ -267,7 +297,7 @@ async def get_plugin_audit(
 
 @router.get("/{plugin_name}/detail")
 async def get_plugin_detail(plugin_name: str):
-    """Return full plugin details: metadata, resolved prompt content, block definitions."""
+    """Return full plugin details: metadata, resolved prompt content, output definitions."""
     pe = get_plugin_engine()
     loaded = pe.load(plugin_name)
     if not loaded:
@@ -297,12 +327,10 @@ async def get_plugin_detail(plugin_name: str):
             "content": content,
         }
 
-    # Block definitions (instruction + schema per block)
-    blocks: dict = {}
-    if manifest and manifest.blocks:
-        blocks = manifest.blocks
-    elif metadata.get("blocks"):
-        blocks = metadata.get("blocks", {})
+    # Output definitions (instruction + schema per type)
+    outputs: dict = {}
+    if manifest and manifest.outputs:
+        outputs = manifest.outputs
 
     # Capabilities summary
     capabilities: dict = {}
@@ -323,7 +351,7 @@ async def get_plugin_detail(plugin_name: str):
         "supersedes": metadata.get("supersedes", []),
         "dependencies": metadata.get("dependencies", []),
         "prompt": prompt_detail,
-        "blocks": blocks,
+        "outputs": outputs,
         "capabilities": capabilities,
         "i18n": metadata.get("i18n", {}),
     }

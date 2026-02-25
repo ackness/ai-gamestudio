@@ -1,0 +1,206 @@
+{
+  "schema_version": "1.0",
+  "version": "0.1.0",
+  "name": "social",
+  "type": "gameplay",
+  "required": false,
+  "supersedes": [
+    "relationship",
+    "faction"
+  ],
+  "description": "Social systems: NPC relationships, faction reputation, and standing tracking.",
+  "dependencies": [
+    "state",
+    "database"
+  ],
+  "prompt": {
+    "position": "character",
+    "priority": 45,
+    "template": "prompts/social-context.md"
+  },
+  "capabilities": {},
+  "outputs": {
+    "relationship_change": {
+      "instruction": "当 NPC 关系出现实质变化时，用 `emit.items` 输出 `relationship_change`。",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "npc_name": {
+            "type": "string"
+          },
+          "change": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "new_level": {
+            "type": "number"
+          },
+          "rank": {
+            "type": "string"
+          },
+          "relationship_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "npc_name",
+          "change",
+          "reason",
+          "new_level",
+          "rank",
+          "relationship_type"
+        ]
+      },
+      "handler": {
+        "actions": [
+          {
+            "type": "storage_write",
+            "key": "npc-relationships"
+          },
+          {
+            "type": "emit_event",
+            "event": "relationship-changed"
+          }
+        ]
+      },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "relationship_change"
+      },
+      "requires_response": false
+    },
+    "reputation_change": {
+      "instruction": "当阵营声望变化时，用 `emit.items` 输出 `reputation_change`。",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "faction": {
+            "type": "string"
+          },
+          "change": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "new_standing": {
+            "type": "number"
+          },
+          "rank": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "faction",
+          "change",
+          "reason",
+          "new_standing",
+          "rank"
+        ]
+      },
+      "handler": {
+        "actions": [
+          {
+            "type": "storage_write",
+            "key": "faction-standings"
+          },
+          {
+            "type": "emit_event",
+            "event": "reputation-changed"
+          }
+        ]
+      },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "reputation_change"
+      },
+      "requires_response": false
+    }
+  },
+  "events": {
+    "emit": [
+      "relationship-changed",
+      "reputation-changed"
+    ],
+    "listen": []
+  },
+  "storage": {
+    "keys": [
+      "npc-relationships",
+      "faction-standings"
+    ]
+  },
+  "extensions": {
+    "runtime_settings": {
+      "fields": {
+        "relationship_depth": {
+          "type": "enum",
+          "label": "Relationship Depth",
+          "description": "Level of detail in relationship tracking.",
+          "default": "rich",
+          "options": [
+            {
+              "value": "simple",
+              "label": "Simple",
+              "i18n": {
+                "zh": {
+                  "label": "简洁"
+                }
+              }
+            },
+            {
+              "value": "rich",
+              "label": "Rich",
+              "i18n": {
+                "zh": {
+                  "label": "丰富"
+                }
+              }
+            }
+          ],
+          "affects": [
+            "story"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "关系深度",
+              "description": "关系追踪的详细程度。"
+            }
+          }
+        },
+        "reputation_visibility": {
+          "type": "enum",
+          "label": "Reputation Visibility",
+          "description": "How faction reputation is displayed.",
+          "default": "fuzzy",
+          "options": [
+            "hidden",
+            "fuzzy",
+            "precise"
+          ],
+          "affects": [
+            "reputation_change"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "声望可见性",
+              "description": "阵营声望对玩家的显示方式。"
+            }
+          }
+        }
+      }
+    }
+  },
+  "i18n": {
+    "en": {
+      "name": "Social",
+      "description": "NPC relationships, faction reputation, and social standing."
+    },
+    "zh": {
+      "name": "社交系统",
+      "description": "NPC 关系、阵营声望与社交关系追踪。"
+    }
+  }
+}

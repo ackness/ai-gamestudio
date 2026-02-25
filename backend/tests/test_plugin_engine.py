@@ -1,6 +1,7 @@
 """Tests for PluginEngine: discovery, loading, validation, dependencies, prompt injection."""
 from __future__ import annotations
 
+import json
 import textwrap
 import time
 from pathlib import Path
@@ -8,8 +9,7 @@ from pathlib import Path
 import pytest
 
 from backend.app.core.plugin_engine import PluginEngine
-
-PLUGINS_DIR = "plugins"
+from backend.tests.constants import CURRENT_PLUGIN_IDS, PLUGINS_DIR
 
 
 @pytest.fixture
@@ -18,18 +18,52 @@ def engine():
     return PluginEngine()
 
 
-# ---------------------------------------------------------------------------
-# Discovery
-# ---------------------------------------------------------------------------
+def _write_plugin(
+    root: Path,
+    name: str,
+    *,
+    plugin_md: str = "# plugin",
+    blocks: dict | None = None,
+    prompt: dict | None = None,
+    capabilities: dict | None = None,
+) -> Path:
+    plugin_dir = root / name
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    (plugin_dir / "PLUGIN.md").write_text(
+        textwrap.dedent(
+            f"""\
+            ---
+            name: {name}
+            description: {name} plugin
+            type: gameplay
+            required: false
+            ---
+            {plugin_md}
+            """
+        )
+    )
+    manifest = {
+        "schema_version": "1.0",
+        "name": name,
+        "version": "1.0.0",
+        "type": "gameplay",
+        "required": False,
+        "description": f"{name} plugin",
+        "dependencies": [],
+        "outputs": blocks or {},
+        "capabilities": capabilities or {},
+    }
+    if prompt:
+        manifest["prompt"] = prompt
+    (plugin_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return plugin_dir
 
 
 class TestDiscover:
-    def test_discovers_builtin_plugins(self, engine: PluginEngine):
+    def test_discovers_current_builtin_plugins(self, engine: PluginEngine):
         plugins = engine.discover(PLUGINS_DIR)
         names = {p["name"] for p in plugins}
-        assert "database" in names
-        assert "character" in names
-        assert "memory" in names
+        assert CURRENT_PLUGIN_IDS.issubset(names)
 
     def test_returns_required_metadata_fields(self, engine: PluginEngine):
         plugins = engine.discover(PLUGINS_DIR)
@@ -48,92 +82,58 @@ class TestDiscover:
     def test_marks_plugins_with_script_capabilities(self, engine: PluginEngine):
         plugins = engine.discover(PLUGINS_DIR)
         by_name = {p["name"]: p for p in plugins}
-        assert by_name["dice-roll"]["has_script_capability"] is True
-
-
-# ---------------------------------------------------------------------------
-# Loading
-# ---------------------------------------------------------------------------
+        assert by_name["combat"]["has_script_capability"] is True
 
 
 class TestLoad:
     def test_load_existing_plugin(self, engine: PluginEngine):
-        data = engine.load("character", PLUGINS_DIR)
+        data = engine.load("state", PLUGINS_DIR)
         assert data is not None
-        assert data["name"] == "character"
+        assert data["name"] == "state"
         assert "metadata" in data
         assert "content" in data
         assert len(data["content"]) > 0
+        assert data["manifest"] is not None
 
     def test_load_nonexistent_returns_none(self, engine: PluginEngine):
         assert engine.load("nonexistent-plugin", PLUGINS_DIR) is None
 
-    def test_hot_reload_when_plugin_file_changes(self, engine: PluginEngine, tmp_path: Path):
-        plugin_dir = tmp_path / "hot-plugin"
+    def test_load_requires_manifest(self, engine: PluginEngine, tmp_path: Path):
+        plugin_dir = tmp_path / "no-manifest"
         plugin_dir.mkdir()
-        plugin_md = plugin_dir / "PLUGIN.md"
-        plugin_md.write_text(
-            textwrap.dedent("""\
-                ---
-                name: hot-plugin
-                description: before
-                type: gameplay
-                required: false
-                ---
-                # before
-            """)
+        (plugin_dir / "PLUGIN.md").write_text(
+            "---\nname: no-manifest\ndescription: test\ntype: gameplay\nrequired: false\n---\n# Test\n"
         )
+        assert engine.load("no-manifest", str(tmp_path)) is None
 
+    def test_hot_reload_when_plugin_file_changes(self, engine: PluginEngine, tmp_path: Path):
+        _write_plugin(tmp_path, "hot-plugin", plugin_md="# before")
         first = engine.load("hot-plugin", str(tmp_path))
         assert first is not None
-        assert first["metadata"]["description"] == "before"
+        assert "before" in first["content"]
 
-        # Ensure file signature changes for cache invalidation.
         time.sleep(0.001)
-        plugin_md.write_text(
-            textwrap.dedent("""\
-                ---
-                name: hot-plugin
-                description: after
-                type: gameplay
-                required: false
-                ---
-                # after
-            """)
+        (tmp_path / "hot-plugin" / "PLUGIN.md").write_text(
+            "---\nname: hot-plugin\ndescription: hot-plugin plugin\ntype: gameplay\nrequired: false\n---\n# after\n"
         )
         second = engine.load("hot-plugin", str(tmp_path))
         assert second is not None
-        assert second["metadata"]["description"] == "after"
-
-
-# ---------------------------------------------------------------------------
-# Dependency resolution
-# ---------------------------------------------------------------------------
+        assert "after" in second["content"]
 
 
 class TestResolveDependencies:
-    def test_database_before_character(self, engine: PluginEngine):
-        ordered = engine.resolve_dependencies(
-            ["character", "database"], PLUGINS_DIR
-        )
-        assert ordered.index("database") < ordered.index("character")
+    def test_database_before_state(self, engine: PluginEngine):
+        ordered = engine.resolve_dependencies(["state", "database"], PLUGINS_DIR)
+        assert ordered.index("database") < ordered.index("state")
+
+    def test_state_before_combat(self, engine: PluginEngine):
+        ordered = engine.resolve_dependencies(["combat", "state", "database"], PLUGINS_DIR)
+        assert ordered.index("state") < ordered.index("combat")
+        assert ordered.index("database") < ordered.index("state")
 
     def test_single_plugin(self, engine: PluginEngine):
         ordered = engine.resolve_dependencies(["database"], PLUGINS_DIR)
         assert ordered == ["database"]
-
-    def test_all_builtins(self, engine: PluginEngine):
-        ordered = engine.resolve_dependencies(
-            ["memory", "character", "database"], PLUGINS_DIR
-        )
-        # database must come before character and memory
-        assert ordered.index("database") < ordered.index("character")
-        assert ordered.index("database") < ordered.index("memory")
-
-
-# ---------------------------------------------------------------------------
-# Validation
-# ---------------------------------------------------------------------------
 
 
 class TestValidate:
@@ -148,159 +148,74 @@ class TestValidate:
         assert len(results) == 1
         assert "Missing PLUGIN.md" in results[0]["errors"]
 
-    def test_missing_required_fields(self, engine: PluginEngine, tmp_path: Path):
-        plugin_dir = tmp_path / "test-plugin"
+    def test_missing_manifest_json(self, engine: PluginEngine, tmp_path: Path):
+        plugin_dir = tmp_path / "bad-plugin"
         plugin_dir.mkdir()
         (plugin_dir / "PLUGIN.md").write_text(
-            textwrap.dedent("""\
-                ---
-                name: test-plugin
-                ---
-                # Test
-            """)
+            "---\nname: bad-plugin\ndescription: bad\ntype: gameplay\nrequired: false\n---\n# bad\n"
         )
         results = engine.validate(str(tmp_path))
-        errors = results[0]["errors"]
-        assert any("description" in e for e in errors)
-        assert any("type" in e for e in errors)
-        assert any("required" in e for e in errors)
-
-    def test_name_mismatch(self, engine: PluginEngine, tmp_path: Path):
-        plugin_dir = tmp_path / "my-plugin"
-        plugin_dir.mkdir()
-        (plugin_dir / "PLUGIN.md").write_text(
-            textwrap.dedent("""\
-                ---
-                name: wrong-name
-                description: test
-                type: gameplay
-                required: false
-                ---
-                # Test
-            """)
-        )
-        results = engine.validate(str(tmp_path))
-        errors = results[0]["errors"]
-        assert any("does not match" in e for e in errors)
+        assert "Missing manifest.json" in results[0]["errors"]
 
     def test_validate_rejects_script_path_traversal(self, engine: PluginEngine, tmp_path: Path):
-        import json
-        plugin_dir = tmp_path / "evil-plugin"
-        plugin_dir.mkdir()
-        (plugin_dir / "PLUGIN.md").write_text(
-            "---\nname: evil-plugin\nversion: 1.0.0\ndescription: evil\ntype: gameplay\nrequired: false\n---\n# evil\n"
-        )
-        manifest = {
-            "schema_version": "2.0",
-            "name": "evil-plugin",
-            "version": "1.0.0",
-            "type": "gameplay",
-            "required": False,
-            "description": "evil",
-            "capabilities": {
+        plugin_dir = _write_plugin(
+            tmp_path,
+            "evil-plugin",
+            capabilities={
                 "evil.run": {
                     "description": "Escape",
-                    "implementation": {
-                        "type": "script",
-                        "script": "../../etc/passwd",
-                    },
+                    "implementation": {"type": "script", "script": "../../etc/passwd"},
                 }
             },
-        }
-        (plugin_dir / "manifest.json").write_text(json.dumps(manifest))
+        )
+        assert plugin_dir.exists()
         results = engine.validate(str(tmp_path))
         errors = results[0]["errors"]
         assert any("escapes plugin directory" in e for e in errors)
 
     def test_validate_rejects_template_path_traversal(self, engine: PluginEngine, tmp_path: Path):
-        import json
-        plugin_dir = tmp_path / "evil-tmpl"
-        plugin_dir.mkdir()
-        (plugin_dir / "PLUGIN.md").write_text(
-            "---\nname: evil-tmpl\nversion: 1.0.0\ndescription: evil\ntype: gameplay\nrequired: false\n---\n# evil\n"
+        plugin_dir = _write_plugin(
+            tmp_path,
+            "evil-tmpl",
+            prompt={"position": "system", "priority": 1, "template": "../../../etc/passwd"},
         )
-        manifest = {
-            "schema_version": "2.0",
-            "name": "evil-tmpl",
-            "version": "1.0.0",
-            "type": "gameplay",
-            "required": False,
-            "description": "evil",
-            "prompt": {
-                "position": "system",
-                "priority": 1,
-                "template": "../../../etc/passwd",
-            },
-        }
-        (plugin_dir / "manifest.json").write_text(json.dumps(manifest))
+        assert plugin_dir.exists()
         results = engine.validate(str(tmp_path))
         errors = results[0]["errors"]
         assert any("escapes plugin directory" in e for e in errors)
 
 
-# ---------------------------------------------------------------------------
-# Prompt injection
-# ---------------------------------------------------------------------------
-
-
 class TestPromptInjections:
-    def test_character_plugin_injects_at_correct_position(self, engine: PluginEngine):
+    def test_state_plugin_injects_at_character(self, engine: PluginEngine):
         injections = engine.get_prompt_injections(
-            ["character"],
+            ["state"],
             context={
-                "player": {
-                    "name": "Hero",
-                    "description": "A brave warrior",
-                    "attributes": {"HP": 100, "STR": 15},
-                    "inventory": ["Sword", "Shield"],
-                },
-                "npcs": [
-                    {"name": "Gandalf", "description": "A wise wizard"},
-                ],
+                "player": {"name": "Hero", "description": "A brave warrior"},
+                "npcs": [],
             },
             plugins_dir=PLUGINS_DIR,
         )
         assert len(injections) > 0
         char_injection = [i for i in injections if i["position"] == "character"]
         assert len(char_injection) > 0
-        content = char_injection[0]["content"]
-        assert "Hero" in content
 
-    def test_empty_context(self, engine: PluginEngine):
-        injections = engine.get_prompt_injections(
-            ["database"],
-            context={},
-            plugins_dir=PLUGINS_DIR,
-        )
-        # Should not crash with empty context
-        assert isinstance(injections, list)
+    def test_database_injects_world_state(self, engine: PluginEngine):
+        injections = engine.get_prompt_injections(["database"], context={}, plugins_dir=PLUGINS_DIR)
+        assert any(i["position"] == "world-state" for i in injections)
 
     def test_template_hot_reload(self, engine: PluginEngine, tmp_path: Path):
-        plugin_dir = tmp_path / "templ-plugin"
+        plugin_dir = _write_plugin(
+            tmp_path,
+            "templ-plugin",
+            prompt={"position": "memory", "priority": 10, "template": "prompts/main.md"},
+        )
         prompts_dir = plugin_dir / "prompts"
         prompts_dir.mkdir(parents=True)
         tpl = prompts_dir / "main.md"
         tpl.write_text("first: {{ value }}")
 
-        (plugin_dir / "PLUGIN.md").write_text(
-            textwrap.dedent("""\
-                ---
-                name: templ-plugin
-                description: test
-                type: gameplay
-                required: false
-                prompt:
-                  position: memory
-                  priority: 10
-                  template: prompts/main.md
-                ---
-            """)
-        )
-
         injections = engine.get_prompt_injections(
-            ["templ-plugin"],
-            context={"value": "A"},
-            plugins_dir=str(tmp_path),
+            ["templ-plugin"], context={"value": "A"}, plugins_dir=str(tmp_path)
         )
         assert len(injections) == 1
         assert "first: A" in injections[0]["content"]
@@ -308,137 +223,66 @@ class TestPromptInjections:
         time.sleep(0.001)
         tpl.write_text("second: {{ value }}")
         injections = engine.get_prompt_injections(
-            ["templ-plugin"],
-            context={"value": "B"},
-            plugins_dir=str(tmp_path),
+            ["templ-plugin"], context={"value": "B"}, plugins_dir=str(tmp_path)
         )
         assert len(injections) == 1
         assert "second: B" in injections[0]["content"]
 
+    def test_template_receives_plugin_scoped_settings_and_storage(
+        self,
+        engine: PluginEngine,
+        tmp_path: Path,
+    ):
+        plugin_dir = _write_plugin(
+            tmp_path,
+            "scoped-plugin",
+            prompt={"position": "memory", "priority": 20, "template": "prompts/main.md"},
+        )
+        prompts_dir = plugin_dir / "prompts"
+        prompts_dir.mkdir(parents=True)
+        tpl = prompts_dir / "main.md"
+        tpl.write_text(
+            "mode={{ settings.get('mode', 'na') }}\n"
+            "local={{ plugin_storage.get('value', 'none') }}\n"
+            "flat={{ storage.get('value', 'missing') }}",
+            encoding="utf-8",
+        )
 
-# ---------------------------------------------------------------------------
-# Block declarations
-# ---------------------------------------------------------------------------
+        context = {
+            "runtime_settings": {"scoped-plugin": {"mode": "strict"}},
+            "storage": {
+                "flat": {"value": "global-value"},
+                "by_plugin": {"scoped-plugin": {"value": "plugin-value"}},
+            },
+        }
+        injections = engine.get_prompt_injections(
+            ["scoped-plugin"],
+            context=context,
+            plugins_dir=str(tmp_path),
+        )
+        assert len(injections) == 1
+        content = injections[0]["content"]
+        assert "mode=strict" in content
+        assert "local=plugin-value" in content
+        assert "flat=global-value" in content
 
 
 class TestGetBlockDeclarations:
-    """Tests for PluginEngine.get_block_declarations()"""
+    def test_state_declares_core_blocks(self, engine: PluginEngine):
+        declarations = engine.get_block_declarations(["state"], PLUGINS_DIR)
+        assert "state_update" in declarations
+        assert "character_sheet" in declarations
+        assert declarations["state_update"].plugin_name == "state"
 
-    def test_returns_block_declarations_from_plugins(self, engine: PluginEngine, tmp_path: Path):
-        """Test that blocks from PLUGIN.md frontmatter are correctly extracted."""
-        plugin_dir = tmp_path / "test-plugin"
-        plugin_dir.mkdir()
-        (plugin_dir / "PLUGIN.md").write_text(
-            textwrap.dedent("""\
-                ---
-                name: test-plugin
-                description: Test plugin
-                type: gameplay
-                required: false
-                blocks:
-                  test_block:
-                    instruction: |
-                      Output a test block:
-                      ```json:test_block
-                      {"value": 42}
-                      ```
-                    handler:
-                      actions:
-                        - type: storage_write
-                          key: test-data
-                    ui:
-                      component: card
-                      title: "Test {{ value }}"
-                    requires_response: false
-                ---
-                # Test Plugin
-            """)
-        )
-        declarations = engine.get_block_declarations(["test-plugin"], str(tmp_path))
-        assert "test_block" in declarations
-        decl = declarations["test_block"]
-        assert decl.block_type == "test_block"
-        assert decl.plugin_name == "test-plugin"
-        assert decl.instruction is not None
-        assert "test_block" in decl.instruction
-        assert decl.handler is not None
-        assert decl.handler["actions"][0]["type"] == "storage_write"
-        assert decl.ui is not None
-        assert decl.ui["component"] == "card"
-        assert decl.requires_response is False
-
-    def test_empty_blocks_returns_empty_dict(self, engine: PluginEngine):
-        """Plugins without blocks field return empty dict."""
-        declarations = engine.get_block_declarations(["database"], PLUGINS_DIR)
-        # database plugin has no blocks field
-        # Only check that it doesn't error; other plugins might contribute blocks
-        assert isinstance(declarations, dict)
-
-    def test_multiple_plugins_merge_blocks(self, engine: PluginEngine, tmp_path: Path):
-        """Blocks from multiple plugins are merged into one dict."""
-        for i, name in enumerate(["plugin-a", "plugin-b"]):
-            d = tmp_path / name
-            d.mkdir()
-            (d / "PLUGIN.md").write_text(
-                textwrap.dedent(f"""\
-                    ---
-                    name: {name}
-                    description: Plugin {name}
-                    type: gameplay
-                    required: false
-                    blocks:
-                      block_{name.replace('-', '_')}:
-                        instruction: "Block from {name}"
-                    ---
-                    # {name}
-                """)
-            )
-        declarations = engine.get_block_declarations(["plugin-a", "plugin-b"], str(tmp_path))
-        assert "block_plugin_a" in declarations
-        assert "block_plugin_b" in declarations
-        assert declarations["block_plugin_a"].plugin_name == "plugin-a"
-        assert declarations["block_plugin_b"].plugin_name == "plugin-b"
-
-    def test_later_plugin_overrides_same_block_type(self, engine: PluginEngine, tmp_path: Path):
-        """If two plugins declare the same block type, the later one in dependency order wins."""
-        for name in ["plugin-a", "plugin-b"]:
-            d = tmp_path / name
-            d.mkdir()
-            (d / "PLUGIN.md").write_text(
-                textwrap.dedent(f"""\
-                    ---
-                    name: {name}
-                    description: Plugin {name}
-                    type: gameplay
-                    required: false
-                    blocks:
-                      shared_block:
-                        instruction: "From {name}"
-                    ---
-                    # {name}
-                """)
-            )
-        declarations = engine.get_block_declarations(["plugin-a", "plugin-b"], str(tmp_path))
-        assert declarations["shared_block"].plugin_name == "plugin-b"
+    def test_guide_declares_choices(self, engine: PluginEngine):
+        declarations = engine.get_block_declarations(["guide"], PLUGINS_DIR)
+        assert "choices" in declarations
+        assert declarations["choices"].requires_response is True
 
     def test_conflict_metadata_is_recorded(self, engine: PluginEngine, tmp_path: Path):
-        for name in ["plugin-a", "plugin-b"]:
-            d = tmp_path / name
-            d.mkdir()
-            (d / "PLUGIN.md").write_text(
-                textwrap.dedent(f"""\
-                    ---
-                    name: {name}
-                    description: Plugin {name}
-                    type: gameplay
-                    required: false
-                    blocks:
-                      shared_block:
-                        instruction: "From {name}"
-                    ---
-                    # {name}
-                """)
-            )
+        _write_plugin(tmp_path, "plugin-a", blocks={"shared_block": {"instruction": "A"}})
+        _write_plugin(tmp_path, "plugin-b", blocks={"shared_block": {"instruction": "B"}})
+
         engine.get_block_declarations(["plugin-a", "plugin-b"], str(tmp_path))
         conflicts = engine.get_last_block_conflicts()
         assert len(conflicts) == 1
@@ -447,33 +291,12 @@ class TestGetBlockDeclarations:
         assert conflicts[0]["winner_plugin"] == "plugin-b"
 
     def test_conflict_can_fail_in_strict_mode(self, engine: PluginEngine, tmp_path: Path):
-        for name in ["plugin-a", "plugin-b"]:
-            d = tmp_path / name
-            d.mkdir()
-            (d / "PLUGIN.md").write_text(
-                textwrap.dedent(f"""\
-                    ---
-                    name: {name}
-                    description: Plugin {name}
-                    type: gameplay
-                    required: false
-                    blocks:
-                      shared_block:
-                        instruction: "From {name}"
-                    ---
-                    # {name}
-                """)
-            )
+        _write_plugin(tmp_path, "plugin-a", blocks={"shared_block": {"instruction": "A"}})
+        _write_plugin(tmp_path, "plugin-b", blocks={"shared_block": {"instruction": "B"}})
+
         with pytest.raises(ValueError, match="Block type conflict"):
             engine.get_block_declarations(
                 ["plugin-a", "plugin-b"],
                 str(tmp_path),
                 strict_conflicts=True,
             )
-
-    def test_core_blocks_plugin_declares_blocks(self, engine: PluginEngine):
-        """The core-blocks plugin should declare state_update, character_sheet, etc."""
-        declarations = engine.get_block_declarations(["core-blocks"], PLUGINS_DIR)
-        # core-blocks should declare at least state_update
-        assert "state_update" in declarations
-        assert declarations["state_update"].plugin_name == "core-blocks"

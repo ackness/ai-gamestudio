@@ -34,7 +34,12 @@ export interface Message {
   message_type: 'chat' | 'narration' | 'system_event'
   scene_id?: string
   raw_content?: string
-  blocks?: { type: string; data: unknown; block_id?: string }[]
+  blocks?: {
+    type: string
+    data: unknown
+    block_id?: string
+    output?: import('../services/outputContract').OutputEnvelope
+  }[]
   created_at: string
 }
 
@@ -96,7 +101,6 @@ export interface Plugin {
   dependencies?: string[]
   required_by?: string[]
   version?: string
-  manifest_source?: 'manifest' | 'v1_fallback'
   capabilities?: string[]
   has_script_capability?: boolean
   schema_status?: string
@@ -118,7 +122,7 @@ export interface PluginDetail {
     template: string | null
     content: string | null
   } | null
-  blocks: Record<string, {
+  outputs: Record<string, {
     instruction?: string
     schema?: Record<string, unknown>
     ui?: Record<string, unknown>
@@ -141,6 +145,7 @@ export interface LlmProfile {
 export interface PresetModel {
   id: string
   name: string
+  name_en?: string
   provider: string
   model: string
   api_base: string

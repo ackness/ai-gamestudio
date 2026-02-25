@@ -14,6 +14,7 @@ interface CharacterSheetData {
   inventory: (string | { name: string; [key: string]: unknown })[]
   description?: string
   role?: string
+  background?: string
 }
 
 function normalizeInventory(items: CharacterSheetData['inventory']): string[] {
@@ -33,6 +34,7 @@ export function CharacterSheetRenderer({ data, blockId, onAction, locked }: Bloc
     inventory: rawInventory = [],
     description,
     role,
+    background,
   } = payload ?? {
     character_id: '',
     name: '',
@@ -41,6 +43,7 @@ export function CharacterSheetRenderer({ data, blockId, onAction, locked }: Bloc
     inventory: [],
     description: undefined,
     role: undefined,
+    background: undefined,
   }
 
   const inventory = normalizeInventory(rawInventory)
@@ -131,8 +134,14 @@ export function CharacterSheetRenderer({ data, blockId, onAction, locked }: Bloc
         )}
       </div>
 
-      {/* Description */}
+      {/* Description & Background */}
       {description && <p className="text-muted-foreground text-xs">{description}</p>}
+      {background && (
+        <div>
+          <p className="text-xs text-muted-foreground/70 mb-0.5">背景</p>
+          <p className="text-muted-foreground text-xs">{background}</p>
+        </div>
+      )}
 
       {/* Attributes */}
       {Object.keys(editedAttrs).length > 0 && (

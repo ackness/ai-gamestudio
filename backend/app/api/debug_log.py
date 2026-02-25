@@ -1,91 +1,25 @@
 from __future__ import annotations
 
 import asyncio
-import copy
 from collections import deque
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from backend.app.core.access_key import is_request_authorized
-from backend.app.core.config import settings
 from backend.app.db.engine import engine
 from backend.app.models.session import GameSession
+from backend.app.services.debug_log_service import (
+    _cleanup_log_sessions,
+    _log_subscribers,
+    _session_logs,
+    _touch_log_session,
+    add_debug_log,
+)
+
+# Re-export _add_log as an alias for backward compatibility
+_add_log = add_debug_log
 
 router = APIRouter()
-
-# ---------------------------------------------------------------------------
-# In-memory conversation log ring buffer (per session, kept for debug panel)
-# ---------------------------------------------------------------------------
-_MAX_LOG_ENTRIES = 200
-_MAX_LOG_SESSIONS = max(1, int(settings.MAX_LOG_SESSIONS or 200))
-_LOG_TTL_SECONDS = max(60, int(settings.LOG_TTL_MINUTES or 30) * 60)
-_session_logs: dict[str, deque[dict]] = {}
-_log_subscribers: dict[str, list[asyncio.Queue]] = {}
-_session_last_active_at: dict[str, datetime] = {}
-
-
-def _drop_log_session(session_id: str) -> None:
-    _session_logs.pop(session_id, None)
-    _session_last_active_at.pop(session_id, None)
-    if not _log_subscribers.get(session_id):
-        _log_subscribers.pop(session_id, None)
-
-
-def _touch_log_session(session_id: str) -> None:
-    _session_last_active_at[session_id] = datetime.now(timezone.utc)
-
-
-def _cleanup_log_sessions() -> None:
-    now = datetime.now(timezone.utc)
-
-    stale_ids = []
-    for sid, last_active in list(_session_last_active_at.items()):
-        if _log_subscribers.get(sid):
-            continue
-        age = (now - last_active).total_seconds()
-        if age >= _LOG_TTL_SECONDS:
-            stale_ids.append(sid)
-    for sid in stale_ids:
-        _drop_log_session(sid)
-
-    if len(_session_logs) <= _MAX_LOG_SESSIONS:
-        return
-
-    candidates = [
-        sid for sid in _session_logs.keys() if not _log_subscribers.get(sid)
-    ]
-    candidates.sort(
-        key=lambda sid: _session_last_active_at.get(sid, datetime(1970, 1, 1, tzinfo=timezone.utc))
-    )
-    while len(_session_logs) > _MAX_LOG_SESSIONS and candidates:
-        sid = candidates.pop(0)
-        _drop_log_session(sid)
-
-
-def _add_log(session_id: str, direction: str, payload: dict) -> None:
-    """Append an entry to the session's debug log and notify subscribers."""
-    safe_payload = copy.deepcopy(payload)
-    llm_overrides = safe_payload.get("llm_overrides")
-    if isinstance(llm_overrides, dict) and llm_overrides.get("api_key"):
-        llm_overrides["api_key"] = "***"
-    image_overrides = safe_payload.get("image_overrides")
-    if isinstance(image_overrides, dict) and image_overrides.get("api_key"):
-        image_overrides["api_key"] = "***"
-    _touch_log_session(session_id)
-    entry = {
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "dir": direction,
-        "payload": safe_payload,
-    }
-    buf = _session_logs.setdefault(session_id, deque(maxlen=_MAX_LOG_ENTRIES))
-    buf.append(entry)
-    for q in _log_subscribers.get(session_id, []):
-        try:
-            q.put_nowait(entry)
-        except asyncio.QueueFull:
-            pass
-    _cleanup_log_sessions()
 
 
 # ---------------------------------------------------------------------------
@@ -152,15 +86,15 @@ async def get_session_story_images_endpoint(session_id: str):
 async def get_debug_prompt(session_id: str):
     """Return the fully assembled prompt messages that would be sent to the LLM.
 
-    This builds the same TurnContext and runs the same assemble_prompt logic
+    This builds the same TurnContext and runs assemble_narrative_prompt
     as a real chat turn, but does NOT call the LLM.  Useful for debugging
-    prompt construction, language enforcement, plugin injections, etc.
+    prompt construction and language enforcement.
     """
     from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
     from backend.app.core.game_state import GameStateManager
     from backend.app.core.llm_config import resolve_llm_config
-    from backend.app.services.prompt_assembly import assemble_prompt
+    from backend.app.services.prompt_assembly import assemble_narrative_prompt
     from backend.app.services.turn_context import build_turn_context
 
     async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
@@ -169,8 +103,15 @@ async def get_debug_prompt(session_id: str):
         if ctx is None:
             return {"error": "Session or project not found"}
 
-        messages = assemble_prompt(ctx, "(debug preview — no user message)", save_user_msg=True)
+        messages = assemble_narrative_prompt(ctx, "(debug preview — no user message)", save_user_msg=True)
         config = resolve_llm_config(project=ctx.project)
+
+        # Plugin Agent info
+        from backend.app.core.plugin_tools import get_all_tools
+        from backend.app.services import plugin_agent as plugin_agent_module
+
+        agent_tools = get_all_tools()
+        block_decls = ctx.block_declarations or {}
 
         return {
             "model": config.model,
@@ -183,6 +124,21 @@ async def get_debug_prompt(session_id: str):
             ],
             "total_chars": sum(len(m["content"]) for m in messages),
             "message_count": len(messages),
+            "plugin_agent": {
+                # Keep debug endpoint compatible across prompt constant renames.
+                "system_prompt": (
+                    getattr(plugin_agent_module, "PLUGIN_AGENT_SYSTEM_PROMPT", None)
+                    or getattr(plugin_agent_module, "SINGLE_PLUGIN_SYSTEM_PROMPT", "")
+                ),
+                "tools": [
+                    {"name": t["function"]["name"], "description": t["function"].get("description", "")}
+                    for t in agent_tools
+                ],
+                "block_declarations": {
+                    name: {"plugin": d.plugin_name, "schema": d.schema}
+                    for name, d in block_decls.items()
+                },
+            },
         }
 
 
@@ -203,7 +159,7 @@ async def websocket_debug_log(websocket: WebSocket, session_id: str):
         while True:
             entry = await queue.get()
             await websocket.send_json(entry)
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, asyncio.CancelledError):
         pass
     finally:
         subs.remove(queue)

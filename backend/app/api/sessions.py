@@ -139,6 +139,7 @@ async def get_messages(
                                 "type": block_type,
                                 "data": item.get("data"),
                                 "block_id": item.get("block_id"),
+                                "output": item.get("output"),
                             }
                         )
             except Exception:
@@ -187,7 +188,12 @@ async def get_session_state(
     except Exception:
         turn_count = 0
 
+    token_usage = game_state.get("token_usage", {})
+    if not isinstance(token_usage, dict):
+        token_usage = {}
+
     return {
         "world": world_state,
         "turn_count": turn_count,
+        "token_usage": token_usage,
     }

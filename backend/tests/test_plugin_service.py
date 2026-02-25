@@ -4,6 +4,7 @@ import pytest
 
 from backend.app.core.plugin_engine import PluginEngine
 from backend.app.services.plugin_service import get_enabled_plugins, toggle_plugin
+from backend.tests.constants import REQUIRED_PLUGIN_IDS
 
 
 @pytest.mark.asyncio
@@ -11,9 +12,7 @@ async def test_required_plugins_enabled_by_default(db_session, sample_project):
     enabled = await get_enabled_plugins(db_session, sample_project.id)
     names = {item["plugin_name"] for item in enabled}
 
-    assert "database" in names
-    assert "character" in names
-    assert "archive" in names
+    assert REQUIRED_PLUGIN_IDS.issubset(names)
 
 
 @pytest.mark.asyncio

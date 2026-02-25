@@ -39,6 +39,15 @@ const T = {
     apiKeyNote: '仅存储在你的浏览器中，不会上传到服务器',
     apiBase: 'API Base URL（可选）',
     apiBasePlaceholder: '例：https://api.deepseek.com',
+    pluginSection: '插件模型（可选）',
+    pluginModel: '插件模型',
+    pluginApiKey: '插件 API Key',
+    pluginApiBase: '插件 API Base',
+    pluginModelPlaceholder: '例：openai/llama3.2',
+    pluginApiKeyPlaceholder: '输入 API Key',
+    pluginApiBasePlaceholder: '例：http://localhost:11434/v1',
+    pluginSameAsMain: '与主模型相同',
+    pluginCustom: '自定义模型',
     imageSection: '图片生成（可选）',
     imageModel: '图片模型',
     imageApiKey: '图片 API Key',
@@ -75,6 +84,15 @@ const T = {
     apiKeyNote: 'Stored in your browser only — never uploaded to the server',
     apiBase: 'API Base URL (optional)',
     apiBasePlaceholder: 'e.g. https://api.deepseek.com',
+    pluginSection: 'Plugin Model (optional)',
+    pluginModel: 'Plugin Model',
+    pluginApiKey: 'Plugin API Key',
+    pluginApiBase: 'Plugin API Base',
+    pluginModelPlaceholder: 'e.g. openai/llama3.2',
+    pluginApiKeyPlaceholder: 'Enter API Key',
+    pluginApiBasePlaceholder: 'e.g. http://localhost:11434/v1',
+    pluginSameAsMain: 'Same as main model',
+    pluginCustom: 'Custom model',
     imageSection: 'Image Generation (optional)',
     imageModel: 'Image Model',
     imageApiKey: 'Image API Key',
@@ -97,7 +115,7 @@ const T = {
 const LOCAL_PRESETS = [
   { id: 'ollama', name: 'Ollama', model: 'openai/llama3.2', apiBase: 'http://localhost:11434/v1', apiKey: 'ollama' },
   { id: 'lmstudio', name: 'LM Studio', model: 'openai/local-model', apiBase: 'http://localhost:1234/v1', apiKey: 'lm-studio' },
-  { id: 'openai-compat', name: 'Custom', model: 'openai/', apiBase: '', apiKey: '' },
+  { id: 'openai-compat', name: '自定义', name_en: 'Custom', model: 'openai/', apiBase: '', apiKey: '' },
 ]
 
 // Friendly provider display names
@@ -124,6 +142,11 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [apiBase, setApiBase] = useState('')
+  const [pluginModel, setPluginModel] = useState('')
+  const [pluginApiKey, setPluginApiKey] = useState('')
+  const [pluginApiBase, setPluginApiBase] = useState('')
+  const [pluginUseSameModel, setPluginUseSameModel] = useState(true)
+  const [showPlugin, setShowPlugin] = useState(false)
   const [imageModel, setImageModel] = useState('')
   const [imageApiKey, setImageApiKey] = useState('')
   const [imageApiBase, setImageApiBase] = useState('')
@@ -155,11 +178,29 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
     setModel(local.model || currentProject.llm_model || '')
     setApiKey(local.apiKey || '')
     setApiBase(local.apiBase || currentProject.llm_api_base || '')
+    setPluginModel(local.pluginModel || '')
+    setPluginApiKey(local.pluginApiKey || '')
+    setPluginApiBase(local.pluginApiBase || '')
+    setPluginUseSameModel(!local.pluginModel)
     setImageModel(local.imageModel || currentProject.image_model || '')
     setImageApiKey(local.imageApiKey || '')
     setImageApiBase(local.imageApiBase || currentProject.image_api_base || '')
     setImageApiBaseAutoSuffix(local.imageApiBaseAutoSuffix !== false)
   }, [currentProject?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Backfill model/apiBase from llmInfo when no explicit config is saved
+  useEffect(() => {
+    if (!llmInfo || !currentProject) return
+    const local = getBrowserLlmConfig(currentProject.id)
+    const hasExplicitModel = !!(local.model || currentProject.llm_model)
+    if (!hasExplicitModel && llmInfo.model) {
+      setModel((prev) => prev || llmInfo.model)
+    }
+    const hasExplicitBase = !!(local.apiBase || currentProject.llm_api_base)
+    if (!hasExplicitBase && llmInfo.api_base) {
+      setApiBase((prev) => prev || llmInfo.api_base || '')
+    }
+  }, [llmInfo, currentProject])
 
   // Determine where the current config comes from
   const getConfigSource = () => {
@@ -204,6 +245,9 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
         model: effectiveModel || undefined,
         apiKey: apiKey || undefined,
         apiBase: effectiveApiBase || undefined,
+        pluginModel: pluginUseSameModel ? undefined : (pluginModel || undefined),
+        pluginApiKey: pluginUseSameModel ? undefined : (pluginApiKey || undefined),
+        pluginApiBase: pluginUseSameModel ? undefined : (pluginApiBase || undefined),
         imageModel: imageModel || undefined,
         imageApiKey: imageApiKey || undefined,
         imageApiBase: imageApiBase || undefined,
@@ -245,6 +289,10 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
       setModel('')
       setApiKey('')
       setApiBase('')
+      setPluginModel('')
+      setPluginApiKey('')
+      setPluginApiBase('')
+      setPluginUseSameModel(true)
       setImageModel('')
       setImageApiKey('')
       setImageApiBase('')
@@ -350,12 +398,12 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
                       {items.map((p) => (
                         <Button
                           key={p.id}
-                          variant={model === p.model ? 'default' : 'outline'}
+                          variant={model === p.model && (model || p.model) ? 'default' : 'outline'}
                           size="sm"
                           className="h-7 text-xs"
                           onClick={() => handlePresetClick(p)}
                         >
-                          {p.name}
+                          {language === 'en' && p.name_en ? p.name_en : p.name}
                         </Button>
                       ))}
                     </div>
@@ -385,7 +433,7 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
                     setApiKey(p.apiKey)
                   }}
                 >
-                  {p.name}
+                  {language === 'en' && 'name_en' in p && p.name_en ? p.name_en : p.name}
                 </Button>
               ))}
             </div>
@@ -430,6 +478,87 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
                 className="font-mono text-sm"
               />
             </div>
+          </div>
+
+          {/* Plugin model — collapsible */}
+          <div className="pt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-between px-2 text-xs font-medium text-muted-foreground hover:text-foreground mb-2"
+              onClick={() => setShowPlugin(!showPlugin)}
+            >
+              <span className="flex items-center gap-2">
+                <Cpu className="w-3.5 h-3.5" />
+                {t.pluginSection}
+              </span>
+              {showPlugin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </Button>
+
+            {showPlugin && (
+              <div className="space-y-4 p-4 bg-muted/20 border rounded-lg">
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setPluginUseSameModel(true)}
+                    className={`flex-1 text-xs py-1.5 rounded-md border transition-colors ${
+                      pluginUseSameModel
+                        ? 'bg-primary/10 border-primary/40 text-primary font-medium'
+                        : 'border-input text-muted-foreground hover:text-foreground hover:border-foreground/30'
+                    }`}
+                  >
+                    {t.pluginSameAsMain}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPluginUseSameModel(false)}
+                    className={`flex-1 text-xs py-1.5 rounded-md border transition-colors ${
+                      !pluginUseSameModel
+                        ? 'bg-primary/10 border-primary/40 text-primary font-medium'
+                        : 'border-input text-muted-foreground hover:text-foreground hover:border-foreground/30'
+                    }`}
+                  >
+                    {t.pluginCustom}
+                  </button>
+                </div>
+                <div className={`space-y-4 transition-opacity ${pluginUseSameModel ? 'opacity-40 pointer-events-none' : ''}`}>
+                  <div className="space-y-2">
+                    <Label htmlFor="pluginModel" className="text-xs text-muted-foreground">{t.pluginModel}</Label>
+                    <Input
+                      id="pluginModel"
+                      value={pluginModel}
+                      onChange={(e) => setPluginModel(e.target.value)}
+                      placeholder={t.pluginModelPlaceholder}
+                      disabled={pluginUseSameModel}
+                      className="font-mono text-sm h-8"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="pluginApiKey" className="text-xs text-muted-foreground">{t.pluginApiKey}</Label>
+                    <Input
+                      id="pluginApiKey"
+                      type="password"
+                      value={pluginApiKey}
+                      onChange={(e) => setPluginApiKey(e.target.value)}
+                      placeholder={t.pluginApiKeyPlaceholder}
+                      disabled={pluginUseSameModel}
+                      className="font-mono text-sm h-8"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="pluginApiBase" className="text-xs text-muted-foreground">{t.pluginApiBase}</Label>
+                    <Input
+                      id="pluginApiBase"
+                      value={pluginApiBase}
+                      onChange={(e) => setPluginApiBase(e.target.value)}
+                      placeholder={t.pluginApiBasePlaceholder}
+                      disabled={pluginUseSameModel}
+                      className="font-mono text-sm h-8"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Image generation — collapsible */}

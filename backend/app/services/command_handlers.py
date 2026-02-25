@@ -9,63 +9,41 @@ from typing import Any
 from loguru import logger
 
 from backend.app.core.game_state import GameStateManager
+from backend.app.core.json_utils import safe_json_loads
 from backend.app.db.engine import engine
 from backend.app.models.session import GameSession
+from backend.app.services.debug_log_service import add_debug_log as _add_log
+from backend.app.services.chat_service import stream_process_message as _stream_process_message
+from typing import Protocol
 
-# Imported from sibling modules — these are the cross-module dependencies
-from backend.app.api.debug_log import _add_log
 
-# Late imports to avoid circular: EventSink and _stream_process_message come from chat.py
-# We use TYPE_CHECKING for the protocol and pass _stream_process_message at call sites
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from backend.app.api.chat import EventSink
+class EventSink(Protocol):
+    async def send_json(self, data: dict) -> None: ...
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 DEFAULT_INIT_PROMPT = (
     "玩家开始了一场新游戏。请根据世界观文档生成一段沉浸式的开场叙事。"
-    "在叙事末尾包含一个 json:character_sheet 代码块用于角色创建，"
-    "其中 editable_fields 需包含 'name'。"
-    "同时包含一个 json:scene_update 代码块来建立起始场景。"
+    "描述玩家角色的初始状态和所在场景，并引导玩家创建自己的角色。"
 )
 
 _FORCE_TRIGGER_PROMPTS: dict[str, str] = {
     "guide": (
-        "请根据当前场景、角色状态和最近的对话内容，"
-        "直接输出一个 json:guide 代码块，为玩家提供行动建议。"
-        "不要输出任何叙事文字或解释，只输出代码块本身。\n\n"
-        "格式：\n"
-        "```json:guide\n"
-        '{"categories": [{"style": "safe", "label": "稳妥", "suggestions": ["建议1"]}, ...]}\n'
-        "```"
+        "请简短描述当前场景和角色面临的局势，"
+        "并列出玩家可以采取的几种行动方向。"
     ),
     "state_update": (
-        "请根据最近的叙事内容，检查角色属性和物品是否需要更新。"
-        "如果有变化，输出一个 json:state_update 代码块。"
-        "不要输出叙事文字，只输出代码块。"
+        "请根据最近发生的事件，简要总结角色状态的变化，"
+        "包括属性、物品、位置等方面的更新。"
     ),
     "scene_update": (
-        "请根据当前叙事内容，输出一个 json:scene_update 代码块描述当前场景。"
-        "不要输出叙事文字，只输出代码块。"
+        "请描述当前场景的环境、氛围和在场人物，"
+        "让玩家感受到场景的变化。"
     ),
     "story_image": (
-        "请根据当前场景、角色状态和最近剧情，直接输出一个 json:story_image 代码块用于生成配图。"
-        "不要输出任何叙事文字或解释，只输出代码块本身。\n\n"
-        "格式：\n"
-        "```json:story_image\n"
-        '{'
-        '"title":"场景配图",'
-        '"story_background":"近期剧情背景（1-3句）",'
-        '"prompt":"当前镜头画面描述",'
-        '"continuity_notes":"人物/道具连续性提示",'
-        '"reference_image_ids":[],'
-        '"layout_preference":"auto",'
-        '"scene_frames":[]'
-        "}\n"
-        "```"
+        "请用一段密集的叙事描绘当前场景的视觉画面，"
+        "包括环境、光线、角色姿态和氛围。"
     ),
 }
 
@@ -78,8 +56,6 @@ async def _handle_force_trigger(
     image_overrides: dict[str, str] | None = None,
 ) -> None:
     """Handle force trigger — send hidden prompt to force specific block output."""
-    from backend.app.api.chat import _stream_process_message
-
     block_type = data.get("block_type", "")
     prompt = _FORCE_TRIGGER_PROMPTS.get(block_type)
     if not prompt:
@@ -214,7 +190,6 @@ async def _handle_init_game(
     """Handle game initialization — transition to character_creation or playing."""
     from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
     from backend.app.models.project import Project
-    from backend.app.api.chat import _stream_process_message
 
     async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
         game_session = await db.get(GameSession, session_id)
@@ -253,7 +228,6 @@ async def _handle_form_submit(
 ) -> None:
     """Handle form submission — may trigger character creation or other actions."""
     from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-    from backend.app.api.chat import _stream_process_message
 
     form_id = data.get("form_id", "")
     values = data.get("values", {})
@@ -314,7 +288,6 @@ async def _handle_character_edit(
 ) -> None:
     """Handle character edits — no LLM call, direct DB update."""
     from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-    from backend.app.api.chat import _stream_process_message
 
     character_id = data.get("character_id")
     changes = data.get("changes", {})
@@ -391,8 +364,16 @@ async def _handle_character_edit(
                 "id": char.id,
                 "name": char.name,
                 "role": char.role,
-                "attributes": json.loads(char.attributes_json) if char.attributes_json else {},
-                "inventory": json.loads(char.inventory_json) if char.inventory_json else [],
+                "attributes": safe_json_loads(
+                    char.attributes_json,
+                    fallback={},
+                    context=f"Character attributes ({char.id})",
+                ),
+                "inventory": safe_json_loads(
+                    char.inventory_json,
+                    fallback=[],
+                    context=f"Character inventory ({char.id})",
+                ),
             }]
         },
     })
@@ -419,7 +400,6 @@ async def _handle_scene_switch(
 ) -> None:
     """Handle scene switching — update current scene and trigger DM narration."""
     from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-    from backend.app.api.chat import _stream_process_message
 
     scene_id = data.get("scene_id")
     if not scene_id:
@@ -455,8 +435,6 @@ async def _handle_confirm(
     image_overrides: dict[str, str] | None = None,
 ) -> None:
     """Handle generic confirmations."""
-    from backend.app.api.chat import _stream_process_message
-
     action = data.get("action", "")
     action_data = data.get("data", {})
     content = f"我确认{action}"
@@ -475,10 +453,10 @@ async def _handle_block_response(
     data: dict,
     llm_overrides: dict[str, str] | None = None,
     image_overrides: dict[str, str] | None = None,
+    transport_mode: str = "websocket",
 ) -> None:
     """Handle a user's response to an interactive block (requires_response=true)."""
     from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-    from backend.app.api.chat import _stream_process_message
 
     block_type = data.get("block_type", "unknown")
     block_id = data.get("block_id", "")
@@ -498,6 +476,7 @@ async def _handle_block_response(
             await _handle_story_image_regen(
                 sink, db, game_session, session_id, response_data, image_overrides,
                 llm_overrides=llm_overrides,
+                transport_mode=transport_mode,
             )
             return
 
@@ -530,8 +509,13 @@ async def _handle_story_image_regen(
     response_data: dict,
     image_overrides: dict[str, str] | None = None,
     llm_overrides: dict[str, str] | None = None,
+    transport_mode: str = "websocket",
 ) -> None:
-    """Handle story image regeneration — non-blocking, spawns background task."""
+    """Handle story image regeneration.
+
+    WebSocket mode runs regeneration in background.
+    HTTP fallback runs synchronously so completion event is returned in one response.
+    """
     image_id = str(response_data.get("image_id") or "").strip()
     reason = str(response_data.get("reason") or "").strip()
 
@@ -562,21 +546,23 @@ async def _handle_story_image_regen(
     _add_log(session_id, "send", turn_end_event)
     await sink.send_json(turn_end_event)
 
-    # Spawn background task for actual generation
-    asyncio.create_task(
-        _background_regen_image(
-            sink,
-            project_id=game_session.project_id,
-            session_id=session_id,
-            turn_id=turn_id,
-            regen_block_id=regen_block_id,
-            image_id=image_id,
-            reason=reason,
-            response_data=response_data,
-            image_overrides=image_overrides,
-            llm_overrides=llm_overrides,
-        )
+    regen_coro = _background_regen_image(
+        sink,
+        project_id=game_session.project_id,
+        session_id=session_id,
+        turn_id=turn_id,
+        regen_block_id=regen_block_id,
+        image_id=image_id,
+        reason=reason,
+        response_data=response_data,
+        image_overrides=image_overrides,
+        llm_overrides=llm_overrides,
     )
+    if transport_mode == "http":
+        await regen_coro
+    else:
+        task = asyncio.create_task(regen_coro)
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
 
 async def _background_regen_image(

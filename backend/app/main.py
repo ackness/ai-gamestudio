@@ -1,4 +1,5 @@
 from __future__ import annotations
+# ruff: noqa: E402
 
 import json
 import os
@@ -56,6 +57,15 @@ async def lifespan(app: FastAPI):
     pathlib.Path(settings.DATA_DIR).mkdir(parents=True, exist_ok=True)
     await init_db()
 
+    # Warn if no access key is configured
+    if not access_key_required():
+        from loguru import logger as _logger
+
+        _logger.warning(
+            "ACCESS_KEY is not set — all API endpoints are publicly accessible. "
+            "Set ACCESS_KEY in .env for production deployments."
+        )
+
     port = int(os.getenv("PORT", "8000"))
     _print_startup_banner(port)
 
@@ -69,8 +79,15 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Access-Key",
+        "X-LLM-Model",
+        "X-LLM-Api-Key",
+        "X-LLM-Api-Base",
+    ],
 )
 
 # Access key protection (optional — only active when ACCESS_KEY env var is set)
@@ -104,6 +121,8 @@ from backend.app.api.scenes import router as scenes_router  # noqa: E402
 from backend.app.api.sessions import router as sessions_router  # noqa: E402
 from backend.app.api.novel import router as novel_router  # noqa: E402
 from backend.app.api.templates import router as templates_router  # noqa: E402
+from backend.app.api.model_info import router as model_info_router  # noqa: E402
+from backend.app.api.plugin_invoke import router as plugin_invoke_router  # noqa: E402
 
 app.include_router(projects_router)
 app.include_router(sessions_router)
@@ -118,6 +137,8 @@ app.include_router(llm_profiles_router)
 app.include_router(templates_router)
 app.include_router(novel_router)
 app.include_router(runtime_settings_router)
+app.include_router(model_info_router)
+app.include_router(plugin_invoke_router)
 
 
 @app.get("/api/health")

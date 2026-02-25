@@ -138,8 +138,10 @@ async def update_profile(
     update_data = body.model_dump(exclude_unset=True)
     if "api_key" in update_data:
         _set_profile_api_key(profile, update_data.pop("api_key"))
+    _MUTABLE_FIELDS = {"name", "model", "api_base"}
     for key, value in update_data.items():
-        setattr(profile, key, value)
+        if key in _MUTABLE_FIELDS:
+            setattr(profile, key, value)
     profile.updated_at = datetime.now(timezone.utc)
 
     session.add(profile)

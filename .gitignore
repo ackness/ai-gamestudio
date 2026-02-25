@@ -38,3 +38,7 @@ Thumbs.db
 .cache/
 .vercel
 audit/
+plans/
+plugins/backup/
+debug/
+.omc/

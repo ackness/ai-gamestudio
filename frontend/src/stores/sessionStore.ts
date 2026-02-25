@@ -1,11 +1,14 @@
 import { create } from 'zustand'
-import type { Session, Message, Scene, StoryImageData } from '../types'
+import type { Session, Message } from '../types'
 import * as api from '../services/api'
 import { StorageFactory } from '../services/settingsStorage'
 import { idbGetSessions } from '../services/localDb'
 import { syncToIdb, syncToIdbFireAndForget } from '../services/idbSync'
 import { attachPendingBlocksForTurn, type TurnPendingBlock } from './sessionTurnUtils'
 import { useProjectStore } from './projectStore'
+import { useTokenStore } from './tokenStore'
+import { useSceneStore } from './sceneStore'
+import { useMessageImageStore } from './messageImageStore'
 import * as gameStorage from '../services/gameStorage'
 
 export type PendingBlock = TurnPendingBlock
@@ -21,10 +24,9 @@ interface SessionStore {
   streamStatus: StreamStatus
   pendingBlocks: PendingBlock[]
   phase: string
-  currentScene: Scene | null
-  scenes: Scene[]
-  messageImages: Record<string, StoryImageData[]>
-  imageLoadingMessages: Set<string>
+  pluginProcessing: boolean
+  pluginProgress: { round: number; tool_calls: string[]; blocks_so_far: string[] } | null
+  lastPluginSummary: { rounds: number; tool_calls: string[]; blocks_emitted: string[] } | null
   fetchSessions: (projectId: string) => Promise<void>
   createSession: (projectId: string) => Promise<Session>
   switchSession: (session: Session) => Promise<void>
@@ -40,17 +42,22 @@ interface SessionStore {
   flushPendingBlocksForTurn: (turnId: string) => void
   clearPendingBlocks: () => void
   setPhase: (phase: string) => void
-  setCurrentScene: (scene: Scene | null) => void
-  setScenes: (scenes: Scene[]) => void
-  addScene: (scene: Scene) => void
+  setPluginProcessing: (processing: boolean) => void
+  setPluginProgress: (progress: { round: number; tool_calls: string[]; blocks_so_far: string[] } | null) => void
+  setLastPluginSummary: (summary: { rounds: number; tool_calls: string[]; blocks_emitted: string[] } | null) => void
   removeLastAssistantMessage: () => void
   deleteMessage: (messageId: string) => void
   deleteMessagesFrom: (messageId: string) => void
-  setMessageImage: (messageId: string, image: StoryImageData) => void
-  setImageLoading: (messageId: string, loading: boolean) => void
-  clearMessageImages: () => void
-  hydrateMessageImages: (sessionId: string) => Promise<void>
   updateBlockData: (blockId: string, data: unknown) => void
+  updateMessageBlocks: (
+    messageId: string,
+    blocks: {
+      type: string
+      data: unknown
+      block_id?: string
+      output?: import('../services/outputContract').OutputEnvelope
+    }[],
+  ) => void
 }
 
 export const useSessionStore = create<SessionStore>((set) => ({
@@ -62,10 +69,9 @@ export const useSessionStore = create<SessionStore>((set) => ({
   streamStatus: 'idle' as StreamStatus,
   pendingBlocks: [],
   phase: 'init',
-  currentScene: null,
-  scenes: [],
-  messageImages: {},
-  imageLoadingMessages: new Set<string>(),
+  pluginProcessing: false,
+  pluginProgress: null,
+  lastPluginSummary: null,
 
   fetchSessions: async (projectId) => {
     try {
@@ -107,14 +113,13 @@ export const useSessionStore = create<SessionStore>((set) => ({
         messages: [],
         pendingBlocks: [],
         phase: 'init',
-        currentScene: null,
-        scenes: [],
         streamingContent: '',
         streamStatus: 'idle' as StreamStatus,
         isStreaming: false,
-        messageImages: {},
-        imageLoadingMessages: new Set<string>(),
       }))
+      useSceneStore.getState().resetScenes()
+      useMessageImageStore.getState().resetMessageImages()
+      useTokenStore.getState().reset()
       return session
     } catch (err) {
       console.error('Failed to create session:', err)
@@ -130,14 +135,13 @@ export const useSessionStore = create<SessionStore>((set) => ({
       messages: [],
       pendingBlocks: [],
       phase: session.phase || 'init',
-      currentScene: null,
-      scenes: [],
       streamingContent: '',
       streamStatus: 'idle' as StreamStatus,
       isStreaming: false,
-      messageImages: {},
-      imageLoadingMessages: new Set<string>(),
     })
+    useSceneStore.getState().resetScenes()
+    useMessageImageStore.getState().resetMessageImages()
+    useTokenStore.getState().reset()
     try {
       const messages = await gameStorage.fetchMessages(session.id)
       set({ messages })
@@ -157,23 +161,22 @@ export const useSessionStore = create<SessionStore>((set) => ({
         const sessions = state.sessions.filter((s) => s.id !== sessionId)
         const isCurrent = state.currentSession?.id === sessionId
         if (isCurrent) {
+          useSceneStore.getState().resetScenes()
+          useMessageImageStore.getState().resetMessageImages()
           return {
             sessions,
             currentSession: null,
             messages: [],
             pendingBlocks: [],
             phase: 'init',
-            currentScene: null,
-            scenes: [],
             streamingContent: '',
             streamStatus: 'idle' as StreamStatus,
             isStreaming: false,
-            messageImages: {},
-            imageLoadingMessages: new Set<string>(),
           }
         }
         return { sessions }
       })
+      useTokenStore.getState().reset()
     } catch (err) {
       console.error('Failed to delete session:', err)
       throw err
@@ -226,19 +229,10 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   setPhase: (phase) => set({ phase }),
 
-  setCurrentScene: (currentScene) => set({ currentScene }),
+  setPluginProcessing: (pluginProcessing) => set({ pluginProcessing, ...(pluginProcessing ? {} : { pluginProgress: null }) }),
+  setPluginProgress: (pluginProgress) => set({ pluginProgress }),
 
-  setScenes: (scenes) => {
-    set({ scenes })
-    if (scenes.length > 0) {
-      scenes.forEach((s) => syncToIdbFireAndForget('scene', s))
-    }
-  },
-
-  addScene: (scene) => {
-    set((state) => ({ scenes: [...state.scenes, scene] }))
-    syncToIdbFireAndForget('scene', scene)
-  },
+  setLastPluginSummary: (lastPluginSummary) => set({ lastPluginSummary }),
 
   removeLastAssistantMessage: () =>
     set((state) => {
@@ -264,48 +258,6 @@ export const useSessionStore = create<SessionStore>((set) => ({
       return { messages: state.messages.slice(0, idx), pendingBlocks: [] }
     }),
 
-  setMessageImage: (messageId, image) =>
-    set((state) => {
-      const existing = state.messageImages[messageId] || []
-      return {
-        messageImages: {
-          ...state.messageImages,
-          [messageId]: [...existing, image],
-        },
-      }
-    }),
-
-  setImageLoading: (messageId, loading) =>
-    set((state) => {
-      const next = new Set(state.imageLoadingMessages)
-      if (loading) {
-        next.add(messageId)
-      } else {
-        next.delete(messageId)
-      }
-      return { imageLoadingMessages: next }
-    }),
-
-  clearMessageImages: () => set({ messageImages: {}, imageLoadingMessages: new Set<string>() }),
-
-  hydrateMessageImages: async (sessionId) => {
-    try {
-      const images = await api.getSessionStoryImages(sessionId)
-      const map: Record<string, StoryImageData[]> = {}
-      for (const img of images) {
-        if (img.message_id) {
-          if (!map[img.message_id]) {
-            map[img.message_id] = []
-          }
-          map[img.message_id].push(img)
-        }
-      }
-      set({ messageImages: map })
-    } catch {
-      // ignore
-    }
-  },
-
   updateBlockData: (blockId, data) =>
     set((state) => {
       // Update block in messages (already flushed blocks)
@@ -315,6 +267,9 @@ export const useSessionStore = create<SessionStore>((set) => ({
         const updatedBlocks = msg.blocks.map((b) => {
           if (b.block_id === blockId) {
             found = true
+            if (b.output && typeof b.output === 'object') {
+              return { ...b, data, output: { ...b.output, data } }
+            }
             return { ...b, data }
           }
           return b
@@ -327,6 +282,9 @@ export const useSessionStore = create<SessionStore>((set) => ({
       const nextPending = state.pendingBlocks.map((b) => {
         if (b.blockId === blockId) {
           found = true
+          if (b.output && typeof b.output === 'object') {
+            return { ...b, data, output: { ...b.output, data } }
+          }
           return { ...b, data }
         }
         return b
@@ -335,4 +293,11 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
       return state
     }),
+
+  updateMessageBlocks: (messageId, blocks) =>
+    set((state) => ({
+      messages: state.messages.map((msg) =>
+        msg.id === messageId ? { ...msg, blocks } : msg,
+      ),
+    })),
 }))

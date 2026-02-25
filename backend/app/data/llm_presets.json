@@ -3,6 +3,7 @@
     {
       "id": "deepseek-chat",
       "name": "[推荐]DeepSeek Chat",
+      "name_en": "[Recommended] DeepSeek Chat",
       "provider": "deepseek",
       "model": "deepseek/deepseek-chat",
       "api_base": "https://api.deepseek.com",
@@ -11,6 +12,7 @@
     {
       "id": "openrouter-free",
       "name": "[免费]OpenRouter (免费模型)",
+      "name_en": "[Free] OpenRouter (Free Models)",
       "provider": "openrouter",
       "model": "openrouter/openrouter/free",
       "api_base": "https://openrouter.ai/api/v1",
@@ -19,6 +21,7 @@
     {
       "id": "openrouter-custom",
       "name": "[自定义]OpenRouter (自定义模型)",
+      "name_en": "[Custom] OpenRouter (Custom Model)",
       "provider": "openrouter",
       "model": "",
       "api_base": "https://openrouter.ai/api/v1",

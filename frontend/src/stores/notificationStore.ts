@@ -1,5 +1,11 @@
 import { create } from 'zustand'
 import type { Message } from '../types'
+import {
+  normalizeOutputEnvelope,
+  resolveBlockData,
+  resolveBlockId,
+  resolveBlockType,
+} from '../services/outputContract.js'
 
 export type NotificationLevel = 'info' | 'warning' | 'success' | 'error'
 
@@ -57,17 +63,21 @@ function normalizePayload(payload: NotificationPayload): {
 function notificationFromMessageBlock(
   sessionId: string,
   message: Message,
-  block: { type: string; data: unknown; block_id?: string },
+  block: { type?: unknown; data?: unknown; block_id?: unknown; output?: unknown },
   index: number,
 ): NotificationItem | null {
-  if (block.type !== 'notification') return null
-  if (!block.data || typeof block.data !== 'object' || Array.isArray(block.data)) {
+  const output = normalizeOutputEnvelope(block.output)
+  const type = resolveBlockType(block.type, output)
+  if (type !== 'notification') return null
+
+  const payload = resolveBlockData(block.data, output)
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return null
   }
-  const normalized = normalizePayload(block.data as NotificationPayload)
+  const normalized = normalizePayload(payload as NotificationPayload)
   if (!normalized) return null
   return {
-    id: block.block_id || `${message.id}:notification:${index}`,
+    id: resolveBlockId(block.block_id, output, `${message.id}:notification:${index}`),
     sessionId,
     level: normalized.level,
     title: normalized.title,

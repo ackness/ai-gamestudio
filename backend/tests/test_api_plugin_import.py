@@ -46,7 +46,7 @@ async def client():
 async def test_validate_plugin_import_accepts_json_body(client: AsyncClient):
     resp = await client.post(
         "/api/plugins/import/validate",
-        json={"plugin_dir": "plugins/story-image"},
+        json={"plugin_dir": "plugins/narrative/guide"},
     )
     assert resp.status_code == 200
     payload = resp.json()
@@ -57,7 +57,7 @@ async def test_validate_plugin_import_accepts_json_body(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_validate_plugin_import_accepts_query_param(client: AsyncClient):
     resp = await client.post(
-        "/api/plugins/import/validate?plugin_dir=plugins/story-image",
+        "/api/plugins/import/validate?plugin_dir=plugins/narrative/guide",
     )
     assert resp.status_code == 200
     payload = resp.json()

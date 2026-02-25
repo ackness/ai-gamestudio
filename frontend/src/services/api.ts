@@ -90,6 +90,11 @@ export function deleteSession(sessionId: string): Promise<void> {
 export function getSessionState(sessionId: string): Promise<{
   world: Record<string, unknown>
   turn_count: number
+  token_usage?: {
+    total_prompt_tokens?: number
+    total_completion_tokens?: number
+    total_cost?: number
+  }
 }> {
   return request(`/sessions/${sessionId}/state`)
 }
@@ -394,6 +399,12 @@ export interface DebugPromptMessage {
   length: number
 }
 
+export interface DebugPluginAgentInfo {
+  system_prompt: string
+  tools: { name: string; description: string }[]
+  block_declarations: Record<string, { plugin: string; schema: Record<string, unknown> | null }>
+}
+
 export interface DebugPromptResponse {
   model: string
   api_base: string | null
@@ -402,11 +413,25 @@ export interface DebugPromptResponse {
   messages: DebugPromptMessage[]
   total_chars: number
   message_count: number
+  plugin_agent?: DebugPluginAgentInfo
   error?: string
 }
 
 export async function getDebugPrompt(sessionId: string): Promise<DebugPromptResponse> {
   return request(`/sessions/${sessionId}/debug-prompt`)
+}
+
+// Model Info
+export async function getModelInfo(model: string): Promise<{
+  model: string
+  max_input_tokens: number
+  max_output_tokens: number
+  max_input_tokens_display: string
+  input_cost_per_token: number
+  output_cost_per_token: number
+  known: boolean
+}> {
+  return request(`/model-info?model=${encodeURIComponent(model)}`)
 }
 
 // Novel Generation
@@ -450,10 +475,10 @@ export async function generateNovelStream(
       if (!line.trim()) continue
       try {
         onEvent(JSON.parse(line))
-      } catch { /* skip malformed lines */ }
+      } catch { /* intentionally silent: skip malformed SSE lines */ }
     }
   }
   if (buffer.trim()) {
-    try { onEvent(JSON.parse(buffer)) } catch { /* skip */ }
+    try { onEvent(JSON.parse(buffer)) } catch { /* intentionally silent: skip malformed SSE trailing buffer */ }
   }
 }

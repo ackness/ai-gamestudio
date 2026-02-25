@@ -2,6 +2,9 @@ export interface BrowserLlmConfig {
   model?: string
   apiKey?: string
   apiBase?: string
+  pluginModel?: string
+  pluginApiKey?: string
+  pluginApiBase?: string
   imageModel?: string
   imageApiKey?: string
   imageApiBase?: string
@@ -12,6 +15,9 @@ export interface LlmOverridePayload {
   model?: string
   api_key?: string
   api_base?: string
+  plugin_model?: string
+  plugin_api_key?: string
+  plugin_api_base?: string
 }
 
 export interface ImageOverridePayload {
@@ -44,6 +50,9 @@ function normalizeConfig(raw: Partial<BrowserLlmConfig>): BrowserLlmConfig {
     model: normalize(raw.model),
     apiKey: normalize(raw.apiKey),
     apiBase: normalize(raw.apiBase),
+    pluginModel: normalize(raw.pluginModel),
+    pluginApiKey: normalize(raw.pluginApiKey),
+    pluginApiBase: normalize(raw.pluginApiBase),
     imageModel: normalize(raw.imageModel),
     imageApiKey: normalize(raw.imageApiKey),
     imageApiBase: normalize(raw.imageApiBase),
@@ -116,7 +125,10 @@ export function buildBrowserLlmOverrides(projectId?: string | null): LlmOverride
   if (cfg.model) overrides.model = cfg.model
   if (cfg.apiKey) overrides.api_key = cfg.apiKey
   if (cfg.apiBase) overrides.api_base = cfg.apiBase
-  if (!overrides.model && !overrides.api_key && !overrides.api_base) {
+  if (cfg.pluginModel) overrides.plugin_model = cfg.pluginModel
+  if (cfg.pluginApiKey) overrides.plugin_api_key = cfg.pluginApiKey
+  if (cfg.pluginApiBase) overrides.plugin_api_base = cfg.pluginApiBase
+  if (!overrides.model && !overrides.api_key && !overrides.api_base && !overrides.plugin_model) {
     return undefined
   }
   return overrides

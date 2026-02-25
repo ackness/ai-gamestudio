@@ -1,17 +1,18 @@
 import { useState } from 'react'
-import { Users, AlertCircle, Globe, Puzzle, Settings, Clock } from 'lucide-react'
+import { Users, AlertCircle, Globe, Puzzle, Settings, Clock, BookOpen } from 'lucide-react'
 import { CharacterPanel } from './CharacterPanel'
 import { PluginPanel } from '../plugins/PluginPanel'
 import { EventPanel } from './EventPanel'
 import { WorldStatePanel } from './WorldStatePanel'
 import { NotificationPanel } from './NotificationPanel'
 import { RuntimeSettingsPanel } from './RuntimeSettingsPanel'
+import { CodexPanel } from './CodexPanel'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useUiStore } from '../../stores/uiStore'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-type Tab = 'characters' | 'events' | 'alerts' | 'world' | 'plugins' | 'settings'
+type Tab = 'characters' | 'events' | 'alerts' | 'world' | 'codex' | 'plugins' | 'settings'
 
 interface TabDef { label: string; hint: string; icon: React.ElementType }
 
@@ -21,6 +22,7 @@ const tabDefs: Record<string, TabDef[]> = {
     { label: '事件', hint: '事件时间线', icon: Clock },
     { label: '通知', hint: '通知与告警', icon: AlertCircle },
     { label: '世界', hint: '世界状态', icon: Globe },
+    { label: '图鉴', hint: '百科全书', icon: BookOpen },
     { label: '插件', hint: '插件能力', icon: Puzzle },
     { label: '设置', hint: '运行时配置', icon: Settings },
   ],
@@ -29,12 +31,13 @@ const tabDefs: Record<string, TabDef[]> = {
     { label: 'Events', hint: 'Event timeline', icon: Clock },
     { label: 'Alerts', hint: 'Notifications', icon: AlertCircle },
     { label: 'World', hint: 'World state', icon: Globe },
+    { label: 'Codex', hint: 'Encyclopedia', icon: BookOpen },
     { label: 'Plugins', hint: 'Plugin capabilities', icon: Puzzle },
     { label: 'Settings', hint: 'Runtime config', icon: Settings },
   ],
 }
 
-const tabKeys: Tab[] = ['characters', 'events', 'alerts', 'world', 'plugins', 'settings']
+const tabKeys: Tab[] = ['characters', 'events', 'alerts', 'world', 'codex', 'plugins', 'settings']
 
 export function SidePanel() {
   const [activeTab, setActiveTab] = useState<Tab>('characters')
@@ -56,8 +59,8 @@ export function SidePanel() {
     }
   }
 
-  const gameTabs = tabs.slice(0, 4)
-  const configTabs = tabs.slice(4)
+  const gameTabs = tabs.slice(0, 5)
+  const configTabs = tabs.slice(5)
 
   return (
     <Tabs value={activeTab} onValueChange={handleTabChange} className="h-full flex overflow-hidden bg-background" orientation="vertical">
@@ -112,6 +115,7 @@ export function SidePanel() {
         <TabsContent value="events" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><EventPanel /></TabsContent>
         <TabsContent value="alerts" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><NotificationPanel /></TabsContent>
         <TabsContent value="world" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><WorldStatePanel /></TabsContent>
+        <TabsContent value="codex" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><CodexPanel /></TabsContent>
         <TabsContent value="plugins" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><PluginPanel /></TabsContent>
         <TabsContent value="settings" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><RuntimeSettingsPanel /></TabsContent>
       </div>

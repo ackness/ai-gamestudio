@@ -5,7 +5,7 @@ type TabView = 'log' | 'prompt'
 
 interface LogEntry {
   ts: string
-  dir: 'send' | 'recv'
+  dir: 'send' | 'recv' | 'debug'
   payload: Record<string, unknown>
 }
 
@@ -21,6 +21,7 @@ export function DebugLogPanel({ sessionId, onClose }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const [autoScroll, setAutoScroll] = useState(true)
+  const [showChunks, setShowChunks] = useState(false)
   const [activeTab, setActiveTab] = useState<TabView>('log')
   const [promptData, setPromptData] = useState<DebugPromptResponse | null>(null)
   const [promptLoading, setPromptLoading] = useState(false)
@@ -191,6 +192,15 @@ export function DebugLogPanel({ sessionId, onClose }: Props) {
               <label className="flex items-center gap-1 text-muted-foreground cursor-pointer">
                 <input
                   type="checkbox"
+                  checked={showChunks}
+                  onChange={(e) => setShowChunks(e.target.checked)}
+                  className="accent-emerald-500"
+                />
+                Chunks
+              </label>
+              <label className="flex items-center gap-1 text-muted-foreground cursor-pointer">
+                <input
+                  type="checkbox"
                   checked={autoScroll}
                   onChange={(e) => setAutoScroll(e.target.checked)}
                   className="accent-emerald-500"
@@ -224,7 +234,7 @@ export function DebugLogPanel({ sessionId, onClose }: Props) {
           {logs.length === 0 && (
             <div className="text-muted-foreground/50 text-center py-4">No log entries yet. Send a message to see events.</div>
           )}
-          {logs.map((entry, i) => {
+          {logs.filter((entry) => showChunks || (entry.payload?.type as string) !== 'chunk').map((entry, i) => {
             const isSend = entry.dir === 'send'
             const type = (entry.payload?.type as string) || '?'
             const preview = entry.payload?.preview
@@ -233,14 +243,17 @@ export function DebugLogPanel({ sessionId, onClose }: Props) {
               <details key={i} className="group">
                 <summary className="flex items-center gap-2 py-0.5 px-1 rounded cursor-pointer hover:bg-muted/50">
                   <span className="text-muted-foreground/50 w-20 shrink-0">{formatTime(entry.ts)}</span>
-                  <span className={`w-4 text-center ${isSend ? 'text-blue-400' : 'text-amber-400'}`}>
-                    {isSend ? '\u2191' : '\u2193'}
+                  <span className={`w-4 text-center ${entry.dir === 'debug' ? 'text-purple-400' : isSend ? 'text-blue-400' : 'text-amber-400'}`}>
+                    {entry.dir === 'debug' ? '\u2699' : isSend ? '\u2191' : '\u2193'}
                   </span>
                   <span className={`px-1.5 py-0 rounded text-[10px] font-medium ${
                     type === 'error' ? 'bg-red-900/50 text-red-400' :
                     type === 'done' ? 'bg-emerald-900/50 text-emerald-400' :
                     type === 'chunk' ? 'bg-muted text-muted-foreground' :
                     type === 'phase_change' ? 'bg-purple-900/50 text-purple-400' :
+                    type === 'narrative_prompt' ? 'bg-indigo-900/50 text-indigo-400' :
+                    type === 'plugin_agent_result' ? 'bg-cyan-900/50 text-cyan-400' :
+                    type === 'plugin_agent_trace' ? 'bg-teal-900/50 text-teal-400' :
                     'bg-muted text-muted-foreground'
                   }`}>
                     {type}
@@ -299,7 +312,8 @@ export function DebugLogPanel({ sessionId, onClose }: Props) {
                 </div>
               )}
 
-              {/* Messages */}
+              {/* Narrative Prompt Messages */}
+              <div className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wider pt-1">Narrative Prompt</div>
               {promptData.messages.map((msg, i) => (
                 <details key={i} open={i === 0}>
                   <summary className="flex items-center gap-2 py-0.5 px-1 rounded cursor-pointer hover:bg-muted/50">
@@ -320,6 +334,59 @@ export function DebugLogPanel({ sessionId, onClose }: Props) {
                   </pre>
                 </details>
               ))}
+
+              {/* Plugin Agent Section */}
+              {promptData.plugin_agent && (
+                <>
+                  <div className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wider pt-2 border-t border-border/50 mt-2">Plugin Agent</div>
+
+                  {/* Agent Tools */}
+                  <details>
+                    <summary className="flex items-center gap-2 py-0.5 px-1 rounded cursor-pointer hover:bg-muted/50">
+                      <span className="bg-cyan-900/50 text-cyan-400 px-1.5 py-0 rounded text-[10px] font-medium">tools</span>
+                      <span className="text-muted-foreground/50 text-[10px]">{promptData.plugin_agent.tools.length} available</span>
+                    </summary>
+                    <div className="ml-4 mr-2 mb-1 space-y-0.5">
+                      {promptData.plugin_agent.tools.map((t) => (
+                        <div key={t.name} className="flex items-start gap-2 py-0.5">
+                          <code className="bg-muted px-1 py-0 rounded text-[10px] text-cyan-300 shrink-0">{t.name}</code>
+                          <span className="text-muted-foreground/60 text-[10px] truncate">{t.description}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+
+                  {/* Block Declarations */}
+                  {Object.keys(promptData.plugin_agent.block_declarations).length > 0 && (
+                    <details>
+                      <summary className="flex items-center gap-2 py-0.5 px-1 rounded cursor-pointer hover:bg-muted/50">
+                        <span className="bg-amber-900/50 text-amber-400 px-1.5 py-0 rounded text-[10px] font-medium">blocks</span>
+                        <span className="text-muted-foreground/50 text-[10px]">{Object.keys(promptData.plugin_agent.block_declarations).length} declared</span>
+                      </summary>
+                      <div className="ml-4 mr-2 mb-1 space-y-0.5">
+                        {Object.entries(promptData.plugin_agent.block_declarations).map(([name, decl]) => (
+                          <div key={name} className="flex items-center gap-2 py-0.5">
+                            <code className="bg-muted px-1 py-0 rounded text-[10px] text-amber-300">{name}</code>
+                            <span className="text-muted-foreground/60 text-[10px]">({decl.plugin})</span>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+
+                  {/* Agent System Prompt */}
+                  <details>
+                    <summary className="flex items-center gap-2 py-0.5 px-1 rounded cursor-pointer hover:bg-muted/50">
+                      <span className="bg-purple-900/50 text-purple-400 px-1.5 py-0 rounded text-[10px] font-medium">system</span>
+                      <span className="text-muted-foreground/50 text-[10px]">{promptData.plugin_agent.system_prompt.length.toLocaleString()} chars</span>
+                      <span className="text-muted-foreground/50 truncate text-[10px]">Plugin Agent system prompt</span>
+                    </summary>
+                    <pre className="ml-4 mr-2 mb-1 p-2 bg-muted/50 rounded text-[11px] text-foreground/70 overflow-x-auto whitespace-pre-wrap break-all">
+                      {promptData.plugin_agent.system_prompt}
+                    </pre>
+                  </details>
+                </>
+              )}
             </>
           )}
         </div>

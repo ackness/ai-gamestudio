@@ -6,6 +6,7 @@ import {
   idbGetProjects,
   idbGetProject,
   idbPutProject,
+  idbDeleteProject,
 } from '../services/localDb'
 
 interface ProjectStore {
@@ -18,6 +19,7 @@ interface ProjectStore {
   updateWorldDoc: (worldDoc: string, projectId?: string) => Promise<void>
   updateProject: (data: Partial<Project>, projectId?: string) => Promise<void>
   setCurrentProject: (project: Project | null) => void
+  deleteProject: (id: string) => Promise<void>
   /** Ensure the given project exists in the backend SQLite with latest data (re-syncs after cold start). */
   syncProjectToBackend: (project: Project) => Promise<void>
 }
@@ -87,7 +89,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       await idbPutProject(updated as unknown as Record<string, unknown>)
       set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))
       // Best-effort backend sync
-      try { await get().syncProjectToBackend(updated) } catch { /* ephemeral backend */ }
+      try { await get().syncProjectToBackend(updated) } catch (err) { console.warn('updateWorldDoc: backend sync failed:', err) }
     } else {
       const updated = await api.updateProject(targetProjectId, { world_doc: worldDoc })
       set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))
@@ -110,11 +112,23 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       await idbPutProject(updated as unknown as Record<string, unknown>)
       set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))
       // Best-effort backend sync
-      try { await get().syncProjectToBackend(updated) } catch { /* ephemeral backend */ }
+      try { await get().syncProjectToBackend(updated) } catch (err) { console.warn('updateProject: backend sync failed:', err) }
     } else {
       const updated = await api.updateProject(targetProjectId, data)
       set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))
     }
+  },
+
+  deleteProject: async (id) => {
+    const persistent = await StorageFactory.isStoragePersistent()
+    if (!persistent) {
+      await idbDeleteProject(id)
+    }
+    await api.deleteProject(id).catch(() => {})
+    set((state) => ({
+      projects: state.projects.filter((p) => p.id !== id),
+      currentProject: state.currentProject?.id === id ? null : state.currentProject,
+    }))
   },
 
   setCurrentProject: (project) => set({ currentProject: project }),

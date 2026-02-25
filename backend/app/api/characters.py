@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import select
@@ -24,9 +22,11 @@ class CharacterUpdate(BaseModel):
 
 
 def _serialize_character(char: Character) -> dict:
+    from backend.app.core.json_utils import safe_json_loads
+
     d = char.model_dump()
-    d["attributes"] = json.loads(char.attributes_json) if char.attributes_json else {}
-    d["inventory"] = json.loads(char.inventory_json) if char.inventory_json else []
+    d["attributes"] = safe_json_loads(char.attributes_json, {}) if char.attributes_json else {}
+    d["inventory"] = safe_json_loads(char.inventory_json, []) if char.inventory_json else []
     d.pop("attributes_json", None)
     d.pop("inventory_json", None)
     return d
@@ -60,9 +60,11 @@ async def update_character(
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
 
+    _MUTABLE_FIELDS = {"name", "role", "description", "personality", "attributes_json", "inventory_json"}
     update_data = body.model_dump(exclude_unset=True)
     for key, value in update_data.items():
-        setattr(character, key, value)
+        if key in _MUTABLE_FIELDS:
+            setattr(character, key, value)
 
     from datetime import datetime, timezone
 

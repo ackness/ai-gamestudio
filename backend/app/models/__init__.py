@@ -1,5 +1,8 @@
 from backend.app.models.character import Character
 from backend.app.models.game_event import GameEvent
+from backend.app.models.game_graph import GameGraph
+from backend.app.models.game_kv import GameKV
+from backend.app.models.game_log import GameLog
 from backend.app.models.llm_profile import LlmProfile
 from backend.app.models.message import Message
 from backend.app.models.plugin_storage import PluginStorage
@@ -11,6 +14,9 @@ from backend.app.models.session import GameSession
 __all__ = [
     "Character",
     "GameEvent",
+    "GameGraph",
+    "GameKV",
+    "GameLog",
     "GameSession",
     "LlmProfile",
     "Message",

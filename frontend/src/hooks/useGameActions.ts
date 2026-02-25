@@ -120,6 +120,14 @@ export function useGameActions(
     [wsRef],
   )
 
+  const handleRetriggerPlugins = useCallback(
+    (messageId: string) => {
+      if (!wsRef.current || isStreaming) return
+      wsRef.current.sendRetriggerPlugins(messageId)
+    },
+    [wsRef, isStreaming],
+  )
+
   return {
     handleSend,
     handleInitGame,
@@ -127,5 +135,6 @@ export function useGameActions(
     handleForceTrigger,
     handleGenerateImage,
     handleSceneSwitch,
+    handleRetriggerPlugins,
   }
 }

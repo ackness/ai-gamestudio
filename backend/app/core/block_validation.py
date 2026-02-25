@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
+
+from loguru import logger
 
 if TYPE_CHECKING:
     from backend.app.core.plugin_engine import BlockDeclaration
@@ -44,7 +47,7 @@ _BUILTIN_BLOCK_SCHEMAS: dict[str, dict[str, Any]] = {
             "description": {"type": "string"},
             "role": {"type": "string"},
         },
-        "required": ["character_id", "name"],
+        "required": ["name"],
     },
     "scene_update": {
         "type": "object",
@@ -65,7 +68,6 @@ _BUILTIN_BLOCK_SCHEMAS: dict[str, dict[str, Any]] = {
                 },
             },
         },
-        "required": ["action"],
     },
     "event": {
         "type": "object",
@@ -145,6 +147,34 @@ def _validate_schema(value: Any, schema: dict[str, Any], path: str = "$") -> lis
     if isinstance(enum_values, list) and value not in enum_values:
         errors.append(f"{path}: value {value!r} not in enum {enum_values!r}")
 
+    if isinstance(value, str):
+        min_length = schema.get("minLength")
+        if isinstance(min_length, int) and len(value) < min_length:
+            errors.append(
+                f"{path}: expected length >= {min_length}, got {len(value)}"
+            )
+        max_length = schema.get("maxLength")
+        if isinstance(max_length, int) and len(value) > max_length:
+            errors.append(
+                f"{path}: expected length <= {max_length}, got {len(value)}"
+            )
+        pattern = schema.get("pattern")
+        if isinstance(pattern, str) and len(pattern) <= 200:
+            try:
+                compiled = re.compile(pattern)
+                if not compiled.search(value[:10000]):
+                    errors.append(f"{path}: value does not match pattern {pattern!r}")
+            except re.error:
+                logger.warning("Invalid schema pattern ignored at {}: {}", path, pattern)
+
+    if ((isinstance(value, int) and not isinstance(value, bool)) or isinstance(value, float)):
+        minimum = schema.get("minimum")
+        if isinstance(minimum, (int, float)) and value < minimum:
+            errors.append(f"{path}: expected >= {minimum}, got {value}")
+        maximum = schema.get("maximum")
+        if isinstance(maximum, (int, float)) and value > maximum:
+            errors.append(f"{path}: expected <= {maximum}, got {value}")
+
     if isinstance(value, dict):
         required = schema.get("required") or []
         if isinstance(required, list):
@@ -213,9 +243,12 @@ def _validate_builtin_semantics(block_type: str, data: Any) -> list[str]:
                     )
 
     elif block_type == "scene_update":
-        action = data.get("action")
+        action = data.get("action", "move")
         if action not in {"move", "update"}:
-            errors.append("$.scene_update.action: must be 'move' or 'update'")
+            # Auto-normalize unknown action to "move" (matches handler behavior)
+            logger.warning("scene_update: unknown action '{}', normalizing to 'move'", action)
+            data["action"] = "move"
+            action = "move"
         if action == "move" and not str(data.get("name", "")).strip():
             errors.append("$.scene_update.name: required when action=move")
 

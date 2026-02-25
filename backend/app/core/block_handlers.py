@@ -7,11 +7,13 @@ from loguru import logger
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from backend.app.core.game_state import GameStateManager
+from backend.app.core.json_utils import safe_json_loads
 
 if TYPE_CHECKING:
     from backend.app.core.capability_executor import CapabilityExecutor
     from backend.app.core.event_bus import PluginEventBus
     from backend.app.core.plugin_engine import BlockDeclaration
+    from backend.app.models.game_event import GameEvent
 
 
 @dataclass
@@ -128,6 +130,39 @@ class DeclarativeBlockHandler:
                         autocommit=context.autocommit,
                     )
 
+                elif action_type == "storage_list_upsert":
+                    from backend.app.services.plugin_service import storage_get
+
+                    key = action.get("key", "data")
+                    match_field = action.get("match_field", "entry_id")
+                    max_entries = action.get("max_entries", 1000)
+                    existing = await storage_get(
+                        context.db, context.project_id, self.plugin_name, key
+                    )
+                    entries = existing if isinstance(existing, list) else []
+                    match_val = data.get(match_field)
+                    if match_val is not None:
+                        idx = next(
+                            (i for i, e in enumerate(entries) if isinstance(e, dict) and e.get(match_field) == match_val),
+                            None,
+                        )
+                        if idx is not None:
+                            entries[idx] = data
+                        else:
+                            entries.append(data)
+                    else:
+                        entries.append(data)
+                    if len(entries) > max_entries:
+                        entries = entries[-max_entries:]
+                    await storage_set(
+                        context.db,
+                        context.project_id,
+                        self.plugin_name,
+                        key,
+                        entries,
+                        autocommit=context.autocommit,
+                    )
+
                 elif action_type == "emit_event":
                     event_name = action.get("event")
                     if event_name and context.event_bus:
@@ -169,8 +204,6 @@ class DeclarativeBlockHandler:
 
 class StateUpdateHandler:
     async def process(self, data: dict, context: BlockContext) -> dict | None:
-        import json as _json
-
         mgr = context.state_mgr
         # Update characters and collect enriched records with DB ids
         if "characters" in data:
@@ -184,12 +217,16 @@ class StateUpdateHandler:
                         "role": char.role,
                         "description": char.description,
                         "personality": char.personality,
-                        "attributes": _json.loads(char.attributes_json)
-                        if char.attributes_json
-                        else {},
-                        "inventory": _json.loads(char.inventory_json)
-                        if char.inventory_json
-                        else [],
+                        "attributes": safe_json_loads(
+                            char.attributes_json,
+                            fallback={},
+                            context=f"Character attributes ({char.id})",
+                        ),
+                        "inventory": safe_json_loads(
+                            char.inventory_json,
+                            fallback=[],
+                            context=f"Character inventory ({char.id})",
+                        ),
                     }
                 )
             data["characters"] = enriched
@@ -281,7 +318,25 @@ class SceneUpdateHandler:
 
 
 class EventHandler:
+    @staticmethod
+    def _enrich_from_record(data: dict, event: "GameEvent", session_id: str) -> dict:
+        """Enrich block data with full DB record fields so frontend isGameEvent() passes."""
+        data["id"] = event.id
+        data["event_id"] = event.id
+        data["session_id"] = session_id
+        data["event_type"] = event.event_type
+        data["name"] = event.name
+        data["description"] = event.description or ""
+        data["status"] = event.status
+        data["source"] = event.source or "dm"
+        data["visibility"] = event.visibility or "known"
+        if event.parent_event_id:
+            data["parent_event_id"] = event.parent_event_id
+        return data
+
     async def process(self, data: dict, context: BlockContext) -> dict | None:
+        from backend.app.models.game_event import GameEvent
+
         mgr = context.state_mgr
         action = data.get("action", "create")
 
@@ -296,7 +351,7 @@ class EventHandler:
                 visibility=data.get("visibility", "known"),
                 metadata=data.get("metadata"),
             )
-            data["event_id"] = event.id
+            self._enrich_from_record(data, event, context.session_id)
 
         elif action == "evolve":
             parent_id = data.get("event_id") or data.get("parent_event_id")
@@ -312,13 +367,17 @@ class EventHandler:
                     visibility=data.get("visibility", "known"),
                     metadata=data.get("metadata"),
                 )
-                data["event_id"] = child.id
+                self._enrich_from_record(data, child, context.session_id)
 
         elif action in ("resolve", "end"):
             event_id = data.get("event_id")
             if event_id:
                 status = "resolved" if action == "resolve" else "ended"
                 await mgr.update_event(event_id, status=status)
+                # Enrich with updated status for frontend
+                event_obj = await mgr.session.get(GameEvent, event_id)
+                if event_obj:
+                    self._enrich_from_record(data, event_obj, context.session_id)
 
         return data
 

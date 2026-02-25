@@ -1,0 +1,7 @@
+{
+  "name": "core",
+  "description": "核心基础设施插件组，提供状态管理、事件追踪、记忆和数据存储",
+  "shared_prompt": "You are the game's core infrastructure layer. Maintain data consistency across state, events, memory, and storage. Always prioritize data integrity over narrative convenience.",
+  "execution_mode": "merged",
+  "plugins": ["database", "state", "event", "memory"]
+}

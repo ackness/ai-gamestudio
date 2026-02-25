@@ -1,8 +1,10 @@
 import type { Message } from '../types'
+import type { OutputEnvelope } from '../services/outputContract'
 
 export interface TurnPendingBlock {
   type: string
   data: unknown
+  output?: OutputEnvelope
   turnId?: string
   blockId: string
 }
@@ -45,6 +47,7 @@ export function attachPendingBlocksForTurn(
         type: b.type,
         data: b.data,
         block_id: b.blockId,
+        output: b.output,
       })),
     ],
   }

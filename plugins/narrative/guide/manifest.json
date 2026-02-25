@@ -1,0 +1,318 @@
+{
+  "schema_version": "1.0",
+  "version": "0.1.0",
+  "name": "guide",
+  "type": "gameplay",
+  "required": false,
+  "default_enabled": true,
+  "supersedes": [
+    "auto-guide",
+    "choices"
+  ],
+  "description": "Action suggestions and interactive choices for player guidance.",
+  "dependencies": [],
+  "prompt": {
+    "position": "pre-response",
+    "priority": 80,
+    "template": "prompts/guide-instruction.md"
+  },
+  "capabilities": {},
+  "outputs": {
+    "guide": {
+      "instruction": "当需要给玩家行动建议时，用 `emit.items` 输出 `guide`。`data.categories` 提供 `safe/aggressive/creative/wild` 等分类建议。",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "categories": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "style": {
+                  "type": "string",
+                  "enum": [
+                    "safe",
+                    "aggressive",
+                    "creative",
+                    "wild"
+                  ]
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                "suggestions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                }
+              },
+              "required": [
+                "style",
+                "suggestions"
+              ]
+            }
+          }
+        },
+        "required": [
+          "categories"
+        ]
+      },
+      "requires_response": false,
+      "ui": {
+        "component": "custom",
+        "renderer_name": "guide"
+      }
+    },
+    "choices": {
+      "instruction": "当需要玩家做明确选择时，用 `emit.items` 输出 `choices`。`data` 必须包含 `prompt`、`type`（`single/multi`）和字符串数组 `options`。`options` 至少 2 项、最多 6 项；每项必须是短文本单一动作。一个选项占数组一个元素，不要把多个选项拼在同一字符串里；不要使用 markdown 标记（如 `**`、列表符、代码块）。",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "single",
+              "multi"
+            ]
+          },
+          "options": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 6,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          }
+        },
+        "required": [
+          "prompt",
+          "type",
+          "options"
+        ]
+      },
+      "requires_response": true,
+      "ui": {
+        "component": "custom",
+        "renderer_name": "choices"
+      }
+    }
+  },
+  "events": {
+    "emit": [],
+    "listen": []
+  },
+  "storage": {
+    "keys": []
+  },
+  "extensions": {
+    "runtime_settings": {
+      "fields": {
+        "guide_mode": {
+          "type": "enum",
+          "label": "Guide Mode",
+          "description": "Use categorized guide suggestions or simple choices.",
+          "default": "guide",
+          "options": [
+            {
+              "value": "guide",
+              "label": "Guide (categorized)",
+              "i18n": {
+                "zh": {
+                  "label": "引导（分类建议）"
+                }
+              }
+            },
+            {
+              "value": "choices",
+              "label": "Choices (simple)",
+              "i18n": {
+                "zh": {
+                  "label": "选项（简单选择）"
+                }
+              }
+            }
+          ],
+          "output_gate": {
+            "guide": "guide",
+            "choices": "choices"
+          },
+          "affects": [
+            "choices"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "引导模式",
+              "description": "使用分类行动建议还是简单选项。"
+            }
+          }
+        },
+        "category_count": {
+          "type": "integer",
+          "label": "Guide Categories",
+          "description": "Preferred number of guide categories per response.",
+          "default": 3,
+          "min": 2,
+          "max": 4,
+          "affects": [
+            "choices"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "引导分类数",
+              "description": "每次回复中建议分类的数量。"
+            }
+          }
+        },
+        "suggestion_style": {
+          "type": "enum",
+          "label": "Suggestion Style",
+          "description": "Tone for suggested player actions.",
+          "default": "concise",
+          "options": [
+            {
+              "value": "concise",
+              "label": "Concise",
+              "i18n": {
+                "zh": {
+                  "label": "简洁"
+                }
+              }
+            },
+            {
+              "value": "descriptive",
+              "label": "Descriptive",
+              "i18n": {
+                "zh": {
+                  "label": "描述性"
+                }
+              }
+            },
+            {
+              "value": "tactical",
+              "label": "Tactical",
+              "i18n": {
+                "zh": {
+                  "label": "战术性"
+                }
+              }
+            }
+          ],
+          "affects": [
+            "choices"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "建议风格",
+              "description": "玩家行动建议的语气风格。"
+            }
+          }
+        },
+        "include_wild_category": {
+          "type": "boolean",
+          "label": "Include Wild Category",
+          "description": "Whether to encourage a wild option in most turns.",
+          "default": true,
+          "affects": [
+            "choices"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "包含天马行空",
+              "description": "是否在大多数回合中附加天马行空类建议。"
+            }
+          }
+        },
+        "option_count": {
+          "type": "integer",
+          "label": "Choice Count",
+          "description": "Preferred number of options in choices 输出.",
+          "default": 3,
+          "min": 2,
+          "max": 5,
+          "affects": [
+            "choices"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "选项数量",
+              "description": "choices 输出 中偏好的选项个数。"
+            }
+          }
+        },
+        "option_style": {
+          "type": "enum",
+          "label": "Choice Style",
+          "description": "Bias style for presented choices.",
+          "default": "balanced",
+          "options": [
+            {
+              "value": "conservative",
+              "label": "Conservative",
+              "i18n": {
+                "zh": {
+                  "label": "保守"
+                }
+              }
+            },
+            {
+              "value": "balanced",
+              "label": "Balanced",
+              "i18n": {
+                "zh": {
+                  "label": "均衡"
+                }
+              }
+            },
+            {
+              "value": "bold",
+              "label": "Bold",
+              "i18n": {
+                "zh": {
+                  "label": "大胆"
+                }
+              }
+            }
+          ],
+          "affects": [
+            "choices"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "选项风格",
+              "description": "呈现给玩家的选项倾向风格。"
+            }
+          }
+        }
+      }
+    }
+  },
+  "i18n": {
+    "en": {
+      "name": "Guide",
+      "description": "Action suggestions and interactive choices for player guidance."
+    },
+    "zh": {
+      "name": "行动引导",
+      "description": "行动建议与交互选项，引导玩家决策。"
+    }
+  }
+}

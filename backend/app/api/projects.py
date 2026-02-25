@@ -182,8 +182,13 @@ async def update_project(
         _set_project_api_key(project, update_data.pop("llm_api_key"))
     if "image_api_key" in update_data:
         _set_project_image_api_key(project, update_data.pop("image_api_key"))
+    _MUTABLE_FIELDS = {
+        "name", "description", "world_doc", "init_prompt",
+        "llm_model", "llm_api_base", "image_model", "image_api_base",
+    }
     for key, value in update_data.items():
-        setattr(project, key, value)
+        if key in _MUTABLE_FIELDS:
+            setattr(project, key, value)
     project.updated_at = datetime.now(timezone.utc)
 
     session.add(project)

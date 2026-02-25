@@ -90,3 +90,41 @@ test('notification store ignores live notifications from non-active session', ()
   const notifications = useNotificationStore.getState().notifications
   assert.equal(notifications.length, 0)
 })
+
+test('notification store hydrates when type/data are carried in output envelope', () => {
+  resetStore()
+  const store = useNotificationStore.getState()
+  store.resetForSession('session-1')
+  store.hydrateFromMessages('session-1', [
+    {
+      id: 'm-output',
+      session_id: 'session-1',
+      role: 'assistant',
+      content: '...',
+      turn_id: 'turn-2',
+      message_type: 'narration',
+      created_at: '2026-02-17T00:00:02.000Z',
+      blocks: [
+        {
+          type: '',
+          data: undefined,
+          output: {
+            id: 'out-notice-1',
+            type: 'notification',
+            data: {
+              level: 'success',
+              title: '同步成功',
+              content: '状态栏已更新',
+            },
+          },
+        },
+      ],
+    },
+  ])
+
+  const notifications = useNotificationStore.getState().notifications
+  assert.equal(notifications.length, 1)
+  assert.equal(notifications[0].id, 'out-notice-1')
+  assert.equal(notifications[0].level, 'success')
+  assert.equal(notifications[0].title, '同步成功')
+})

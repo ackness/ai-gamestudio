@@ -2,18 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import json
-import uuid
-from typing import Any, Protocol
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable, Literal, Protocol
 
 from loguru import logger
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 
 from backend.app.core.access_key import is_request_authorized
-from backend.app.core.block_parser import strip_blocks
 from backend.app.db.engine import engine
 from backend.app.models.session import GameSession
-from backend.app.services.chat_service import process_message
+from backend.app.services.chat_service import process_message, retrigger_plugins
 
 from backend.app.api.debug_log import _add_log, _touch_log_session, _cleanup_log_sessions
 from backend.app.services.command_handlers import (
@@ -44,92 +44,129 @@ class HttpEventCollector:
         self.events.append(data)
 
 
-def _extract_llm_overrides(data: dict[str, Any]) -> dict[str, str] | None:
-    raw = data.get("llm_overrides")
+class OverridePayload(BaseModel):
+    model: str | None = None
+    api_key: str | None = None
+    api_base: str | None = None
+
+    def to_non_empty_dict(self) -> dict[str, str] | None:
+        out: dict[str, str] = {}
+        for key in ("model", "api_key", "api_base"):
+            val = str(getattr(self, key) or "").strip()
+            if val:
+                out[key] = val
+        return out or None
+
+
+class TerminalSummary(BaseModel):
+    status: Literal["done", "error"]
+    turn_id: str = ""
+
+
+class ChatCommandResponse(BaseModel):
+    events: list[dict[str, Any]]
+    terminal: TerminalSummary | None = None
+
+
+@dataclass(slots=True)
+class CommandContext:
+    sink: EventSink
+    session_id: str
+    data: dict[str, Any]
+    transport_mode: Literal["http", "websocket"]
+    llm_overrides: dict[str, str] | None = None
+    image_overrides: dict[str, str] | None = None
+
+
+CommandHandler = Callable[[CommandContext], Awaitable[None]]
+
+
+class CommandRouter:
+    def __init__(self) -> None:
+        self._handlers: dict[str, CommandHandler] = {}
+
+    def register(self, msg_type: str, handler: CommandHandler) -> None:
+        self._handlers[msg_type] = handler
+
+    async def dispatch(self, ctx: CommandContext) -> None:
+        msg_type = str(ctx.data.get("type", "message"))
+        handler = self._handlers.get(msg_type)
+        if handler is None:
+            await _send_error(
+                ctx.sink,
+                f"Unknown message type: {msg_type}",
+            )
+            return
+        await handler(ctx)
+
+
+def _build_terminal_summary(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Compute terminal status from collected command events."""
+    last_terminal: dict[str, Any] | None = None
+    for evt in events:
+        if not isinstance(evt, dict):
+            continue
+        etype = str(evt.get("type") or "")
+        if etype in {"done", "error", "turn_end"}:
+            last_terminal = evt
+    if not last_terminal:
+        return None
+    etype = str(last_terminal.get("type") or "")
+    status = "error" if etype == "error" else "done"
+    turn_id = str(last_terminal.get("turn_id") or "")
+    return {"status": status, "turn_id": turn_id}
+
+
+def _extract_overrides(data: dict[str, Any], field_name: str) -> dict[str, str] | None:
+    raw = data.get(field_name)
     if not isinstance(raw, dict):
         return None
-    overrides: dict[str, str] = {}
-    for key in ("model", "api_key", "api_base"):
-        val = str(raw.get(key) or "").strip()
-        if val:
-            overrides[key] = val
-    return overrides or None
-
-
-def _extract_image_overrides(data: dict[str, Any]) -> dict[str, str] | None:
-    raw = data.get("image_overrides")
-    if not isinstance(raw, dict):
+    try:
+        parsed = OverridePayload.model_validate(raw)
+    except Exception:
         return None
-    overrides: dict[str, str] = {}
-    for key in ("model", "api_key", "api_base"):
-        val = str(raw.get(key) or "").strip()
-        if val:
-            overrides[key] = val
-    return overrides or None
+    return parsed.to_non_empty_dict()
 
 
-async def _background_generate_image(
+async def _send_error(sink: EventSink, content: str) -> None:
+    await sink.send_json({"type": "error", "content": content})
+
+
+async def _handle_retrigger_plugins(
     sink: EventSink,
     session_id: str,
-    block_id: str,
-    turn_id: str,
-    params: dict[str, Any],
+    data: dict[str, Any],
+    *,
+    llm_overrides: dict[str, str] | None = None,
+    image_overrides: dict[str, str] | None = None,
 ) -> None:
-    """Run story image generation in the background and push the result via WebSocket."""
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-
-    from backend.app.services.image_service import generate_story_image
-
-    try:
-        async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
-            result = await generate_story_image(
-                db,
-                project_id=params["project_id"],
-                session_id=params["session_id"],
-                title=params.get("title", "Story Image"),
-                story_background=params.get("story_background", ""),
-                prompt=params.get("prompt", ""),
-                continuity_notes=params.get("continuity_notes", ""),
-                reference_image_ids=params.get("reference_image_ids", []),
-                scene_frames=params.get("scene_frames", []),
-                layout_preference=params.get("layout_preference", "auto"),
-                turn_id=params.get("turn_id"),
-                autocommit=True,
-                image_overrides=params.get("image_overrides"),
-                llm_overrides=params.get("llm_overrides"),
-            )
-        event = {
-            "type": "story_image",
-            "data": result,
-            "block_id": block_id,
-            "turn_id": turn_id,
-        }
+    message_id = str(data.get("message_id", ""))
+    if not message_id:
+        await sink.send_json({"type": "error", "content": "message_id is required"})
+        return
+    async for event in retrigger_plugins(
+        session_id, message_id,
+        llm_overrides=llm_overrides, image_overrides=image_overrides,
+    ):
         _add_log(session_id, "send", event)
         await sink.send_json(event)
-    except Exception as exc:
-        logger.exception("Background story_image generation failed")
-        try:
-            error_event = {
-                "type": "story_image",
-                "data": {
-                    "status": "error",
-                    "title": params.get("title", "Story Image"),
-                    "story_background": params.get("story_background", ""),
-                    "prompt": params.get("prompt", ""),
-                    "continuity_notes": params.get("continuity_notes", ""),
-                    "reference_image_ids": params.get("reference_image_ids", []),
-                    "scene_frames": params.get("scene_frames", []),
-                    "layout_preference": params.get("layout_preference", "auto"),
-                    "error": f"Image generation failed: {exc}",
-                    "can_regenerate": True,
-                },
-                "block_id": block_id,
-                "turn_id": turn_id,
-            }
-            _add_log(session_id, "send", error_event)
-            await sink.send_json(error_event)
-        except Exception:
-            logger.warning("Failed to send image error event (WebSocket likely closed)")
+
+
+async def _ensure_http_terminal_event(ctx: CommandContext) -> None:
+    if ctx.transport_mode != "http":
+        return
+    events = getattr(ctx.sink, "events", None)
+    if not isinstance(events, list):
+        return
+    has_terminal = any(
+        isinstance(evt, dict) and evt.get("type") in {"done", "error", "turn_end"}
+        for evt in events
+    )
+    if has_terminal:
+        return
+    done_event = {"type": "done", "content": ""}
+    _add_log(ctx.session_id, "send", done_event)
+    await ctx.sink.send_json(done_event)
 
 
 async def _stream_process_message(
@@ -142,12 +179,7 @@ async def _stream_process_message(
     llm_overrides: dict[str, str] | None = None,
     image_overrides: dict[str, str] | None = None,
 ) -> None:
-    """Run process_message and stream results to a transport sink."""
-    full_response = ""
-    pending_blocks: list[dict] = []
-    turn_id: str | None = None
-    saved_message_id: str | None = None
-
+    """Stream process_message events (narrative + plugin agent) to sink."""
     async for event in process_message(
         session_id, content,
         save_user_msg=save_user_msg,
@@ -155,78 +187,11 @@ async def _stream_process_message(
         llm_overrides=llm_overrides,
         image_overrides=image_overrides,
     ):
-        event_turn_id = event.get("turn_id")
-        if isinstance(event_turn_id, str) and event_turn_id:
-            turn_id = event_turn_id
-
-        if event["type"] == "chunk":
-            full_response += event["content"]
-            await sink.send_json(
-                {"type": "chunk", "content": event["content"], "turn_id": turn_id}
-            )
-        elif event["type"] == "error":
-            _add_log(session_id, "send", event)
-            await sink.send_json(event)
-            return
-        elif event["type"] == "_message_saved":
-            saved_message_id = event.get("message_id")
-        else:
-            pending_blocks.append(event)
-
-    if turn_id is None:
-        turn_id = str(uuid.uuid4())
-
-    clean_content = strip_blocks(full_response)
-    done_event: dict[str, Any] = {
-        "type": "done", "content": clean_content,
-        "raw_content": full_response,
-        "turn_id": turn_id, "has_blocks": bool(pending_blocks),
-    }
-    if saved_message_id:
-        done_event["message_id"] = saved_message_id
-    _add_log(session_id, "send", {
-        "type": "done", "turn_id": turn_id,
-        "content_length": len(full_response), "preview": full_response[:300],
-    })
-    await sink.send_json(done_event)
-
-    for block in pending_blocks:
-        block_data = block.get("data")
-        block_id = block.get("block_id") or f"{turn_id}:{uuid.uuid4()}"
-        block_turn_id = block.get("turn_id", turn_id)
-
-        # Detect deferred story_image blocks — spawn background generation
-        if (
-            isinstance(block_data, dict)
-            and block_data.get("_deferred")
-            and block_data.get("_generation_params")
-        ):
-            gen_params = block_data.pop("_generation_params")
-            block_data.pop("_deferred", None)
-            # Send "generating" placeholder to the frontend immediately
-            block_event = {
-                "type": block["type"], "data": block_data,
-                "block_id": block_id, "turn_id": block_turn_id,
-            }
-            _add_log(session_id, "send", block_event)
-            await sink.send_json(block_event)
-            # Spawn actual generation as a background task
-            asyncio.create_task(
-                _background_generate_image(
-                    sink, session_id, block_id, block_turn_id, gen_params,
-                )
-            )
-        else:
-            block_event = {
-                "type": block["type"], "data": block_data,
-                "block_id": block_id, "turn_id": block_turn_id,
-            }
-            _add_log(session_id, "send", block_event)
-            await sink.send_json(block_event)
-
-    turn_end_event = {"type": "turn_end", "turn_id": turn_id}
-    _add_log(session_id, "send", turn_end_event)
-    await sink.send_json(turn_end_event)
+        etype = event.get("type", "")
+        if etype == "_message_saved":
+            continue  # internal event, don't forward
+        _add_log(session_id, "send", event)
+        await sink.send_json(event)
 
 
 async def _session_exists(session_id: str) -> bool:
@@ -237,58 +202,168 @@ async def _session_exists(session_id: str) -> bool:
         return bool(game_session)
 
 
+async def _handle_message(ctx: CommandContext) -> None:
+    content = str(ctx.data.get("content", "")).strip()
+    if not content:
+        await _send_error(ctx.sink, "Empty message")
+        return
+    await _stream_process_message(
+        ctx.sink,
+        ctx.session_id,
+        content,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+    await _ensure_http_terminal_event(ctx)
+
+
+async def _handle_init_game_command(ctx: CommandContext) -> None:
+    await _handle_init_game(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+
+
+async def _handle_form_submit_command(ctx: CommandContext) -> None:
+    await _handle_form_submit(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+
+
+async def _handle_character_edit_command(ctx: CommandContext) -> None:
+    await _handle_character_edit(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+
+
+async def _handle_scene_switch_command(ctx: CommandContext) -> None:
+    await _handle_scene_switch(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+
+
+async def _handle_confirm_command(ctx: CommandContext) -> None:
+    await _handle_confirm(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+
+
+async def _handle_block_response_command(ctx: CommandContext) -> None:
+    await _handle_block_response(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+        transport_mode=ctx.transport_mode,
+    )
+
+
+async def _handle_force_trigger_command(ctx: CommandContext) -> None:
+    await _handle_force_trigger(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+
+
+async def _handle_generate_message_image_command(ctx: CommandContext) -> None:
+    await _handle_generate_message_image(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        image_overrides=ctx.image_overrides,
+        llm_overrides=ctx.llm_overrides,
+    )
+
+
+async def _handle_retrigger_plugins_command(ctx: CommandContext) -> None:
+    await _handle_retrigger_plugins(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+
+
+_COMMAND_ROUTER = CommandRouter()
+_COMMAND_ROUTER.register("message", _handle_message)
+_COMMAND_ROUTER.register("init_game", _handle_init_game_command)
+_COMMAND_ROUTER.register("form_submit", _handle_form_submit_command)
+_COMMAND_ROUTER.register("character_edit", _handle_character_edit_command)
+_COMMAND_ROUTER.register("scene_switch", _handle_scene_switch_command)
+_COMMAND_ROUTER.register("confirm", _handle_confirm_command)
+_COMMAND_ROUTER.register("block_response", _handle_block_response_command)
+_COMMAND_ROUTER.register("force_trigger", _handle_force_trigger_command)
+_COMMAND_ROUTER.register("generate_message_image", _handle_generate_message_image_command)
+_COMMAND_ROUTER.register("retrigger_plugins", _handle_retrigger_plugins_command)
+
+
 async def _dispatch_incoming_message(
-    sink: EventSink, session_id: str, data: dict[str, Any],
+    sink: EventSink,
+    session_id: str,
+    data: dict[str, Any],
+    *,
+    transport_mode: Literal["http", "websocket"] = "websocket",
 ) -> None:
     msg_type = str(data.get("type", "message"))
-    llm_overrides = _extract_llm_overrides(data)
-    image_overrides = _extract_image_overrides(data)
-
+    ctx = CommandContext(
+        sink=sink,
+        session_id=session_id,
+        data=data,
+        transport_mode=transport_mode,
+        llm_overrides=_extract_overrides(data, "llm_overrides"),
+        image_overrides=_extract_overrides(data, "image_overrides"),
+    )
     try:
-        if msg_type == "message":
-            content = str(data.get("content", "")).strip()
-            if not content:
-                await sink.send_json({"type": "error", "content": "Empty message"})
-                return
-            await _stream_process_message(
-                sink, session_id, content,
-                llm_overrides=llm_overrides, image_overrides=image_overrides,
-            )
-        elif msg_type == "init_game":
-            await _handle_init_game(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
-        elif msg_type == "form_submit":
-            await _handle_form_submit(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
-        elif msg_type == "character_edit":
-            await _handle_character_edit(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
-        elif msg_type == "scene_switch":
-            await _handle_scene_switch(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
-        elif msg_type == "confirm":
-            await _handle_confirm(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
-        elif msg_type == "block_response":
-            await _handle_block_response(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
-        elif msg_type == "force_trigger":
-            await _handle_force_trigger(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
-        elif msg_type == "generate_message_image":
-            await _handle_generate_message_image(sink, session_id, data, image_overrides=image_overrides, llm_overrides=llm_overrides)
-        else:
-            await sink.send_json({"type": "error", "content": f"Unknown message type: {msg_type}"})
+        await _COMMAND_ROUTER.dispatch(ctx)
     except Exception:
         logger.exception("Error processing {} message", msg_type)
-        await sink.send_json({"type": "error", "content": "Internal server error"})
+        await _send_error(sink, "Internal server error")
 
 
-@router.post("/api/chat/{session_id}/command")
-async def chat_command(session_id: str, data: dict[str, Any]):
+@router.post("/api/chat/{session_id}/command", response_model=ChatCommandResponse)
+async def chat_command(session_id: str, data: dict[str, Any]) -> ChatCommandResponse:
     """HTTP fallback for chat commands (Vercel-compatible, no WebSocket required)."""
     if not await _session_exists(session_id):
-        return {"events": [{"type": "error", "content": "Session not found"}]}
+        events = [{"type": "error", "content": "Session not found"}]
+        terminal = _build_terminal_summary(events)
+        return ChatCommandResponse(events=events, terminal=terminal)
 
     payload = data if isinstance(data, dict) else {}
     _add_log(session_id, "recv", payload)
 
     collector = HttpEventCollector()
-    await _dispatch_incoming_message(collector, session_id, payload)
-    return {"events": collector.events}
+    await _dispatch_incoming_message(
+        collector,
+        session_id,
+        payload,
+        transport_mode="http",
+    )
+    terminal = _build_terminal_summary(collector.events)
+    return ChatCommandResponse(events=collector.events, terminal=terminal)
 
 
 @router.websocket("/ws/chat/{session_id}")
@@ -316,9 +391,14 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
                 continue
 
             _add_log(session_id, "recv", data)
-            await _dispatch_incoming_message(websocket, session_id, data)
+            await _dispatch_incoming_message(
+                websocket,
+                session_id,
+                data,
+                transport_mode="websocket",
+            )
 
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, asyncio.CancelledError):
         logger.info("WebSocket disconnected for session {}", session_id)
         _touch_log_session(session_id)
         _cleanup_log_sessions()

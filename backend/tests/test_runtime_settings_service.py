@@ -8,14 +8,15 @@ from backend.app.services.runtime_settings_service import (
     render_settings_template,
     resolve_runtime_settings,
 )
+from backend.tests.constants import RUNTIME_IMAGE_KEYS, RUNTIME_STATE_KEYS
 
 
 def test_schema_contains_core_fields():
-    fields = get_runtime_settings_schema(["core-blocks"])
+    fields = get_runtime_settings_schema(["state"])
     keys = {field["key"] for field in fields}
-    assert "core-blocks.narrative_tone" in keys
-    assert "core-blocks.pacing" in keys
-    assert "core-blocks.response_length" in keys
+    assert RUNTIME_STATE_KEYS["narrative_tone"] in keys
+    assert RUNTIME_STATE_KEYS["pacing"] in keys
+    assert RUNTIME_STATE_KEYS["response_length"] in keys
 
 
 @pytest.mark.asyncio
@@ -24,31 +25,31 @@ async def test_resolve_runtime_settings_merges_project_and_session_overrides(
     sample_project,
     sample_session,
 ):
-    enabled = ["core-blocks", "story-image"]
+    enabled = ["state", "image"]
 
     await patch_runtime_settings(
         db_session,
-        project_id=sample_project.id,
-        enabled_plugins=enabled,
-        scope="project",
-        values={
-            "core-blocks.narrative_tone": "grim",
-            "story-image.reference_count": 4,
-        },
-        autocommit=True,
-    )
+            project_id=sample_project.id,
+            enabled_plugins=enabled,
+            scope="project",
+            values={
+                RUNTIME_STATE_KEYS["narrative_tone"]: "grim",
+                RUNTIME_IMAGE_KEYS["reference_count"]: 4,
+            },
+            autocommit=True,
+        )
 
     await patch_runtime_settings(
         db_session,
-        project_id=sample_project.id,
-        session_id=sample_session.id,
-        enabled_plugins=enabled,
-        scope="session",
-        values={
-            "story-image.prompt_template": "BG={{story_background}} FRAME={{frame_prompt}}",
-        },
-        autocommit=True,
-    )
+            project_id=sample_project.id,
+            session_id=sample_session.id,
+            enabled_plugins=enabled,
+            scope="session",
+            values={
+                RUNTIME_IMAGE_KEYS["prompt_template"]: "BG={{story_background}} FRAME={{frame_prompt}}",
+            },
+            autocommit=True,
+        )
 
     resolved = await resolve_runtime_settings(
         db_session,
@@ -57,10 +58,10 @@ async def test_resolve_runtime_settings_merges_project_and_session_overrides(
         enabled_plugins=enabled,
     )
 
-    assert resolved["values"]["core-blocks.narrative_tone"] == "grim"
-    assert resolved["values"]["story-image.reference_count"] == 4
+    assert resolved["values"][RUNTIME_STATE_KEYS["narrative_tone"]] == "grim"
+    assert resolved["values"][RUNTIME_IMAGE_KEYS["reference_count"]] == 4
     assert (
-        resolved["by_plugin"]["story-image"]["prompt_template"]
+        resolved["by_plugin"]["image"]["prompt_template"]
         == "BG={{story_background}} FRAME={{frame_prompt}}"
     )
 
@@ -71,7 +72,7 @@ async def test_patch_runtime_settings_rejects_unknown_key(db_session, sample_pro
         await patch_runtime_settings(
             db_session,
             project_id=sample_project.id,
-            enabled_plugins=["core-blocks"],
+            enabled_plugins=["state"],
             scope="project",
             values={"unknown.key": "x"},
             autocommit=False,

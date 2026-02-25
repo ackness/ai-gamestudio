@@ -3,6 +3,7 @@
 [env]
 # 项目级环境变量
 PYTHONDONTWRITEBYTECODE = "1"
+WATCHFILES_FORCE_POLLING = "true"
 VIRTUAL_ENV = "{{config_root}}/.venv"
 
 [tools]
@@ -41,7 +42,11 @@ depends = ["dev:backend", "dev:frontend"]
 
 [tasks."dev:backend"]
 description = "启动 FastAPI 开发服务器"
-run = "uv run uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000"
+run = "uv run uvicorn backend.app.main:app --reload --reload-delay 1 --reload-include '*.py' --reload-dir backend --reload-dir plugins --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 3"
+
+[tasks."dev:backend:stable"]
+description = "启动后端（无热重载，适合网络驱动环境）"
+run = "uv run uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"
 
 [tasks."dev:frontend"]
 description = "启动 Vite 前端开发服务器"
@@ -135,9 +140,33 @@ run = "uv run python -m backend.app.core.plugin_engine validate plugins/"
 description = "列出所有已安装插件"
 run = "uv run python -m backend.app.core.plugin_engine list plugins/"
 
+[tasks."plugin:test"]
+description = "测试插件 Agent（使用 .env 中的 PLUGIN_LLM 配置）"
+run = "uv run python scripts/test_plugin_agent.py"
+
+[tasks."plugin:test:all"]
+description = "测试所有插件（每个插件自动选择最佳预设，跳过 image）"
+run = "uv run python scripts/test_plugin_agent.py --all -v"
+
+[tasks."plugin:test:list"]
+description = "列出可测试的插件"
+run = "uv run python scripts/test_plugin_agent.py --list"
+
+[tasks."plugin:test:verbose"]
+description = "详细模式测试插件 Agent（显示 tool call 日志）"
+run = "uv run python scripts/test_plugin_agent.py -v"
+
+[tasks."plugin:test:dry-run"]
+description = "插件测试 dry-run（只显示配置，不调用模型）"
+run = "uv run python scripts/test_plugin_agent.py --dry-run"
+
 # =============================================================================
 # 工具
 # =============================================================================
+
+[tasks."kill:backend"]
+description = "强制结束后端进程（端口 8000）及相关子进程"
+run = "uv run python scripts/kill_port.py 8000"
 
 [tasks."clean"]
 description = "清理构建产物和缓存"

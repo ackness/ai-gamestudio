@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import Markdown from 'react-markdown'
-import { Copy, Image as ImageIcon, RotateCcw, Pencil, Trash2, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Copy, Image as ImageIcon, RotateCcw, Pencil, Trash2, AlertCircle, CheckCircle2, Plug } from 'lucide-react'
 import { useSessionStore } from '../../stores/sessionStore'
+import { useMessageImageStore } from '../../stores/messageImageStore'
 import { useUiStore } from '../../stores/uiStore'
 import type { StreamStatus } from '../../stores/sessionStore'
 import { getBlockRenderer } from '../../services/blockRenderers'
+import { normalizeBlockLike, type BlockLike } from '../../services/outputContract.js'
 import type { Message } from '../../types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,6 +18,7 @@ interface Props {
   onAction: (msg: string) => void
   onRetry?: () => void
   onGenerateImage?: (messageId: string) => void
+  onRetriggerPlugins?: (messageId: string) => void
 }
 
 const chatText: Record<string, Record<string, string>> = {
@@ -99,7 +102,7 @@ function BlockList({
   idPrefix,
   t,
 }: {
-  blocks: { type: string; data: unknown; block_id?: string }[]
+  blocks: BlockLike[]
   onAction: (msg: string) => void
   locked?: boolean
   idPrefix: string
@@ -108,19 +111,22 @@ function BlockList({
   return (
     <>
       {blocks.map((block, i) => {
-        const Renderer = getBlockRenderer(block.type)
-        const blockId = block.block_id || `${idPrefix}:${i}:${block.type}`
+        const normalized = normalizeBlockLike(block, `${idPrefix}:${i}`)
+        if (!normalized) return null
+
+        const Renderer = getBlockRenderer(normalized.type)
+        const blockId = normalized.block_id || `${idPrefix}:${i}:${normalized.type}`
         return (
           <div key={blockId} className="flex justify-start">
             {Renderer ? (
               <Renderer
-                data={block.data}
+                data={normalized.data}
                 blockId={blockId}
                 onAction={onAction}
                 locked={locked}
               />
             ) : (
-              <FallbackBlock type={block.type} data={block.data} label={t.block} />
+              <FallbackBlock type={normalized.type} data={normalized.data} label={t.block} />
             )}
           </div>
         )
@@ -138,6 +144,7 @@ function MessageActions({
   onRegenerate,
   onEdit,
   onGenerateImage,
+  onRetriggerPlugins,
   imageLoading,
   hasImage,
   t,
@@ -149,6 +156,7 @@ function MessageActions({
   onRegenerate?: () => void
   onEdit?: () => void
   onGenerateImage?: () => void
+  onRetriggerPlugins?: () => void
   imageLoading?: boolean
   hasImage?: boolean
   t: Record<string, string>
@@ -189,6 +197,17 @@ function MessageActions({
             </Button>
           </TooltipTrigger>
           <TooltipContent><p>{t.regenerate}</p></TooltipContent>
+        </Tooltip>
+      )}
+
+      {msg.role === 'assistant' && onRetriggerPlugins && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-cyan-400" onClick={onRetriggerPlugins}>
+              <Plug className="w-3.5 h-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent><p>重新触发插件</p></TooltipContent>
         </Tooltip>
       )}
 
@@ -272,8 +291,9 @@ function RawMessageViewer({ msg, onClose, t }: { msg: Message; onClose: () => vo
   )
 }
 
-export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
-  const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom, messageImages, imageLoadingMessages } = useSessionStore()
+export function ChatMessages({ onAction, onRetry, onGenerateImage, onRetriggerPlugins }: Props) {
+  const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom, pluginProcessing, pluginProgress, lastPluginSummary } = useSessionStore()
+  const { messageImages, imageLoadingMessages } = useMessageImageStore()
   const language = useUiStore((s) => s.language)
   const t = chatText[language] ?? chatText.en
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -424,6 +444,7 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
                     onDelete={() => handleDelete(msg.id)}
                     onRegenerate={isLast && !isStreaming ? onRetry : undefined}
                     onGenerateImage={onGenerateImage ? () => onGenerateImage(msg.id) : undefined}
+                    onRetriggerPlugins={onRetriggerPlugins && !isStreaming && !pluginProcessing ? () => onRetriggerPlugins(msg.id) : undefined}
                     imageLoading={imageLoadingMessages.has(msg.id)}
                     hasImage={!!messageImages[msg.id]?.length}
                     t={t}
@@ -463,6 +484,18 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
                   t={t}
                 />
               )}
+
+              {isLast && msg.role === 'assistant' && (!msg.blocks || msg.blocks.length === 0) && onRetriggerPlugins && !isStreaming && !pluginProcessing && (
+                <div className="flex justify-start pl-1">
+                  <button
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-cyan-400 bg-muted/30 hover:bg-muted/50 border border-dashed border-muted-foreground/30 rounded-lg px-3 py-1.5 transition-colors"
+                    onClick={() => onRetriggerPlugins(msg.id)}
+                  >
+                    <Plug className="w-3 h-3" />
+                    <span>{'\u52a0\u8f7d\u63d2\u4ef6\uff08\u89d2\u8272\u5361\u3001\u573a\u666f\u7b49\uff09'}</span>
+                  </button>
+                </div>
+              )}
             </div>
           )
         })}
@@ -488,12 +521,50 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage }: Props) {
           </div>
         )}
 
+        {pluginProcessing && !isStreaming && (
+          <div className="flex justify-start">
+            <div className="px-4 py-2.5 rounded-2xl rounded-tl-sm bg-muted/20 border border-dashed border-primary/30 shadow-sm">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="w-2 h-2 bg-primary/50 rounded-full animate-pulse" />
+                {pluginProgress ? (
+                  <span>
+                    插件处理中 · 第 {pluginProgress.round} 轮
+                    {pluginProgress.tool_calls.length > 0 && ` · ${pluginProgress.tool_calls.join(', ')}`}
+                  </span>
+                ) : (
+                  <span>插件处理中，请稍候…</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {lastPluginSummary && !pluginProcessing && !isStreaming && (
+          <div className="flex justify-start">
+            <details className="px-3 py-1.5 rounded-lg bg-muted/20 border border-muted-foreground/20 text-[11px] text-muted-foreground max-w-[80%]">
+              <summary className="cursor-pointer select-none flex items-center gap-1.5">
+                <Plug className="w-3 h-3 text-cyan-400" />
+                <span>插件执行完成 · {lastPluginSummary.rounds} 轮 · {lastPluginSummary.tool_calls.length} 次调用 · {lastPluginSummary.blocks_emitted.length} 个 block</span>
+              </summary>
+              <div className="mt-1 pl-4 space-y-0.5">
+                {lastPluginSummary.tool_calls.length > 0 && (
+                  <div><span className="text-muted-foreground/70">工具: </span>{[...new Set(lastPluginSummary.tool_calls)].join(', ')}</div>
+                )}
+                {lastPluginSummary.blocks_emitted.length > 0 && (
+                  <div><span className="text-muted-foreground/70">Blocks: </span>{lastPluginSummary.blocks_emitted.join(', ')}</div>
+                )}
+              </div>
+            </details>
+          </div>
+        )}
+
         {pendingBlocks.length > 0 && (
           <BlockList
             blocks={pendingBlocks.map((b) => ({
               type: b.type,
               data: b.data,
               block_id: b.blockId,
+              output: b.output,
             }))}
             onAction={onAction}
             idPrefix="pending"

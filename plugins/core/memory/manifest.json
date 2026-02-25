@@ -1,0 +1,115 @@
+{
+  "schema_version": "1.0",
+  "version": "0.1.0",
+  "name": "memory",
+  "type": "global",
+  "required": false,
+  "default_enabled": true,
+  "supersedes": [
+    "archive",
+    "auto-compress"
+  ],
+  "description": "Memory, archive, and auto-compression system for long-term context management.",
+  "dependencies": [
+    "database"
+  ],
+  "trigger": {
+    "mode": "interval",
+    "interval_turns": 3,
+    "interval_setting_key": "trigger_interval_turns"
+  },
+  "prompt": {
+    "position": "memory",
+    "priority": 5,
+    "template": "prompts/memory-context.md"
+  },
+  "capabilities": {},
+  "outputs": {},
+  "events": {
+    "emit": [],
+    "listen": []
+  },
+  "storage": {
+    "keys": [
+      "short-term-memory",
+      "long-term-memory",
+      "memory-index",
+      "config",
+      "session-meta",
+      "session-versions",
+      "compression-summary",
+      "compression-state"
+    ]
+  },
+  "extensions": {
+    "runtime_settings": {
+      "fields": {
+        "compression_threshold": {
+          "type": "number",
+          "label": "Compression Threshold",
+          "description": "Trigger compression when context usage exceeds this ratio (0.0 - 1.0)",
+          "default": 0.7,
+          "min": 0.3,
+          "max": 0.95,
+          "step": 0.05,
+          "scope": "project",
+          "affects": [
+            "memory"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "压缩触发阈值",
+              "description": "当上下文使用量超过此比例时触发自动压缩 (0.0 - 1.0)"
+            }
+          }
+        },
+        "keep_recent_messages": {
+          "type": "integer",
+          "label": "Keep Recent Messages",
+          "description": "Number of recent messages to keep after compression",
+          "default": 6,
+          "min": 2,
+          "max": 20,
+          "scope": "project",
+          "affects": [
+            "memory"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "保留近期消息数",
+              "description": "压缩后保留的最近消息数量"
+            }
+          }
+        },
+        "trigger_interval_turns": {
+          "type": "integer",
+          "label": "Memory Trigger Interval",
+          "description": "Run memory plugin every N turns (1 = every turn)",
+          "default": 3,
+          "min": 1,
+          "max": 20,
+          "scope": "project",
+          "affects": [
+            "memory"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "记忆插件触发间隔",
+              "description": "每 N 回合执行一次记忆插件（1 表示每回合）"
+            }
+          }
+        }
+      }
+    }
+  },
+  "i18n": {
+    "en": {
+      "name": "Memory",
+      "description": "Memory, archive, and auto-compression for long-term context management."
+    },
+    "zh": {
+      "name": "记忆系统",
+      "description": "记忆、存档归档与自动压缩，管理长期上下文。"
+    }
+  }
+}
