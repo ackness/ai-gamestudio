@@ -42,3 +42,4 @@ plans/
 plugins/backup/
 debug/
 .omc/
+.env*.local

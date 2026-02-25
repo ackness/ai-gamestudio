@@ -4,7 +4,6 @@ import { useSessionStore } from '../stores/sessionStore'
 import { useSceneStore } from '../stores/sceneStore'
 import { useMessageImageStore } from '../stores/messageImageStore'
 import { useGameStateStore } from '../stores/gameStateStore'
-import { useBlockInteractionStore } from '../stores/blockInteractionStore'
 import { useNotificationStore } from '../stores/notificationStore'
 import { useTokenStore } from '../stores/tokenStore'
 import { useCodexStore } from '../stores/codexStore'
@@ -51,7 +50,7 @@ export interface WsCallbacks {
  * Builds stable WebSocket callback handlers using store actions.
  * All callbacks are wrapped in useCallback for referential stability.
  */
-export function useWsCallbacks(sessionId: string, setInitError: (e: string | null) => void): WsCallbacks {
+export function useWsCallbacks(sessionId: string, _setInitError: (e: string | null) => void): WsCallbacks {
   const {
     addMessage,
     setStreaming,
@@ -108,11 +107,11 @@ export function useWsCallbacks(sessionId: string, setInitError: (e: string | nul
   }, [mergeCharacters, setWorldState])
 
   const onPluginSummary = useCallback((data: unknown) => {
-    setLastPluginSummary(data)
+    setLastPluginSummary(data as { rounds: number; tool_calls: string[]; blocks_emitted: string[] } | null)
   }, [setLastPluginSummary])
 
   const onPluginProgress = useCallback((data: unknown) => {
-    setPluginProgress(data)
+    setPluginProgress(data as { round: number; tool_calls: string[]; blocks_so_far: string[] } | null)
   }, [setPluginProgress])
 
   const onPhaseChange = useCallback((newPhase: string) => {
@@ -232,7 +231,7 @@ export function useWsCallbacks(sessionId: string, setInitError: (e: string | nul
   }, [addEvent, addPendingBlock])
 
   const onMessageBlocksUpdated = useCallback((messageId: string | null, blocks: unknown) => {
-    if (messageId && blocks) updateMessageBlocks(messageId, blocks)
+    if (messageId && Array.isArray(blocks)) updateMessageBlocks(messageId, blocks as { type: string; data: unknown; block_id?: string; output?: import('../services/outputContract').OutputEnvelope }[])
   }, [updateMessageBlocks])
 
   const onTurnEnd = useCallback((turnId: string | null) => {
