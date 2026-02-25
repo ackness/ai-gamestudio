@@ -5,9 +5,14 @@
   "type": "global",
   "required": false,
   "default_enabled": true,
-  "supersedes": ["archive", "auto-compress"],
+  "supersedes": [
+    "archive",
+    "auto-compress"
+  ],
   "description": "Memory, archive, and auto-compression system for long-term context management.",
-  "dependencies": ["database"],
+  "dependencies": [
+    "database"
+  ],
   "prompt": {
     "position": "memory",
     "priority": 5,
@@ -15,19 +20,26 @@
   },
   "capabilities": {},
   "blocks": {},
-  "events": { "emit": [], "listen": [] },
+  "events": {
+    "emit": [],
+    "listen": []
+  },
   "storage": {
     "keys": [
-      "short-term-memory", "long-term-memory", "memory-index",
-      "config", "session-meta", "session-versions",
-      "compression-summary", "compression-state"
+      "short-term-memory",
+      "long-term-memory",
+      "memory-index",
+      "config",
+      "session-meta",
+      "session-versions",
+      "compression-summary",
+      "compression-state"
     ]
   },
   "extensions": {
     "runtime_settings": {
-      "settings": [
-        {
-          "key": "compression_threshold",
+      "fields": {
+        "compression_threshold": {
           "type": "number",
           "label": "Compression Threshold",
           "description": "Trigger compression when context usage exceeds this ratio (0.0 - 1.0)",
@@ -36,13 +48,17 @@
           "max": 0.95,
           "step": 0.05,
           "scope": "project",
-          "affects": ["memory"],
+          "affects": [
+            "memory"
+          ],
           "i18n": {
-            "zh": { "label": "压缩触发阈值", "description": "当上下文使用量超过此比例时触发自动压缩 (0.0 - 1.0)" }
+            "zh": {
+              "label": "压缩触发阈值",
+              "description": "当上下文使用量超过此比例时触发自动压缩 (0.0 - 1.0)"
+            }
           }
         },
-        {
-          "key": "keep_recent_messages",
+        "keep_recent_messages": {
           "type": "integer",
           "label": "Keep Recent Messages",
           "description": "Number of recent messages to keep after compression",
@@ -50,16 +66,27 @@
           "min": 2,
           "max": 20,
           "scope": "project",
-          "affects": ["memory"],
+          "affects": [
+            "memory"
+          ],
           "i18n": {
-            "zh": { "label": "保留近期消息数", "description": "压缩后保留的最近消息数量" }
+            "zh": {
+              "label": "保留近期消息数",
+              "description": "压缩后保留的最近消息数量"
+            }
           }
         }
-      ]
+      }
     }
   },
   "i18n": {
-    "en": { "name": "Memory", "description": "Memory, archive, and auto-compression for long-term context management." },
-    "zh": { "name": "记忆系统", "description": "记忆、存档归档与自动压缩，管理长期上下文。" }
+    "en": {
+      "name": "Memory",
+      "description": "Memory, archive, and auto-compression for long-term context management."
+    },
+    "zh": {
+      "name": "记忆系统",
+      "description": "记忆、存档归档与自动压缩，管理长期上下文。"
+    }
   }
 }

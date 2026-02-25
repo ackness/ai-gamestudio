@@ -9,20 +9,7 @@ from pathlib import Path
 import pytest
 
 from backend.app.core.plugin_engine import PluginEngine
-
-PLUGINS_DIR = "plugins"
-CURRENT_PLUGINS = {
-    "database",
-    "state",
-    "event",
-    "memory",
-    "guide",
-    "codex",
-    "image",
-    "combat",
-    "inventory",
-    "social",
-}
+from backend.tests.constants import CURRENT_PLUGIN_IDS, PLUGINS_DIR
 
 
 @pytest.fixture
@@ -76,7 +63,7 @@ class TestDiscover:
     def test_discovers_current_builtin_plugins(self, engine: PluginEngine):
         plugins = engine.discover(PLUGINS_DIR)
         names = {p["name"] for p in plugins}
-        assert CURRENT_PLUGINS.issubset(names)
+        assert CURRENT_PLUGIN_IDS.issubset(names)
 
     def test_returns_required_metadata_fields(self, engine: PluginEngine):
         plugins = engine.discover(PLUGINS_DIR)

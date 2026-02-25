@@ -10,6 +10,7 @@ Usage:
     uv run python scripts/test_plugin_agent.py --list                # list plugins
     uv run python scripts/test_plugin_agent.py -p guide -v           # verbose tool logs
     uv run python scripts/test_plugin_agent.py --dry-run             # show config only
+    uv run python scripts/test_plugin_agent.py --all -j 4            # run plugins concurrently
     uv run python scripts/test_plugin_agent.py --db-path data/test.db  # custom DB path
 """
 from __future__ import annotations
@@ -450,6 +451,14 @@ async def test_one_plugin(
 # CLI
 # ---------------------------------------------------------------------------
 
+def positive_int(value: str) -> int:
+    """argparse helper for positive integers."""
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return parsed
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Plugin Agent 集成测试 — 真实 tool-call 链 + DB 持久化",
@@ -461,7 +470,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip", nargs="*", default=[],
                         help=f"跳过的插件名（--all 模式默认跳过: {', '.join(DEFAULT_SKIP)}）")
     parser.add_argument("--delay", type=float, default=0,
-                        help="每个插件测试之间的延迟秒数（用于 rate-limited API）")
+                        help="串行时为插件间延迟；并发时为任务启动错峰延迟（秒）")
+    parser.add_argument("-j", "--concurrency", type=positive_int, default=1,
+                        help="并发运行的插件数（默认: 1，1=串行）")
     parser.add_argument("--list", action="store_true",
                         help="列出所有可用插件")
     parser.add_argument("--narrative", type=str,
@@ -597,10 +608,9 @@ async def main() -> int:
     if not run_all:
         print(f"Narrative: {narrative[:80]}...\n")
 
-    # Run tests
-    results: list[dict] = []
-    for i, plugin in enumerate(plugins):
-        # Per-plugin preset in --all mode
+    # Build test plan
+    test_plan: list[dict[str, Any]] = []
+    for plugin in plugins:
         if run_all:
             mapped_preset = PLUGIN_PRESET_MAP.get(plugin["name"], args.preset)
             p_data = PRESETS[mapped_preset]
@@ -610,19 +620,77 @@ async def main() -> int:
             mapped_preset = args.preset
             p_narrative = narrative
             p_game_state = game_state
+        test_plan.append({
+            "plugin": plugin,
+            "mapped_preset": mapped_preset,
+            "narrative": p_narrative,
+            "game_state": p_game_state,
+        })
 
-        print(f"Testing [{plugin['name']}] (preset: {mapped_preset})...", end=" ", flush=True)
-        result = await test_one_plugin(
-            plugin, llm_config, p_game_state, p_narrative,
-            db_engine, args.plugins_dir, args.verbose,
-        )
-        results.append(result)
-        status = "OK" if result["ok"] else "FAIL"
-        print(f"{status} ({result['latency_ms']}ms)")
+    # Run tests (sequential by default, parallel when --concurrency > 1)
+    ordered_results: list[dict[str, Any] | None] = [None] * len(test_plan)
 
-        # Rate-limit delay between plugins
-        if args.delay > 0 and i < len(plugins) - 1:
-            await asyncio.sleep(args.delay)
+    if args.concurrency <= 1:
+        for i, item in enumerate(test_plan):
+            plugin = item["plugin"]
+            mapped_preset = item["mapped_preset"]
+            print(f"Testing [{plugin['name']}] (preset: {mapped_preset})...", end=" ", flush=True)
+            result = await test_one_plugin(
+                plugin,
+                llm_config,
+                item["game_state"],
+                item["narrative"],
+                db_engine,
+                args.plugins_dir,
+                args.verbose,
+            )
+            ordered_results[i] = result
+            status = "OK" if result["ok"] else "FAIL"
+            print(f"{status} ({result['latency_ms']}ms)")
+
+            # Rate-limit delay between plugins
+            if args.delay > 0 and i < len(test_plan) - 1:
+                await asyncio.sleep(args.delay)
+    else:
+        print(f"Running in parallel with concurrency={args.concurrency}")
+        semaphore = asyncio.Semaphore(args.concurrency)
+
+        async def run_one(index: int, item: dict[str, Any]) -> tuple[int, str, str, dict[str, Any]]:
+            plugin = item["plugin"]
+            mapped_preset = item["mapped_preset"]
+
+            # Optional stagger to reduce burst traffic on rate-limited APIs.
+            if args.delay > 0:
+                await asyncio.sleep(index * args.delay)
+
+            async with semaphore:
+                result = await test_one_plugin(
+                    plugin,
+                    llm_config,
+                    item["game_state"],
+                    item["narrative"],
+                    db_engine,
+                    args.plugins_dir,
+                    args.verbose,
+                )
+            return index, plugin["name"], mapped_preset, result
+
+        tasks = [
+            asyncio.create_task(run_one(index, item))
+            for index, item in enumerate(test_plan)
+        ]
+        completed = 0
+        for task in asyncio.as_completed(tasks):
+            index, plugin_name, mapped_preset, result = await task
+            ordered_results[index] = result
+            completed += 1
+            status = "OK" if result["ok"] else "FAIL"
+            print(
+                f"[{completed}/{len(test_plan)}] "
+                f"[{plugin_name}] (preset: {mapped_preset}) {status} ({result['latency_ms']}ms)"
+            )
+
+    results = [r for r in ordered_results if r is not None]
 
     print_results(results)
 

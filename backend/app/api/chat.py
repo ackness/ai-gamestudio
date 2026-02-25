@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from loguru import logger
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 
 from backend.app.core.access_key import is_request_authorized
 from backend.app.db.engine import engine
@@ -42,28 +43,56 @@ class HttpEventCollector:
         self.events.append(data)
 
 
-def _extract_llm_overrides(data: dict[str, Any]) -> dict[str, str] | None:
-    raw = data.get("llm_overrides")
-    if not isinstance(raw, dict):
-        return None
-    overrides: dict[str, str] = {}
-    for key in ("model", "api_key", "api_base"):
-        val = str(raw.get(key) or "").strip()
-        if val:
-            overrides[key] = val
-    return overrides or None
+class OverridePayload(BaseModel):
+    model: str | None = None
+    api_key: str | None = None
+    api_base: str | None = None
+
+    def to_non_empty_dict(self) -> dict[str, str] | None:
+        out: dict[str, str] = {}
+        for key in ("model", "api_key", "api_base"):
+            val = str(getattr(self, key) or "").strip()
+            if val:
+                out[key] = val
+        return out or None
 
 
-def _extract_image_overrides(data: dict[str, Any]) -> dict[str, str] | None:
-    raw = data.get("image_overrides")
+class TerminalSummary(BaseModel):
+    status: Literal["done", "error"]
+    turn_id: str = ""
+
+
+class ChatCommandResponse(BaseModel):
+    events: list[dict[str, Any]]
+    terminal: TerminalSummary | None = None
+
+
+def _build_terminal_summary(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Compute terminal status from collected command events."""
+    last_terminal: dict[str, Any] | None = None
+    for evt in events:
+        if not isinstance(evt, dict):
+            continue
+        etype = str(evt.get("type") or "")
+        if etype in {"done", "error", "turn_end"}:
+            last_terminal = evt
+    if not last_terminal:
+        return None
+    etype = str(last_terminal.get("type") or "")
+    status = "error" if etype == "error" else "done"
+    turn_id = str(last_terminal.get("turn_id") or "")
+    return {"status": status, "turn_id": turn_id}
+
+
+def _extract_overrides(data: dict[str, Any], field_name: str) -> dict[str, str] | None:
+    raw = data.get(field_name)
     if not isinstance(raw, dict):
         return None
-    overrides: dict[str, str] = {}
-    for key in ("model", "api_key", "api_base"):
-        val = str(raw.get(key) or "").strip()
-        if val:
-            overrides[key] = val
-    return overrides or None
+    try:
+        parsed = OverridePayload.model_validate(raw)
+    except Exception:
+        return None
+    return parsed.to_non_empty_dict()
 
 
 async def _background_generate_image(
@@ -191,8 +220,8 @@ async def _dispatch_incoming_message(
     transport_mode: str = "websocket",
 ) -> None:
     msg_type = str(data.get("type", "message"))
-    llm_overrides = _extract_llm_overrides(data)
-    image_overrides = _extract_image_overrides(data)
+    llm_overrides = _extract_overrides(data, "llm_overrides")
+    image_overrides = _extract_overrides(data, "image_overrides")
 
     try:
         if msg_type == "message":
@@ -250,11 +279,13 @@ async def _dispatch_incoming_message(
         await sink.send_json({"type": "error", "content": "Internal server error"})
 
 
-@router.post("/api/chat/{session_id}/command")
-async def chat_command(session_id: str, data: dict[str, Any]):
+@router.post("/api/chat/{session_id}/command", response_model=ChatCommandResponse)
+async def chat_command(session_id: str, data: dict[str, Any]) -> ChatCommandResponse:
     """HTTP fallback for chat commands (Vercel-compatible, no WebSocket required)."""
     if not await _session_exists(session_id):
-        return {"events": [{"type": "error", "content": "Session not found"}]}
+        events = [{"type": "error", "content": "Session not found"}]
+        terminal = _build_terminal_summary(events)
+        return ChatCommandResponse(events=events, terminal=terminal)
 
     payload = data if isinstance(data, dict) else {}
     _add_log(session_id, "recv", payload)
@@ -266,7 +297,8 @@ async def chat_command(session_id: str, data: dict[str, Any]):
         payload,
         transport_mode="http",
     )
-    return {"events": collector.events}
+    terminal = _build_terminal_summary(collector.events)
+    return ChatCommandResponse(events=collector.events, terminal=terminal)
 
 
 @router.websocket("/ws/chat/{session_id}")

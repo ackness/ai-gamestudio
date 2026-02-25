@@ -5,7 +5,9 @@
   "type": "gameplay",
   "required": false,
   "description": "Codex/encyclopedia plugin that tracks discovered knowledge entries across categories.",
-  "dependencies": ["database"],
+  "dependencies": [
+    "database"
+  ],
   "prompt": {
     "position": "memory",
     "priority": 40,
@@ -18,46 +20,129 @@
       "schema": {
         "type": "object",
         "properties": {
-          "action": { "type": "string", "enum": ["unlock", "update"] },
-          "category": { "type": "string", "enum": ["monster", "item", "location", "lore", "character"] },
-          "entry_id": { "type": "string" },
-          "title": { "type": "string" },
-          "content": { "type": "string" },
-          "tags": { "type": "array", "items": { "type": "string" } },
-          "image_hint": { "type": "string" }
+          "action": {
+            "type": "string",
+            "enum": [
+              "unlock",
+              "update"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "monster",
+              "item",
+              "location",
+              "lore",
+              "character"
+            ]
+          },
+          "entry_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "image_hint": {
+            "type": "string"
+          }
         },
-        "required": ["action", "category", "entry_id", "title", "content"]
+        "required": [
+          "action",
+          "category",
+          "entry_id",
+          "title",
+          "content"
+        ]
       },
       "handler": {
         "actions": [
-          { "type": "storage_write", "key": "codex-entries" },
-          { "type": "emit_event", "event": "codex-unlocked" }
+          {
+            "type": "storage_write",
+            "key": "codex-entries"
+          },
+          {
+            "type": "emit_event",
+            "event": "codex-unlocked"
+          }
         ]
       },
-      "ui": { "component": "custom", "renderer_name": "codex_entry" },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "codex_entry"
+      },
       "requires_response": false
     }
   },
-  "events": { "emit": ["codex-unlocked"], "listen": [] },
-  "storage": { "keys": ["codex-entries"] },
+  "events": {
+    "emit": [
+      "codex-unlocked"
+    ],
+    "listen": []
+  },
+  "storage": {
+    "keys": [
+      "codex-entries"
+    ]
+  },
   "extensions": {
     "runtime_settings": {
-      "settings": [
-        {
-          "key": "codex_detail", "type": "enum", "label": "Codex Detail Level",
-          "description": "Level of detail in codex entry descriptions.", "default": "detailed",
+      "fields": {
+        "codex_detail": {
+          "type": "enum",
+          "label": "Codex Detail Level",
+          "description": "Level of detail in codex entry descriptions.",
+          "default": "detailed",
           "options": [
-            { "value": "brief", "label": "Brief", "i18n": { "zh": { "label": "简要" } } },
-            { "value": "detailed", "label": "Detailed", "i18n": { "zh": { "label": "详细" } } }
+            {
+              "value": "brief",
+              "label": "Brief",
+              "i18n": {
+                "zh": {
+                  "label": "简要"
+                }
+              }
+            },
+            {
+              "value": "detailed",
+              "label": "Detailed",
+              "i18n": {
+                "zh": {
+                  "label": "详细"
+                }
+              }
+            }
           ],
-          "affects": ["story"],
-          "i18n": { "zh": { "label": "图鉴详细度", "description": "图鉴条目描述的详细程度。" } }
+          "affects": [
+            "story"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "图鉴详细度",
+              "description": "图鉴条目描述的详细程度。"
+            }
+          }
         }
-      ]
+      }
     }
   },
   "i18n": {
-    "en": { "name": "Codex", "description": "Track discovered knowledge entries including monsters, items, locations, lore, and characters." },
-    "zh": { "name": "图鉴百科", "description": "记录玩家发现的知识条目，包括怪物、物品、地点、传说与角色。" }
+    "en": {
+      "name": "Codex",
+      "description": "Track discovered knowledge entries including monsters, items, locations, lore, and characters."
+    },
+    "zh": {
+      "name": "图鉴百科",
+      "description": "记录玩家发现的知识条目，包括怪物、物品、地点、传说与角色。"
+    }
   }
 }

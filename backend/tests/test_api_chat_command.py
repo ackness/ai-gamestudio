@@ -67,6 +67,7 @@ async def test_chat_command_session_not_found(client: AsyncClient):
     data = resp.json()
     assert data["events"][0]["type"] == "error"
     assert data["events"][0]["content"] == "Session not found"
+    assert data["terminal"]["status"] == "error"
 
 
 @pytest.mark.asyncio
@@ -84,6 +85,7 @@ async def test_chat_command_unknown_type(client: AsyncClient):
     data = resp.json()
     assert data["events"][0]["type"] == "error"
     assert "Unknown message type" in data["events"][0]["content"]
+    assert data["terminal"]["status"] == "error"
 
 
 @pytest.mark.asyncio
@@ -101,6 +103,7 @@ async def test_chat_command_empty_message(client: AsyncClient):
     data = resp.json()
     assert data["events"][0]["type"] == "error"
     assert data["events"][0]["content"] == "Empty message"
+    assert data["terminal"]["status"] == "error"
 
 
 @pytest.mark.asyncio
@@ -153,6 +156,7 @@ async def test_chat_command_forwards_llm_overrides(client: AsyncClient, monkeypa
     events = body["events"]
     _assert_terminal_contract(events)
     assert any(evt.get("type") == "done" for evt in events)
+    assert body["terminal"]["status"] == "done"
     assert captured["sid"] == session_id
     assert captured["content"] == "hello"
     assert captured["llm_overrides"] == {

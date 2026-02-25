@@ -8,14 +8,15 @@ from backend.app.services.runtime_settings_service import (
     render_settings_template,
     resolve_runtime_settings,
 )
+from backend.tests.constants import RUNTIME_IMAGE_KEYS, RUNTIME_STATE_KEYS
 
 
 def test_schema_contains_core_fields():
     fields = get_runtime_settings_schema(["state"])
     keys = {field["key"] for field in fields}
-    assert "state.narrative_tone" in keys
-    assert "state.pacing" in keys
-    assert "state.response_length" in keys
+    assert RUNTIME_STATE_KEYS["narrative_tone"] in keys
+    assert RUNTIME_STATE_KEYS["pacing"] in keys
+    assert RUNTIME_STATE_KEYS["response_length"] in keys
 
 
 @pytest.mark.asyncio
@@ -32,8 +33,8 @@ async def test_resolve_runtime_settings_merges_project_and_session_overrides(
             enabled_plugins=enabled,
             scope="project",
             values={
-                "state.narrative_tone": "grim",
-                "image.reference_count": 4,
+                RUNTIME_STATE_KEYS["narrative_tone"]: "grim",
+                RUNTIME_IMAGE_KEYS["reference_count"]: 4,
             },
             autocommit=True,
         )
@@ -45,7 +46,7 @@ async def test_resolve_runtime_settings_merges_project_and_session_overrides(
             enabled_plugins=enabled,
             scope="session",
             values={
-                "image.prompt_template": "BG={{story_background}} FRAME={{frame_prompt}}",
+                RUNTIME_IMAGE_KEYS["prompt_template"]: "BG={{story_background}} FRAME={{frame_prompt}}",
             },
             autocommit=True,
         )
@@ -57,8 +58,8 @@ async def test_resolve_runtime_settings_merges_project_and_session_overrides(
         enabled_plugins=enabled,
     )
 
-    assert resolved["values"]["state.narrative_tone"] == "grim"
-    assert resolved["values"]["image.reference_count"] == 4
+    assert resolved["values"][RUNTIME_STATE_KEYS["narrative_tone"]] == "grim"
+    assert resolved["values"][RUNTIME_IMAGE_KEYS["reference_count"]] == 4
     assert (
         resolved["by_plugin"]["image"]["prompt_template"]
         == "BG={{story_background}} FRAME={{frame_prompt}}"

@@ -4,9 +4,13 @@
   "name": "event",
   "type": "global",
   "required": true,
-  "supersedes": ["quest"],
+  "supersedes": [
+    "quest"
+  ],
   "description": "Event tracking and quest management: lifecycle tracking for events and quests.",
-  "dependencies": ["database"],
+  "dependencies": [
+    "database"
+  ],
   "prompt": {
     "position": "world-state",
     "priority": 60,
@@ -18,10 +22,15 @@
       "instruction": "Track quest/event lifecycle. create when player accepts a quest or a plot event begins; evolve on major progress; resolve on success; end on failure/abandonment:\n```json:event\n{\"action\": \"create\", \"event_type\": \"quest\", \"name\": \"事件名\", \"description\": \"事件描述\", \"visibility\": \"known\"}\n```\nActions: create, evolve (with event_id), resolve (with event_id), end (with event_id). Every created event MUST eventually resolve or end.",
       "handler": {
         "actions": [
-          { "type": "builtin", "handler_name": "event" }
+          {
+            "type": "builtin",
+            "handler_name": "event"
+          }
         ]
       },
-      "ui": { "component": "none" },
+      "ui": {
+        "component": "none"
+      },
       "requires_response": false
     },
     "quest_update": {
@@ -29,86 +38,204 @@
       "schema": {
         "type": "object",
         "properties": {
-          "action": { "type": "string", "enum": ["create", "update", "complete", "fail"] },
-          "quest_id": { "type": "string" },
-          "title": { "type": "string" },
-          "description": { "type": "string" },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "complete",
+              "fail"
+            ]
+          },
+          "quest_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
           "objectives": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "string" },
-                "text": { "type": "string" },
-                "completed": { "type": "boolean" }
+                "id": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "completed": {
+                  "type": "boolean"
+                }
               },
-              "required": ["id", "text", "completed"]
+              "required": [
+                "id",
+                "text",
+                "completed"
+              ]
             }
           },
           "rewards": {
             "type": "object",
             "properties": {
-              "xp": { "type": "number" },
-              "gold": { "type": "number" },
-              "items": { "type": "array", "items": { "type": "string" } }
+              "xp": {
+                "type": "number"
+              },
+              "gold": {
+                "type": "number"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             }
           },
-          "status": { "type": "string", "enum": ["active", "completed", "failed"] }
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed",
+              "failed"
+            ]
+          }
         },
-        "required": ["action", "quest_id", "title", "status"]
+        "required": [
+          "action",
+          "quest_id",
+          "title",
+          "status"
+        ]
       },
       "handler": {
         "actions": [
-          { "type": "storage_write", "key": "active-quests" },
-          { "type": "emit_event", "event": "quest-created" }
+          {
+            "type": "storage_write",
+            "key": "active-quests"
+          },
+          {
+            "type": "emit_event",
+            "event": "quest-created"
+          }
         ]
       },
-      "ui": { "component": "custom", "renderer_name": "quest_update" },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "quest_update"
+      },
       "requires_response": false
     }
   },
   "events": {
-    "emit": ["quest-created", "quest-completed"],
+    "emit": [
+      "quest-created",
+      "quest-completed"
+    ],
     "listen": []
   },
   "storage": {
-    "keys": ["active-quests", "completed-quests"]
+    "keys": [
+      "active-quests",
+      "completed-quests"
+    ]
   },
   "extensions": {
     "runtime_settings": {
-      "settings": [
-        {
-          "key": "quest_complexity",
+      "fields": {
+        "quest_complexity": {
           "type": "enum",
           "label": "Quest Complexity",
           "description": "How complex generated quests should be.",
           "default": "standard",
           "options": [
-            { "value": "simple", "label": "Simple", "i18n": { "zh": { "label": "简单" } } },
-            { "value": "standard", "label": "Standard", "i18n": { "zh": { "label": "标准" } } },
-            { "value": "complex", "label": "Complex", "i18n": { "zh": { "label": "复杂" } } }
+            {
+              "value": "simple",
+              "label": "Simple",
+              "i18n": {
+                "zh": {
+                  "label": "简单"
+                }
+              }
+            },
+            {
+              "value": "standard",
+              "label": "Standard",
+              "i18n": {
+                "zh": {
+                  "label": "标准"
+                }
+              }
+            },
+            {
+              "value": "complex",
+              "label": "Complex",
+              "i18n": {
+                "zh": {
+                  "label": "复杂"
+                }
+              }
+            }
           ],
-          "affects": ["quest"],
-          "i18n": { "zh": { "label": "任务复杂度", "description": "生成任务的复杂程度。" } }
+          "affects": [
+            "quest"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "任务复杂度",
+              "description": "生成任务的复杂程度。"
+            }
+          }
         },
-        {
-          "key": "show_rewards",
+        "show_rewards": {
           "type": "enum",
           "label": "Show Rewards",
           "description": "Whether to preview quest rewards before completion.",
           "default": "preview",
           "options": [
-            { "value": "hidden", "label": "Hidden", "i18n": { "zh": { "label": "隐藏" } } },
-            { "value": "preview", "label": "Preview", "i18n": { "zh": { "label": "预览" } } }
+            {
+              "value": "hidden",
+              "label": "Hidden",
+              "i18n": {
+                "zh": {
+                  "label": "隐藏"
+                }
+              }
+            },
+            {
+              "value": "preview",
+              "label": "Preview",
+              "i18n": {
+                "zh": {
+                  "label": "预览"
+                }
+              }
+            }
           ],
-          "affects": ["quest"],
-          "i18n": { "zh": { "label": "显示奖励", "description": "是否在任务完成前预览奖励。" } }
+          "affects": [
+            "quest"
+          ],
+          "i18n": {
+            "zh": {
+              "label": "显示奖励",
+              "description": "是否在任务完成前预览奖励。"
+            }
+          }
         }
-      ]
+      }
     }
   },
   "i18n": {
-    "en": { "name": "Event & Quest", "description": "Event tracking and quest management system." },
-    "zh": { "name": "事件与任务", "description": "事件追踪与任务管理系统。" }
+    "en": {
+      "name": "Event & Quest",
+      "description": "Event tracking and quest management system."
+    },
+    "zh": {
+      "name": "事件与任务",
+      "description": "事件追踪与任务管理系统。"
+    }
   }
 }

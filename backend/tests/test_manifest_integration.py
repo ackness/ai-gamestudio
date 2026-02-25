@@ -7,20 +7,7 @@ from pathlib import Path
 import pytest
 
 from backend.app.core.plugin_engine import PluginEngine
-
-PLUGINS_DIR = "plugins"
-ALL_PLUGINS = {
-    "database",
-    "state",
-    "event",
-    "memory",
-    "guide",
-    "codex",
-    "image",
-    "combat",
-    "inventory",
-    "social",
-}
+from backend.tests.constants import CURRENT_PLUGIN_IDS, PLUGINS_DIR
 
 
 @pytest.fixture
@@ -33,7 +20,7 @@ class TestManifestIntegration:
     def test_all_plugins_discoverable(self, engine: PluginEngine):
         plugins = engine.discover(PLUGINS_DIR)
         names = {p["name"] for p in plugins}
-        assert ALL_PLUGINS.issubset(names)
+        assert CURRENT_PLUGIN_IDS.issubset(names)
 
     def test_all_plugins_validate_clean(self, engine: PluginEngine):
         results = engine.validate(PLUGINS_DIR)

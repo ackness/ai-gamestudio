@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import pathlib
+import time
 from typing import Any
 
 import litellm
@@ -75,6 +76,7 @@ async def run_plugin_agent(
             "plugins_run": [],
             "plugins_executed": [],
             "plugins_emitted": [],
+            "plugin_metrics": [],
         }
 
     logger.info("Running {} plugins in parallel: {}", len(plugins_to_run), [p["name"] for p in plugins_to_run])
@@ -97,6 +99,7 @@ async def run_plugin_agent(
     total_rounds = 0
     plugins_executed: list[str] = []
     plugins_emitted: list[str] = []
+    plugin_metrics: list[dict[str, Any]] = []
 
     for plugin_info, result in zip(plugins_to_run, results):
         name = plugin_info["name"]
@@ -104,10 +107,12 @@ async def run_plugin_agent(
             logger.exception("Plugin '{}' failed: {}", name, result)
             continue
         plugins_executed.append(name)
-        blocks, plugin_rounds, tool_calls = result
+        blocks, plugin_rounds, tool_calls, metrics = result
         all_blocks.extend(blocks)
         all_tool_calls.extend(tool_calls)
         total_rounds = max(total_rounds, plugin_rounds)
+        if isinstance(metrics, dict):
+            plugin_metrics.append(metrics)
         if blocks:
             plugins_emitted.append(name)
 
@@ -117,6 +122,7 @@ async def run_plugin_agent(
         "plugins_selected": [p["name"] for p in plugins_to_run],
         "plugins_executed": plugins_executed,
         "plugins_emitted": plugins_emitted,
+        "plugin_metrics": plugin_metrics,
         "total_blocks": len(all_blocks),
         "blocks_emitted": [{"type": b["type"], "plugin": b.get("_plugin")} for b in all_blocks],
     })
@@ -129,6 +135,7 @@ async def run_plugin_agent(
         # New field: execution count semantics for max_triggers.
         "plugins_executed": plugins_executed,
         "plugins_emitted": plugins_emitted,
+        "plugin_metrics": plugin_metrics,
     }
 
 
@@ -141,8 +148,12 @@ async def _run_one_plugin(
     config: ResolvedLlmConfig,
     plugins_dir: str,
     on_progress: ProgressCallback | None = None,
-) -> tuple[list[dict], int, list[str]]:
-    """Run a single plugin's LLM call. Returns (blocks, rounds, tool_call_names)."""
+) -> tuple[list[dict], int, list[str], dict[str, Any]]:
+    """Run a single plugin's LLM call.
+
+    Returns `(blocks, rounds, tool_call_names, metrics)`.
+    """
+    started = time.monotonic()
     name = plugin_info["name"]
     content = plugin_info["content"]
     metadata = plugin_info.get("metadata", {})
@@ -209,7 +220,16 @@ async def _run_one_plugin(
     for b in blocks:
         b["_plugin"] = name
     logger.debug("Plugin '{}' finished: {} blocks, {} rounds", name, len(blocks), total_rounds)
-    return blocks, total_rounds, tool_call_names
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+    metrics = {
+        "plugin": name,
+        "elapsed_ms": elapsed_ms,
+        "rounds": total_rounds,
+        "tool_calls": len(tool_call_names),
+        "block_count": len(blocks),
+        "block_types": [b.get("type") for b in blocks],
+    }
+    return blocks, total_rounds, tool_call_names, metrics
 
 
 async def invoke_single_plugin(
