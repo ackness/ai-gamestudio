@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Session, Message, Scene, StoryImageData } from '../types'
+import type { Session, Message } from '../types'
 import * as api from '../services/api'
 import { StorageFactory } from '../services/settingsStorage'
 import { idbGetSessions } from '../services/localDb'
@@ -7,6 +7,8 @@ import { syncToIdb, syncToIdbFireAndForget } from '../services/idbSync'
 import { attachPendingBlocksForTurn, type TurnPendingBlock } from './sessionTurnUtils'
 import { useProjectStore } from './projectStore'
 import { useTokenStore } from './tokenStore'
+import { useSceneStore } from './sceneStore'
+import { useMessageImageStore } from './messageImageStore'
 import * as gameStorage from '../services/gameStorage'
 
 export type PendingBlock = TurnPendingBlock
@@ -25,10 +27,6 @@ interface SessionStore {
   pluginProcessing: boolean
   pluginProgress: { round: number; tool_calls: string[]; blocks_so_far: string[] } | null
   lastPluginSummary: { rounds: number; tool_calls: string[]; blocks_emitted: string[] } | null
-  currentScene: Scene | null
-  scenes: Scene[]
-  messageImages: Record<string, StoryImageData[]>
-  imageLoadingMessages: Set<string>
   fetchSessions: (projectId: string) => Promise<void>
   createSession: (projectId: string) => Promise<Session>
   switchSession: (session: Session) => Promise<void>
@@ -47,16 +45,9 @@ interface SessionStore {
   setPluginProcessing: (processing: boolean) => void
   setPluginProgress: (progress: { round: number; tool_calls: string[]; blocks_so_far: string[] } | null) => void
   setLastPluginSummary: (summary: { rounds: number; tool_calls: string[]; blocks_emitted: string[] } | null) => void
-  setCurrentScene: (scene: Scene | null) => void
-  setScenes: (scenes: Scene[]) => void
-  addScene: (scene: Scene) => void
   removeLastAssistantMessage: () => void
   deleteMessage: (messageId: string) => void
   deleteMessagesFrom: (messageId: string) => void
-  setMessageImage: (messageId: string, image: StoryImageData) => void
-  setImageLoading: (messageId: string, loading: boolean) => void
-  clearMessageImages: () => void
-  hydrateMessageImages: (sessionId: string) => Promise<void>
   updateBlockData: (blockId: string, data: unknown) => void
   updateMessageBlocks: (
     messageId: string,
@@ -81,10 +72,6 @@ export const useSessionStore = create<SessionStore>((set) => ({
   pluginProcessing: false,
   pluginProgress: null,
   lastPluginSummary: null,
-  currentScene: null,
-  scenes: [],
-  messageImages: {},
-  imageLoadingMessages: new Set<string>(),
 
   fetchSessions: async (projectId) => {
     try {
@@ -126,14 +113,12 @@ export const useSessionStore = create<SessionStore>((set) => ({
         messages: [],
         pendingBlocks: [],
         phase: 'init',
-        currentScene: null,
-        scenes: [],
         streamingContent: '',
         streamStatus: 'idle' as StreamStatus,
         isStreaming: false,
-        messageImages: {},
-        imageLoadingMessages: new Set<string>(),
       }))
+      useSceneStore.getState().resetScenes()
+      useMessageImageStore.getState().resetMessageImages()
       useTokenStore.getState().reset()
       return session
     } catch (err) {
@@ -150,14 +135,12 @@ export const useSessionStore = create<SessionStore>((set) => ({
       messages: [],
       pendingBlocks: [],
       phase: session.phase || 'init',
-      currentScene: null,
-      scenes: [],
       streamingContent: '',
       streamStatus: 'idle' as StreamStatus,
       isStreaming: false,
-      messageImages: {},
-      imageLoadingMessages: new Set<string>(),
     })
+    useSceneStore.getState().resetScenes()
+    useMessageImageStore.getState().resetMessageImages()
     useTokenStore.getState().reset()
     try {
       const messages = await gameStorage.fetchMessages(session.id)
@@ -178,19 +161,17 @@ export const useSessionStore = create<SessionStore>((set) => ({
         const sessions = state.sessions.filter((s) => s.id !== sessionId)
         const isCurrent = state.currentSession?.id === sessionId
         if (isCurrent) {
+          useSceneStore.getState().resetScenes()
+          useMessageImageStore.getState().resetMessageImages()
           return {
             sessions,
             currentSession: null,
             messages: [],
             pendingBlocks: [],
             phase: 'init',
-            currentScene: null,
-            scenes: [],
             streamingContent: '',
             streamStatus: 'idle' as StreamStatus,
             isStreaming: false,
-            messageImages: {},
-            imageLoadingMessages: new Set<string>(),
           }
         }
         return { sessions }
@@ -253,20 +234,6 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   setLastPluginSummary: (lastPluginSummary) => set({ lastPluginSummary }),
 
-  setCurrentScene: (currentScene) => set({ currentScene }),
-
-  setScenes: (scenes) => {
-    set({ scenes })
-    if (scenes.length > 0) {
-      scenes.forEach((s) => syncToIdbFireAndForget('scene', s))
-    }
-  },
-
-  addScene: (scene) => {
-    set((state) => ({ scenes: [...state.scenes, scene] }))
-    syncToIdbFireAndForget('scene', scene)
-  },
-
   removeLastAssistantMessage: () =>
     set((state) => {
       const msgs = [...state.messages]
@@ -290,48 +257,6 @@ export const useSessionStore = create<SessionStore>((set) => ({
       if (idx < 0) return state
       return { messages: state.messages.slice(0, idx), pendingBlocks: [] }
     }),
-
-  setMessageImage: (messageId, image) =>
-    set((state) => {
-      const existing = state.messageImages[messageId] || []
-      return {
-        messageImages: {
-          ...state.messageImages,
-          [messageId]: [...existing, image],
-        },
-      }
-    }),
-
-  setImageLoading: (messageId, loading) =>
-    set((state) => {
-      const next = new Set(state.imageLoadingMessages)
-      if (loading) {
-        next.add(messageId)
-      } else {
-        next.delete(messageId)
-      }
-      return { imageLoadingMessages: next }
-    }),
-
-  clearMessageImages: () => set({ messageImages: {}, imageLoadingMessages: new Set<string>() }),
-
-  hydrateMessageImages: async (sessionId) => {
-    try {
-      const images = await api.getSessionStoryImages(sessionId)
-      const map: Record<string, StoryImageData[]> = {}
-      for (const img of images) {
-        if (img.message_id) {
-          if (!map[img.message_id]) {
-            map[img.message_id] = []
-          }
-          map[img.message_id].push(img)
-        }
-      }
-      set({ messageImages: map })
-    } catch {
-      // ignore
-    }
-  },
 
   updateBlockData: (blockId, data) =>
     set((state) => {

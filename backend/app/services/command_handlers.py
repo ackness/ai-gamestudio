@@ -12,16 +12,13 @@ from backend.app.core.game_state import GameStateManager
 from backend.app.core.json_utils import safe_json_loads
 from backend.app.db.engine import engine
 from backend.app.models.session import GameSession
+from backend.app.services.debug_log_service import add_debug_log as _add_log
+from backend.app.services.chat_service import stream_process_message as _stream_process_message
+from typing import Protocol
 
-# Imported from sibling modules — these are the cross-module dependencies
-from backend.app.api.debug_log import _add_log
 
-# Late imports to avoid circular: EventSink and _stream_process_message come from chat.py
-# We use TYPE_CHECKING for the protocol and pass _stream_process_message at call sites
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from backend.app.api.chat import EventSink
+class EventSink(Protocol):
+    async def send_json(self, data: dict) -> None: ...
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -59,8 +56,6 @@ async def _handle_force_trigger(
     image_overrides: dict[str, str] | None = None,
 ) -> None:
     """Handle force trigger — send hidden prompt to force specific block output."""
-    from backend.app.api.chat import _stream_process_message
-
     block_type = data.get("block_type", "")
     prompt = _FORCE_TRIGGER_PROMPTS.get(block_type)
     if not prompt:
@@ -195,7 +190,6 @@ async def _handle_init_game(
     """Handle game initialization — transition to character_creation or playing."""
     from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
     from backend.app.models.project import Project
-    from backend.app.api.chat import _stream_process_message
 
     async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
         game_session = await db.get(GameSession, session_id)
@@ -234,7 +228,6 @@ async def _handle_form_submit(
 ) -> None:
     """Handle form submission — may trigger character creation or other actions."""
     from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-    from backend.app.api.chat import _stream_process_message
 
     form_id = data.get("form_id", "")
     values = data.get("values", {})
@@ -295,7 +288,6 @@ async def _handle_character_edit(
 ) -> None:
     """Handle character edits — no LLM call, direct DB update."""
     from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-    from backend.app.api.chat import _stream_process_message
 
     character_id = data.get("character_id")
     changes = data.get("changes", {})
@@ -408,7 +400,6 @@ async def _handle_scene_switch(
 ) -> None:
     """Handle scene switching — update current scene and trigger DM narration."""
     from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-    from backend.app.api.chat import _stream_process_message
 
     scene_id = data.get("scene_id")
     if not scene_id:
@@ -444,8 +435,6 @@ async def _handle_confirm(
     image_overrides: dict[str, str] | None = None,
 ) -> None:
     """Handle generic confirmations."""
-    from backend.app.api.chat import _stream_process_message
-
     action = data.get("action", "")
     action_data = data.get("data", {})
     content = f"我确认{action}"
@@ -468,7 +457,6 @@ async def _handle_block_response(
 ) -> None:
     """Handle a user's response to an interactive block (requires_response=true)."""
     from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-    from backend.app.api.chat import _stream_process_message
 
     block_type = data.get("block_type", "unknown")
     block_id = data.get("block_id", "")

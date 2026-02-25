@@ -238,12 +238,12 @@ export class GameWebSocket {
             description: projectRow.description ? String(projectRow.description) : undefined,
             world_doc: projectRow.world_doc ? String(projectRow.world_doc) : '',
           } as Parameters<typeof api.createProject>[0] & { id: string })
-        } catch { /* best-effort */ }
+        } catch (err) { console.warn('ensureSessionInBackend: project re-sync failed:', err) }
       }
 
       // Re-sync session (upsert with original ID)
       await api.createSession(projectId, this.sessionId)
-    } catch { /* best-effort */ }
+    } catch (err) { console.warn('ensureSessionInBackend: session re-sync failed:', err) }
   }
 
   private enqueueHttpCommand(payload: StructuredMessage) {

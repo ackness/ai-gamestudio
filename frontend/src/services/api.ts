@@ -475,10 +475,10 @@ export async function generateNovelStream(
       if (!line.trim()) continue
       try {
         onEvent(JSON.parse(line))
-      } catch { /* skip malformed lines */ }
+      } catch { /* intentionally silent: skip malformed SSE lines */ }
     }
   }
   if (buffer.trim()) {
-    try { onEvent(JSON.parse(buffer)) } catch { /* skip */ }
+    try { onEvent(JSON.parse(buffer)) } catch { /* intentionally silent: skip malformed SSE trailing buffer */ }
   }
 }

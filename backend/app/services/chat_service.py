@@ -14,6 +14,7 @@ from backend.app.core.block_validation import validate_block_data
 from backend.app.core.game_state import GameStateManager
 from backend.app.core.json_utils import safe_json_loads
 from backend.app.core.llm_config import resolve_llm_config, resolve_plugin_llm_config
+from backend.app.services.session_state import SessionStateAccessor
 from backend.app.core.plugin_trigger import (
     BLOCK_TRIGGER_ONCE_PER_SESSION,
     normalize_block_trigger_policy,
@@ -30,22 +31,7 @@ from backend.app.services.token_service import (
 from backend.app.services.turn_context import build_turn_context
 from backend.app.core.game_db import GameDB
 from backend.app.services.plugin_agent import run_plugin_agent
-from backend.app.api.debug_log import _add_log
-
-
-def _normalize_plugin_counts(raw: Any) -> dict[str, int]:
-    if not isinstance(raw, dict):
-        return {}
-    counts: dict[str, int] = {}
-    for key, value in raw.items():
-        name = str(key or "").strip()
-        if not name:
-            continue
-        try:
-            counts[name] = max(0, int(value))
-        except Exception:
-            continue
-    return counts
+from backend.app.services.debug_log_service import add_debug_log as _add_log
 
 
 def _plugins_to_count(plugin_summary: dict[str, Any]) -> list[str]:
@@ -62,88 +48,6 @@ def _plugins_to_count(plugin_summary: dict[str, Any]) -> list[str]:
 
 
 _INFRA_BLOCK_TYPES = {"state_update"}
-
-
-def _load_turn_count(game_state_json: str | None, session_id: str) -> int:
-    """Return current session turn count from persisted game state."""
-    state_data = safe_json_loads(
-        game_state_json,
-        fallback={},
-        context=f"GameSession state ({session_id})",
-    )
-    if not isinstance(state_data, dict):
-        return 0
-    try:
-        return max(0, int(state_data.get("turn_count", 0) or 0))
-    except Exception:
-        return 0
-
-
-def _load_plugin_trigger_counts(game_state_json: str | None, session_id: str) -> dict[str, int]:
-    """Load canonical/legacy plugin trigger counters from session state."""
-    state_data = safe_json_loads(
-        game_state_json,
-        fallback={},
-        context=f"GameSession state ({session_id})",
-    )
-    if not isinstance(state_data, dict):
-        return {}
-    counts = _normalize_plugin_counts(state_data.get("plugin_execution_counts"))
-    if counts:
-        return counts
-    return _normalize_plugin_counts(state_data.get("plugin_trigger_counts"))
-
-
-def _increment_plugin_trigger_counts(
-    game_state_json: str | None,
-    session_id: str,
-    plugins_counted: list[str],
-) -> str:
-    """Increment per-plugin execution counters in canonical + legacy keys."""
-    latest_state = safe_json_loads(
-        game_state_json,
-        fallback={},
-        context=f"GameSession state ({session_id})",
-    )
-    if not isinstance(latest_state, dict):
-        latest_state = {}
-    latest_counts = _normalize_plugin_counts(latest_state.get("plugin_execution_counts"))
-    if not latest_counts:
-        latest_counts = _normalize_plugin_counts(latest_state.get("plugin_trigger_counts"))
-    for pname in plugins_counted:
-        latest_counts[pname] = int(latest_counts.get(pname, 0) or 0) + 1
-    latest_state["plugin_execution_counts"] = latest_counts
-    latest_state["plugin_trigger_counts"] = latest_counts
-    return json.dumps(latest_state)
-
-
-def _load_block_trigger_counts(game_state_json: str | None, session_id: str) -> dict[str, int]:
-    """Load per-block trigger counters from session state."""
-    state_data = safe_json_loads(
-        game_state_json,
-        fallback={},
-        context=f"GameSession state ({session_id})",
-    )
-    if not isinstance(state_data, dict):
-        return {}
-    return _normalize_plugin_counts(state_data.get("block_trigger_counts"))
-
-
-def _set_block_trigger_counts(
-    game_state_json: str | None,
-    session_id: str,
-    block_trigger_counts: dict[str, int],
-) -> str:
-    """Persist per-block trigger counters into session state JSON."""
-    latest_state = safe_json_loads(
-        game_state_json,
-        fallback={},
-        context=f"GameSession state ({session_id})",
-    )
-    if not isinstance(latest_state, dict):
-        latest_state = {}
-    latest_state["block_trigger_counts"] = _normalize_plugin_counts(block_trigger_counts)
-    return json.dumps(latest_state)
 
 
 async def _filter_plugin_blocks(
@@ -579,7 +483,7 @@ async def process_message(
             db.add(ctx.session)
 
         await db.commit()
-        current_turn = _load_turn_count(ctx.session.game_state_json, session_id)
+        current_turn = SessionStateAccessor(ctx.session.game_state_json, session_id).load_turn_count()
 
         yield {
             "type": "token_usage", "turn_id": turn_id,
@@ -605,14 +509,9 @@ async def process_message(
         plugin_summary: dict[str, Any] = {}
 
         # Load per-session plugin trigger counts
-        trigger_counts = _load_plugin_trigger_counts(
-            ctx.session.game_state_json,
-            session_id,
-        )
-        block_trigger_counts = _load_block_trigger_counts(
-            ctx.session.game_state_json,
-            session_id,
-        )
+        _state_acc = SessionStateAccessor(ctx.session.game_state_json, session_id)
+        trigger_counts = _state_acc.load_plugin_trigger_counts()
+        block_trigger_counts = _state_acc.load_block_trigger_counts()
         has_player_character = any(getattr(ch, "role", None) == "player" for ch in ctx.characters)
 
         # Use asyncio.Queue to stream plugin progress in real-time
@@ -729,21 +628,17 @@ async def process_message(
                 db.add(msg_obj)
 
         if block_trigger_counts != block_trigger_counts_before:
-            ctx.session.game_state_json = _set_block_trigger_counts(
-                ctx.session.game_state_json,
-                session_id,
-                block_trigger_counts,
-            )
+            ctx.session.game_state_json = SessionStateAccessor(
+                ctx.session.game_state_json, session_id
+            ).set_block_trigger_counts(block_trigger_counts)
             db.add(ctx.session)
 
         # Update trigger counts for plugins that emitted blocks
         plugins_counted = _plugins_to_count(plugin_summary)
         if plugins_counted:
-            ctx.session.game_state_json = _increment_plugin_trigger_counts(
-                ctx.session.game_state_json,
-                session_id,
-                plugins_counted,
-            )
+            ctx.session.game_state_json = SessionStateAccessor(
+                ctx.session.game_state_json, session_id
+            ).increment_plugin_trigger_counts(plugins_counted)
             db.add(ctx.session)
 
         await db.commit()
@@ -834,15 +729,10 @@ async def retrigger_plugins(
         plugin_summary: dict[str, Any] = {}
 
         # Load per-session plugin trigger counts
-        retrigger_trigger_counts = _load_plugin_trigger_counts(
-            ctx.session.game_state_json,
-            session_id,
-        )
-        current_turn = _load_turn_count(ctx.session.game_state_json, session_id)
-        block_trigger_counts = _load_block_trigger_counts(
-            ctx.session.game_state_json,
-            session_id,
-        )
+        _retrigger_state = SessionStateAccessor(ctx.session.game_state_json, session_id)
+        retrigger_trigger_counts = _retrigger_state.load_plugin_trigger_counts()
+        current_turn = _retrigger_state.load_turn_count()
+        block_trigger_counts = _retrigger_state.load_block_trigger_counts()
         has_player_character = any(getattr(ch, "role", None) == "player" for ch in ctx.characters)
 
         try:
@@ -908,30 +798,44 @@ async def retrigger_plugins(
             db.add(msg_obj)
 
         if block_trigger_counts != block_trigger_counts_before:
-            ctx.session.game_state_json = _set_block_trigger_counts(
-                ctx.session.game_state_json,
-                session_id,
-                block_trigger_counts,
-            )
+            ctx.session.game_state_json = SessionStateAccessor(
+                ctx.session.game_state_json, session_id
+            ).set_block_trigger_counts(block_trigger_counts)
             db.add(ctx.session)
 
         # Update trigger counts for plugins that emitted blocks
         plugins_counted = _plugins_to_count(plugin_summary)
         if plugins_counted:
-            ctx.session.game_state_json = _increment_plugin_trigger_counts(
-                ctx.session.game_state_json,
-                session_id,
-                plugins_counted,
-            )
+            ctx.session.game_state_json = SessionStateAccessor(
+                ctx.session.game_state_json, session_id
+            ).increment_plugin_trigger_counts(plugins_counted)
             db.add(ctx.session)
 
         await db.commit()
 
-        # Send a single event so the frontend can update the message's blocks in-place
-        yield {
-            "type": "message_blocks_updated",
-            "message_id": message_id,
-            "blocks": dispatched_blocks,
-            "turn_id": turn_id,
-        }
         yield {"type": "turn_end", "turn_id": turn_id}
+
+
+async def stream_process_message(
+    sink: Any,
+    session_id: str,
+    content: str,
+    *,
+    save_user_msg: bool = True,
+    save_assistant_msg: bool = True,
+    llm_overrides: dict[str, str] | None = None,
+    image_overrides: dict[str, str] | None = None,
+) -> None:
+    """Stream process_message events (narrative + plugin agent) to sink."""
+    async for event in process_message(
+        session_id, content,
+        save_user_msg=save_user_msg,
+        save_assistant_msg=save_assistant_msg,
+        llm_overrides=llm_overrides,
+        image_overrides=image_overrides,
+    ):
+        etype = event.get("type", "")
+        if etype == "_message_saved":
+            continue  # internal event, don't forward
+        _add_log(session_id, "send", event)
+        await sink.send_json(event)

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import Markdown from 'react-markdown'
 import { Copy, Image as ImageIcon, RotateCcw, Pencil, Trash2, AlertCircle, CheckCircle2, Plug } from 'lucide-react'
 import { useSessionStore } from '../../stores/sessionStore'
+import { useMessageImageStore } from '../../stores/messageImageStore'
 import { useUiStore } from '../../stores/uiStore'
 import type { StreamStatus } from '../../stores/sessionStore'
 import { getBlockRenderer } from '../../services/blockRenderers'
@@ -291,7 +292,8 @@ function RawMessageViewer({ msg, onClose, t }: { msg: Message; onClose: () => vo
 }
 
 export function ChatMessages({ onAction, onRetry, onGenerateImage, onRetriggerPlugins }: Props) {
-  const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom, messageImages, imageLoadingMessages, pluginProcessing, pluginProgress, lastPluginSummary } = useSessionStore()
+  const { messages, isStreaming, streamingContent, streamStatus, pendingBlocks, deleteMessage, deleteMessagesFrom, pluginProcessing, pluginProgress, lastPluginSummary } = useSessionStore()
+  const { messageImages, imageLoadingMessages } = useMessageImageStore()
   const language = useUiStore((s) => s.language)
   const t = chatText[language] ?? chatText.en
   const bottomRef = useRef<HTMLDivElement>(null)

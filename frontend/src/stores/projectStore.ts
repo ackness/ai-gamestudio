@@ -89,7 +89,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       await idbPutProject(updated as unknown as Record<string, unknown>)
       set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))
       // Best-effort backend sync
-      try { await get().syncProjectToBackend(updated) } catch { /* ephemeral backend */ }
+      try { await get().syncProjectToBackend(updated) } catch (err) { console.warn('updateWorldDoc: backend sync failed:', err) }
     } else {
       const updated = await api.updateProject(targetProjectId, { world_doc: worldDoc })
       set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))
@@ -112,7 +112,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       await idbPutProject(updated as unknown as Record<string, unknown>)
       set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))
       // Best-effort backend sync
-      try { await get().syncProjectToBackend(updated) } catch { /* ephemeral backend */ }
+      try { await get().syncProjectToBackend(updated) } catch (err) { console.warn('updateProject: backend sync failed:', err) }
     } else {
       const updated = await api.updateProject(targetProjectId, data)
       set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))

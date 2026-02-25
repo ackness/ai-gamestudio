@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ArchiveVersion, Session } from '../types'
 import { useSessionStore } from '../stores/sessionStore'
+import { useSceneStore } from '../stores/sceneStore'
 import { useGameStateStore } from '../stores/gameStateStore'
 import { useProjectStore } from '../stores/projectStore'
 import * as api from '../services/api'
@@ -15,11 +16,10 @@ export function useArchive(currentSession: Session | null) {
     addMessage,
     fetchMessages,
     fetchSessions,
-    setScenes,
-    setCurrentScene,
     setPhase,
     switchSession,
   } = useSessionStore()
+  const { setScenes, setCurrentScene } = useSceneStore()
   const { setCharacters, setWorldState, setEvents } = useGameStateStore()
   const currentProject = useProjectStore((s) => s.currentProject)
 
