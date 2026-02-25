@@ -9,6 +9,7 @@ from typing import Any
 import litellm
 from loguru import logger
 
+from backend.app.core.config import settings
 from backend.app.core.game_db import GameDB
 from backend.app.core.llm_config import ResolvedLlmConfig
 from backend.app.core.network_safety import ensure_safe_api_base
@@ -40,11 +41,12 @@ async def run_plugin_agent(
     game_db: GameDB,
     pe: PluginEngine,
     config: ResolvedLlmConfig,
-    plugins_dir: str = "plugins",
+    plugins_dir: str | None = None,
     on_progress: ProgressCallback | None = None,
     trigger_counts: dict[str, int] | None = None,
 ) -> tuple[list[dict], dict[str, Any]]:
     """Run enabled plugins in parallel after narrative completes."""
+    plugins_dir = plugins_dir or settings.PLUGINS_DIR
     all_discovered = pe.discover(plugins_dir)
     plugins_to_run: list[dict] = []
     for p in all_discovered:
@@ -66,7 +68,14 @@ async def run_plugin_agent(
 
     if not plugins_to_run:
         logger.debug("No plugins to run for session {}", session_id)
-        return [], {"rounds": 0, "tool_calls": [], "blocks_emitted": [], "plugins_run": []}
+        return [], {
+            "rounds": 0,
+            "tool_calls": [],
+            "blocks_emitted": [],
+            "plugins_run": [],
+            "plugins_executed": [],
+            "plugins_emitted": [],
+        }
 
     logger.info("Running {} plugins in parallel: {}", len(plugins_to_run), [p["name"] for p in plugins_to_run])
 
@@ -86,32 +95,40 @@ async def run_plugin_agent(
     all_blocks: list[dict] = []
     all_tool_calls: list[str] = []
     total_rounds = 0
-    plugins_run: list[str] = []
+    plugins_executed: list[str] = []
+    plugins_emitted: list[str] = []
 
     for plugin_info, result in zip(plugins_to_run, results):
         name = plugin_info["name"]
         if isinstance(result, Exception):
             logger.exception("Plugin '{}' failed: {}", name, result)
             continue
+        plugins_executed.append(name)
         blocks, plugin_rounds, tool_calls = result
         all_blocks.extend(blocks)
         all_tool_calls.extend(tool_calls)
         total_rounds = max(total_rounds, plugin_rounds)
         if blocks:
-            plugins_run.append(name)
+            plugins_emitted.append(name)
 
     _add_log(session_id, "debug", {
         "type": "plugin_agent_trace", "mode": "parallel",
         "enabled_plugins": enabled_plugins,
-        "plugins_run": [p["name"] for p in plugins_to_run],
-        "plugins_emitted": plugins_run,
+        "plugins_selected": [p["name"] for p in plugins_to_run],
+        "plugins_executed": plugins_executed,
+        "plugins_emitted": plugins_emitted,
         "total_blocks": len(all_blocks),
         "blocks_emitted": [{"type": b["type"], "plugin": b.get("_plugin")} for b in all_blocks],
     })
 
     return all_blocks, {
         "rounds": total_rounds, "tool_calls": all_tool_calls,
-        "blocks_emitted": [b.get("type") for b in all_blocks], "plugins_run": plugins_run,
+        "blocks_emitted": [b.get("type") for b in all_blocks],
+        # Legacy field name kept for compatibility (emitted-only semantics).
+        "plugins_run": plugins_emitted,
+        # New field: execution count semantics for max_triggers.
+        "plugins_executed": plugins_executed,
+        "plugins_emitted": plugins_emitted,
     }
 
 
@@ -202,9 +219,10 @@ async def invoke_single_plugin(
     game_db: GameDB,
     pe: PluginEngine,
     config: ResolvedLlmConfig,
-    plugins_dir: str = "plugins",
+    plugins_dir: str | None = None,
 ) -> list[dict]:
     """Invoke a single plugin directly (e.g. guide from quick-action bar)."""
+    plugins_dir = plugins_dir or settings.PLUGINS_DIR
     plugin = pe.load(plugin_name, plugins_dir)
     if not plugin:
         return [{"type": "notification", "data": {"message": f"插件 {plugin_name} 未找到", "level": "error"}}]
@@ -294,7 +312,16 @@ def _build_call_kwargs(config: ResolvedLlmConfig, messages: list, tools: list) -
 
 async def _execute_tool(tool_call: Any, ctx: _ToolContext) -> Any:
     name = tool_call.function.name
-    args = json.loads(tool_call.function.arguments)
+    raw_args = tool_call.function.arguments
+    try:
+        parsed = json.loads(raw_args or "{}")
+        if not isinstance(parsed, dict):
+            raise ValueError("tool arguments must be a JSON object")
+    except Exception as exc:
+        logger.warning("Invalid tool arguments for {}: {}", name, exc)
+        return {"error": f"Invalid arguments for '{name}': {exc}"}
+
+    args = parsed
     logger.debug("Plugin Agent tool: {}({})", name, args)
 
     try:

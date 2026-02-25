@@ -12,6 +12,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 from backend.app.core.block_handlers import BlockContext, dispatch_block  # noqa: F401 — tests patch this
 from backend.app.core.block_validation import validate_block_data
 from backend.app.core.game_state import GameStateManager
+from backend.app.core.json_utils import safe_json_loads
 from backend.app.core.llm_config import resolve_llm_config, resolve_plugin_llm_config
 from backend.app.core.llm_gateway import completion_with_config, create_stream_result  # noqa: F401 — tests patch this
 from backend.app.db.engine import engine  # noqa: F401 — tests patch this
@@ -26,6 +27,34 @@ from backend.app.services.turn_context import build_turn_context
 from backend.app.core.game_db import GameDB
 from backend.app.services.plugin_agent import run_plugin_agent
 from backend.app.api.debug_log import _add_log
+
+
+def _normalize_plugin_counts(raw: Any) -> dict[str, int]:
+    if not isinstance(raw, dict):
+        return {}
+    counts: dict[str, int] = {}
+    for key, value in raw.items():
+        name = str(key or "").strip()
+        if not name:
+            continue
+        try:
+            counts[name] = max(0, int(value))
+        except Exception:
+            continue
+    return counts
+
+
+def _plugins_to_count(plugin_summary: dict[str, Any]) -> list[str]:
+    preferred = plugin_summary.get("plugins_executed")
+    raw = preferred if isinstance(preferred, list) else plugin_summary.get("plugins_run")
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for item in raw:
+        name = str(item or "").strip()
+        if name:
+            out.append(name)
+    return out
 
 
 async def process_message(
@@ -117,7 +146,13 @@ async def process_message(
 
         token_state: dict[str, Any] = {}
         if should_increment_turn:
-            game_state = json.loads(ctx.session.game_state_json or "{}")
+            game_state = safe_json_loads(
+                ctx.session.game_state_json,
+                fallback={},
+                context=f"GameSession state ({session_id})",
+            )
+            if not isinstance(game_state, dict):
+                game_state = {}
             game_state["turn_count"] = game_state.get("turn_count", 0) + 1
             token_state = game_state.setdefault("token_usage", {
                 "total_prompt_tokens": 0, "total_completion_tokens": 0, "total_cost": 0.0,
@@ -154,8 +189,20 @@ async def process_message(
         plugin_summary: dict[str, Any] = {}
 
         # Load per-session plugin trigger counts
-        game_state_data = json.loads(ctx.session.game_state_json or "{}")
-        trigger_counts: dict[str, int] = game_state_data.get("plugin_trigger_counts", {})
+        game_state_data = safe_json_loads(
+            ctx.session.game_state_json,
+            fallback={},
+            context=f"GameSession state ({session_id})",
+        )
+        if not isinstance(game_state_data, dict):
+            game_state_data = {}
+        trigger_counts = _normalize_plugin_counts(
+            game_state_data.get("plugin_execution_counts")
+        )
+        if not trigger_counts:
+            trigger_counts = _normalize_plugin_counts(
+                game_state_data.get("plugin_trigger_counts")
+            )
 
         # Use asyncio.Queue to stream plugin progress in real-time
         progress_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
@@ -280,17 +327,40 @@ async def process_message(
                 from backend.app.models.message import Message
                 msg_obj = await db.get(Message, saved_message_id)
                 if msg_obj:
-                    existing_meta = json.loads(msg_obj.metadata_json or "{}") if msg_obj.metadata_json else {}
+                    existing_meta = safe_json_loads(
+                        msg_obj.metadata_json,
+                        fallback={},
+                        context=f"Message metadata ({saved_message_id})",
+                    )
+                    if not isinstance(existing_meta, dict):
+                        existing_meta = {}
                     existing_meta["blocks"] = dispatched_blocks
                     msg_obj.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
                     db.add(msg_obj)
 
         # Update trigger counts for plugins that emitted blocks
-        if plugin_summary and plugin_summary.get("plugins_run"):
-            for pname in plugin_summary["plugins_run"]:
-                trigger_counts[pname] = trigger_counts.get(pname, 0) + 1
-            game_state_data["plugin_trigger_counts"] = trigger_counts
-            ctx.session.game_state_json = json.dumps(game_state_data)
+        plugins_counted = _plugins_to_count(plugin_summary)
+        if plugins_counted:
+            latest_state = safe_json_loads(
+                ctx.session.game_state_json,
+                fallback={},
+                context=f"GameSession state ({session_id})",
+            )
+            if not isinstance(latest_state, dict):
+                latest_state = {}
+            latest_trigger_counts = _normalize_plugin_counts(
+                latest_state.get("plugin_execution_counts")
+            )
+            if not latest_trigger_counts:
+                latest_trigger_counts = _normalize_plugin_counts(
+                    latest_state.get("plugin_trigger_counts")
+                )
+            for pname in plugins_counted:
+                latest_trigger_counts[pname] = int(latest_trigger_counts.get(pname, 0) or 0) + 1
+            # New canonical key + legacy compatibility key.
+            latest_state["plugin_execution_counts"] = latest_trigger_counts
+            latest_state["plugin_trigger_counts"] = latest_trigger_counts
+            ctx.session.game_state_json = json.dumps(latest_state)
             db.add(ctx.session)
 
         await db.commit()
@@ -434,8 +504,20 @@ async def retrigger_plugins(
         plugin_summary: dict[str, Any] = {}
 
         # Load per-session plugin trigger counts
-        retrigger_gs_data = json.loads(ctx.session.game_state_json or "{}")
-        retrigger_trigger_counts: dict[str, int] = retrigger_gs_data.get("plugin_trigger_counts", {})
+        retrigger_gs_data = safe_json_loads(
+            ctx.session.game_state_json,
+            fallback={},
+            context=f"GameSession state ({session_id})",
+        )
+        if not isinstance(retrigger_gs_data, dict):
+            retrigger_gs_data = {}
+        retrigger_trigger_counts = _normalize_plugin_counts(
+            retrigger_gs_data.get("plugin_execution_counts")
+        )
+        if not retrigger_trigger_counts:
+            retrigger_trigger_counts = _normalize_plugin_counts(
+                retrigger_gs_data.get("plugin_trigger_counts")
+            )
 
         try:
             blocks, plugin_summary = await run_plugin_agent(
@@ -505,17 +587,39 @@ async def retrigger_plugins(
 
         # Persist blocks to message metadata
         if dispatched_blocks:
-            existing_meta = json.loads(msg_obj.metadata_json or "{}") if msg_obj.metadata_json else {}
+            existing_meta = safe_json_loads(
+                msg_obj.metadata_json,
+                fallback={},
+                context=f"Message metadata ({message_id})",
+            )
+            if not isinstance(existing_meta, dict):
+                existing_meta = {}
             existing_meta["blocks"] = dispatched_blocks
             msg_obj.metadata_json = json.dumps(existing_meta, ensure_ascii=False)
             db.add(msg_obj)
 
         # Update trigger counts for plugins that emitted blocks
-        if plugin_summary and plugin_summary.get("plugins_run"):
-            for pname in plugin_summary["plugins_run"]:
-                retrigger_trigger_counts[pname] = retrigger_trigger_counts.get(pname, 0) + 1
-            retrigger_gs_data["plugin_trigger_counts"] = retrigger_trigger_counts
-            ctx.session.game_state_json = json.dumps(retrigger_gs_data)
+        plugins_counted = _plugins_to_count(plugin_summary)
+        if plugins_counted:
+            latest_state = safe_json_loads(
+                ctx.session.game_state_json,
+                fallback={},
+                context=f"GameSession state ({session_id})",
+            )
+            if not isinstance(latest_state, dict):
+                latest_state = {}
+            latest_trigger_counts = _normalize_plugin_counts(
+                latest_state.get("plugin_execution_counts")
+            )
+            if not latest_trigger_counts:
+                latest_trigger_counts = _normalize_plugin_counts(
+                    latest_state.get("plugin_trigger_counts")
+                )
+            for pname in plugins_counted:
+                latest_trigger_counts[pname] = int(latest_trigger_counts.get(pname, 0) or 0) + 1
+            latest_state["plugin_execution_counts"] = latest_trigger_counts
+            latest_state["plugin_trigger_counts"] = latest_trigger_counts
+            ctx.session.game_state_json = json.dumps(latest_state)
             db.add(ctx.session)
 
         await db.commit()

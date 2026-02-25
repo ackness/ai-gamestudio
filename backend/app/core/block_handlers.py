@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from backend.app.core.capability_executor import CapabilityExecutor
     from backend.app.core.event_bus import PluginEventBus
     from backend.app.core.plugin_engine import BlockDeclaration
+    from backend.app.models.game_event import GameEvent
 
 
 @dataclass

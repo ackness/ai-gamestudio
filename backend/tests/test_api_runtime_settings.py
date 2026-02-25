@@ -55,25 +55,25 @@ async def test_runtime_settings_schema_and_patch(client: AsyncClient):
     assert schema_resp.status_code == 200
     schema_data = schema_resp.json()
     keys = {field["key"] for field in schema_data["fields"]}
-    assert "core-blocks.narrative_tone" in keys
+    assert "state.narrative_tone" in keys
 
     patch_resp = await client.patch(
         "/api/runtime-settings",
         json={
             "project_id": project_id,
             "scope": "project",
-            "values": {"core-blocks.narrative_tone": "grim"},
+            "values": {"state.narrative_tone": "grim"},
         },
     )
     assert patch_resp.status_code == 200
     patched = patch_resp.json()
     assert patched["ok"] is True
-    assert patched["values"]["core-blocks.narrative_tone"] == "grim"
+    assert patched["values"]["state.narrative_tone"] == "grim"
 
     get_resp = await client.get(f"/api/runtime-settings?project_id={project_id}")
     assert get_resp.status_code == 200
     data = get_resp.json()
-    assert data["values"]["core-blocks.narrative_tone"] == "grim"
+    assert data["values"]["state.narrative_tone"] == "grim"
 
 
 @pytest.mark.asyncio

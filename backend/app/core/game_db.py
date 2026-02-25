@@ -7,6 +7,7 @@ from typing import Any
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from backend.app.core.json_utils import safe_json_loads
 from backend.app.models.game_graph import GameGraph
 from backend.app.models.game_kv import GameKV
 from backend.app.models.game_log import GameLog
@@ -37,7 +38,13 @@ class GameDB:
             GameKV.key == key,
         )
         row = (await self.db.exec(stmt)).first()
-        return json.loads(row.value_json) if row else None
+        if not row:
+            return None
+        return safe_json_loads(
+            row.value_json,
+            fallback=None,
+            context=f"GameKV get ({self.session_id}/{collection}/{key})",
+        )
 
     async def kv_set(self, collection: str, key: str, value: Any) -> None:
         stmt = select(GameKV).where(
@@ -69,7 +76,17 @@ class GameDB:
         if filter_key:
             stmt = stmt.where(GameKV.key.contains(filter_key))
         rows = (await self.db.exec(stmt)).all()
-        return [{"key": r.key, "value": json.loads(r.value_json)} for r in rows]
+        return [
+            {
+                "key": r.key,
+                "value": safe_json_loads(
+                    r.value_json,
+                    fallback=None,
+                    context=f"GameKV query ({self.session_id}/{collection}/{r.key})",
+                ),
+            }
+            for r in rows
+        ]
 
     async def kv_delete(self, collection: str, key: str) -> bool:
         stmt = select(GameKV).where(
@@ -147,7 +164,15 @@ class GameDB:
                 "from_id": r.from_id,
                 "to_id": r.to_id,
                 "relation": r.relation,
-                "data": json.loads(r.data_json) if r.data_json else {},
+                "data": (
+                    safe_json_loads(
+                        r.data_json,
+                        fallback={},
+                        context=f"GameGraph data ({self.session_id}/{r.from_id}->{r.to_id}/{r.relation})",
+                    )
+                    if r.data_json
+                    else {}
+                ),
             }
             for r in rows
         ]
@@ -178,7 +203,14 @@ class GameDB:
             stmt = stmt.where(GameLog.created_at >= datetime.fromisoformat(since))
         rows = (await self.db.exec(stmt)).all()
         rows.reverse()
-        return [json.loads(r.entry_json) for r in rows]
+        return [
+            safe_json_loads(
+                r.entry_json,
+                fallback={},
+                context=f"GameLog entry ({self.session_id}/{collection})",
+            )
+            for r in rows
+        ]
 
     # ── Snapshot ──
 
@@ -188,7 +220,11 @@ class GameDB:
         kv_rows = (await self.db.exec(kv_stmt)).all()
         collections: dict[str, dict] = {}
         for r in kv_rows:
-            collections.setdefault(r.collection, {})[r.key] = json.loads(r.value_json)
+            collections.setdefault(r.collection, {})[r.key] = safe_json_loads(
+                r.value_json,
+                fallback=None,
+                context=f"GameKV snapshot ({self.session_id}/{r.collection}/{r.key})",
+            )
 
         graph_stmt = select(GameGraph).where(GameGraph.session_id == self.session_id)
         graph_rows = (await self.db.exec(graph_stmt)).all()

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
 from backend.app.core.game_db import GameDB
@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 class PluginInvokeRequest(BaseModel):
-    context: dict = {}
+    context: dict = Field(default_factory=dict)
     llm_overrides: dict | None = None
 
 

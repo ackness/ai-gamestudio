@@ -49,6 +49,13 @@ class PluginEngine:
 
     _plugin_cache: dict[str, tuple[tuple[tuple[int, int] | None, tuple[int, int] | None], dict[str, Any]]] = {}
     _template_cache: dict[str, tuple[tuple[int, int], str]] = {}
+    _discover_cache: dict[
+        str,
+        tuple[
+            tuple[tuple[str, tuple[int, int] | None, tuple[int, int] | None], ...],
+            list[dict[str, Any]],
+        ],
+    ] = {}
 
     def __init__(self) -> None:
         self._last_block_conflicts: list[dict[str, str]] = []
@@ -66,6 +73,7 @@ class PluginEngine:
         """Clear plugin and template caches (mainly for tests/dev tooling)."""
         cls._plugin_cache.clear()
         cls._template_cache.clear()
+        cls._discover_cache.clear()
 
     def _resolve_plugin_dir(self, plugin_name: str, plugins_dir: str) -> pathlib.Path | None:
         """Resolve a plugin name to its directory, checking flat then nested layouts."""
@@ -136,9 +144,23 @@ class PluginEngine:
         Supports both flat (plugins/<plugin>/) and nested (plugins/<group>/<plugin>/) layouts.
         Returns a list of lightweight plugin metadata dicts (level 1 loading).
         """
+        plugin_dirs = self._find_plugin_dirs(plugins_dir)
+        root_key = str(pathlib.Path(plugins_dir).resolve())
+        signature = tuple(
+            (
+                str(plugin_dir.resolve()),
+                self._file_signature(plugin_dir / "PLUGIN.md"),
+                self._file_signature(plugin_dir / "manifest.json"),
+            )
+            for plugin_dir in plugin_dirs
+        )
+        cached = self._discover_cache.get(root_key)
+        if cached is not None and cached[0] == signature:
+            return copy.deepcopy(cached[1])
+
         plugins: list[dict[str, Any]] = []
         seen_names: set[str] = set()
-        for plugin_dir in self._find_plugin_dirs(plugins_dir):
+        for plugin_dir in plugin_dirs:
             try:
                 loaded = self.load(plugin_dir.name, plugins_dir)
                 if not loaded:
@@ -151,6 +173,7 @@ class PluginEngine:
                 plugins.append(entry)
             except Exception:
                 logger.warning("Failed to parse {}", plugin_dir / "PLUGIN.md")
+        self._discover_cache[root_key] = (signature, copy.deepcopy(plugins))
         return plugins
 
     def discover_groups(self, plugins_dir: str | None = None) -> list["PluginGroup"]:

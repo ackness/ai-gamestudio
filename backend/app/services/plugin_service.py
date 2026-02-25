@@ -8,6 +8,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from backend.app.core.config import settings
+from backend.app.core.json_utils import safe_json_loads
 from backend.app.core.plugin_registry import get_plugin_engine
 from backend.app.models.plugin_storage import PluginStorage
 from backend.app.models.project import Project
@@ -60,7 +61,13 @@ async def get_enabled_plugins(
     explicitly_user_enabled: set[str] = set()
     explicitly_disabled: set[str] = set()
     for row in rows:
-        data = json.loads(row.value_json)
+        data = safe_json_loads(
+            row.value_json,
+            fallback={},
+            context=f"PluginStorage enabled flag ({project_id}/{row.plugin_name})",
+        )
+        if not isinstance(data, dict):
+            data = {}
         if data.get("enabled"):
             enabled_names.add(row.plugin_name)
             explicitly_user_enabled.add(row.plugin_name)
@@ -210,7 +217,11 @@ async def storage_get(
     row = result.first()
     if not row:
         return None
-    return json.loads(row.value_json)
+    return safe_json_loads(
+        row.value_json,
+        fallback=None,
+        context=f"PluginStorage value ({project_id}/{plugin_name}/{key})",
+    )
 
 
 async def storage_set(

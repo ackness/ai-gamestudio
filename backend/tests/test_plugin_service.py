@@ -12,8 +12,8 @@ async def test_required_plugins_enabled_by_default(db_session, sample_project):
     names = {item["plugin_name"] for item in enabled}
 
     assert "database" in names
-    assert "character" in names
-    assert "archive" in names
+    assert "state" in names
+    assert "event" in names
 
 
 @pytest.mark.asyncio

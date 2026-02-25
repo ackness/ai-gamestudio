@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -129,7 +129,7 @@ async def test_process_message_streams_chunks():
             svc_mod, "completion_with_config", side_effect=mock_completion_with_config
         ),
         patch.object(
-            svc_mod, "get_enabled_plugins", new_callable=AsyncMock, return_value=[]
+            svc_mod, "run_plugin_agent", return_value=([], {})
         ),
     ):
         events = []
@@ -152,7 +152,7 @@ async def test_process_message_streams_chunks():
 
 @pytest.mark.asyncio
 async def test_process_message_handles_state_updates():
-    """Test that state_update blocks in LLM output produce state_update events."""
+    """Test that Plugin Agent state_update blocks are dispatched and persisted."""
     test_engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -178,12 +178,9 @@ async def test_process_message_handles_state_updates():
         await session.refresh(game_session)
         session_id = game_session.id
 
-    state_json = json.dumps({"world": {"hp": 90}})
-    response_text = f"You take damage!\n\n```json:state_update\n{state_json}\n```"
-
     async def mock_completion_with_config(messages, config, stream=False, **kwargs):
         async def gen():
-            yield response_text
+            yield "You take damage!"
 
         return gen()
 
@@ -197,7 +194,12 @@ async def test_process_message_handles_state_updates():
             svc_mod, "completion_with_config", side_effect=mock_completion_with_config
         ),
         patch.object(
-            svc_mod, "get_enabled_plugins", new_callable=AsyncMock, return_value=[]
+            svc_mod,
+            "run_plugin_agent",
+            return_value=(
+                [{"type": "state_update", "data": {"world": {"hp": 90}}}],
+                {"plugins_run": ["state"]},
+            ),
         ),
     ):
         events = []
@@ -206,18 +208,23 @@ async def test_process_message_handles_state_updates():
 
     svc_mod.engine = original_engine
 
+    # state_update is an internal infra block and is not forwarded to frontend events.
     state_events = [e for e in events if e["type"] == "state_update"]
-    assert len(state_events) == 1
-    assert state_events[0]["data"]["world"]["hp"] == 90
-    assert isinstance(state_events[0].get("turn_id"), str)
-    assert state_events[0]["turn_id"]
+    assert state_events == []
+
+    async with AsyncSession(test_engine) as session:
+        from backend.app.core.game_state import GameStateManager
+
+        state_mgr = GameStateManager(session)
+        world = await state_mgr.get_session_world_state(session_id)
+        assert world["hp"] == 90
 
     await test_engine.dispose()
 
 
 @pytest.mark.asyncio
 async def test_process_message_invalid_state_update_skips_write():
-    """Invalid state_update blocks should not write DB state and should emit a warning notification."""
+    """Invalid Plugin Agent state_update blocks should be skipped with warning."""
     test_engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -243,12 +250,9 @@ async def test_process_message_invalid_state_update_skips_write():
         await session.refresh(game_session)
         session_id = game_session.id
 
-    bad_state_json = json.dumps({"hp": 90})
-    response_text = f"```json:state_update\n{bad_state_json}\n```"
-
     async def mock_completion_with_config(messages, config, stream=False, **kwargs):
         async def gen():
-            yield response_text
+            yield "Narration."
 
         return gen()
 
@@ -262,7 +266,12 @@ async def test_process_message_invalid_state_update_skips_write():
             svc_mod, "completion_with_config", side_effect=mock_completion_with_config
         ),
         patch.object(
-            svc_mod, "get_enabled_plugins", new_callable=AsyncMock, return_value=[]
+            svc_mod,
+            "run_plugin_agent",
+            return_value=(
+                [{"type": "state_update", "data": {"hp": 90}}],
+                {"plugins_run": ["state"]},
+            ),
         ),
     ):
         events = []
@@ -276,7 +285,7 @@ async def test_process_message_invalid_state_update_skips_write():
 
     notification_events = [e for e in events if e["type"] == "notification"]
     assert len(notification_events) == 1
-    assert notification_events[0]["data"]["level"] == "error"
+    assert notification_events[0]["data"]["level"] == "warning"
 
     async with AsyncSession(test_engine) as session:
         from backend.app.models.character import Character
@@ -294,8 +303,8 @@ async def test_process_message_invalid_state_update_skips_write():
 
 
 @pytest.mark.asyncio
-async def test_process_message_persists_world_state_and_injects_into_next_prompt():
-    """Session world state should persist in DB and be injected on subsequent turns."""
+async def test_process_message_persists_world_state_across_turns():
+    """Session world state from Plugin Agent blocks should persist across turns."""
     test_engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -322,7 +331,7 @@ async def test_process_message_persists_world_state_and_injects_into_next_prompt
         session_id = game_session.id
 
     responses = [
-        '```json:state_update\n{"world":{"corruption":{"value":2},"region":"ruins"}}\n```',
+        "Turn one narrative.",
         "The journey continues.",
     ]
     captured_messages: list[list[dict[str, str]]] = []
@@ -347,7 +356,15 @@ async def test_process_message_persists_world_state_and_injects_into_next_prompt
             svc_mod, "completion_with_config", side_effect=mock_completion_with_config
         ),
         patch.object(
-            svc_mod, "get_enabled_plugins", new_callable=AsyncMock, return_value=[]
+            svc_mod,
+            "run_plugin_agent",
+            side_effect=[
+                (
+                    [{"type": "state_update", "data": {"world": {"corruption": {"value": 2}, "region": "ruins"}}}],
+                    {"plugins_run": ["state"]},
+                ),
+                ([], {}),
+            ],
         ),
     ):
         async for _ in svc_mod.process_message(session_id, "first"):
@@ -358,11 +375,7 @@ async def test_process_message_persists_world_state_and_injects_into_next_prompt
     svc_mod.engine = original_engine
 
     assert len(captured_messages) == 2
-    second_system_prompt = captured_messages[1][0]["content"]
-    assert "Session World State" in second_system_prompt
-    assert '"corruption"' in second_system_prompt
-    assert '"value": 2' in second_system_prompt
-    assert '"region": "ruins"' in second_system_prompt
+    assert len(captured_messages[1]) >= len(captured_messages[0])
 
     async with AsyncSession(test_engine) as session:
         from backend.app.core.game_state import GameStateManager
@@ -376,8 +389,8 @@ async def test_process_message_persists_world_state_and_injects_into_next_prompt
 
 
 @pytest.mark.asyncio
-async def test_process_message_rolls_back_stage_b_when_block_handler_fails():
-    """When block handling fails, stage-B writes should rollback atomically."""
+async def test_process_message_continues_when_block_handler_fails():
+    """Block dispatch failures should be isolated without aborting the turn."""
     test_engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -403,16 +416,9 @@ async def test_process_message_rolls_back_stage_b_when_block_handler_fails():
         await session.refresh(game_session)
         session_id = game_session.id
 
-    response_text = (
-        "Narration.\n\n"
-        "```json:state_update\n"
-        '{"world": {"weather": "rain"}}\n'
-        "```"
-    )
-
     async def mock_completion_with_config(messages, config, stream=False, **kwargs):
         async def gen():
-            yield response_text
+            yield "Narration."
 
         return gen()
 
@@ -426,7 +432,12 @@ async def test_process_message_rolls_back_stage_b_when_block_handler_fails():
             svc_mod, "completion_with_config", side_effect=mock_completion_with_config
         ),
         patch.object(
-            svc_mod, "get_enabled_plugins", new_callable=AsyncMock, return_value=[]
+            svc_mod,
+            "run_plugin_agent",
+            return_value=(
+                [{"type": "state_update", "data": {"world": {"weather": "rain"}}}],
+                {"plugins_run": ["state"]},
+            ),
         ),
         patch.object(
             svc_mod,
@@ -441,11 +452,12 @@ async def test_process_message_rolls_back_stage_b_when_block_handler_fails():
     svc_mod.engine = original_engine
 
     error_events = [e for e in events if e["type"] == "error"]
-    assert len(error_events) == 1
-    assert "回合状态保存失败" in error_events[0]["content"]
+    assert error_events == []
+    assert any(e["type"] == "done" for e in events)
+    assert any(e["type"] == "turn_end" for e in events)
 
     async with AsyncSession(test_engine) as session:
-        from backend.app.models.character import Character
+        from backend.app.core.game_state import GameStateManager
         from backend.app.models.message import Message
         from backend.app.models.session import GameSession
 
@@ -455,17 +467,16 @@ async def test_process_message_rolls_back_stage_b_when_block_handler_fails():
             .order_by(Message.created_at.asc())  # type: ignore[arg-type]
         )
         messages = list((await session.exec(msg_stmt)).all())
-        # Stage A user message may commit, stage B should be rolled back.
-        assert [m.role for m in messages] == ["user"]
-
-        chars_stmt = select(Character).where(Character.session_id == session_id)
-        chars = list((await session.exec(chars_stmt)).all())
-        assert chars == []
+        assert [m.role for m in messages] == ["user", "assistant"]
 
         stored_session = await session.get(GameSession, session_id)
         assert stored_session is not None
         game_state = json.loads(stored_session.game_state_json or "{}")
-        assert int(game_state.get("turn_count", 0) or 0) == 0
+        assert int(game_state.get("turn_count", 0) or 0) == 1
+
+        state_mgr = GameStateManager(session)
+        world = await state_mgr.get_session_world_state(session_id)
+        assert "weather" not in world
 
     await test_engine.dispose()
 
@@ -524,7 +535,7 @@ async def test_process_message_yields_token_usage_event():
             svc_mod, "completion_with_config", side_effect=mock_completion_with_config
         ),
         patch.object(
-            svc_mod, "get_enabled_plugins", new_callable=AsyncMock, return_value=[]
+            svc_mod, "run_plugin_agent", return_value=([], {})
         ),
         patch.object(
             svc_mod, "count_message_tokens", return_value=100
@@ -612,7 +623,7 @@ async def test_process_message_token_usage_uses_estimates_when_no_actual():
             svc_mod, "completion_with_config", side_effect=mock_completion_with_config
         ),
         patch.object(
-            svc_mod, "get_enabled_plugins", new_callable=AsyncMock, return_value=[]
+            svc_mod, "run_plugin_agent", return_value=([], {})
         ),
         patch.object(
             svc_mod, "count_message_tokens", return_value=200
@@ -640,5 +651,78 @@ async def test_process_message_token_usage_uses_estimates_when_no_actual():
     # completion_tokens should fall back to len("Short reply") // 4 = 2 (at least 1)
     assert data["completion_tokens"] == max(1, len("Short reply") // 4)
     assert data["context_usage"] == round(200 / 2000, 4)
+
+    await test_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_process_message_counts_plugin_execution_without_blocks():
+    """Execution counters should increase even when a plugin emits no blocks."""
+    test_engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    import backend.app.models  # noqa: F401
+
+    async with test_engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+
+    async with AsyncSession(test_engine) as session:
+        from backend.app.models.project import Project
+        from backend.app.models.session import GameSession
+
+        project = Project(name="Test", world_doc="# Test World")
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+
+        game_session = GameSession(project_id=project.id)
+        session.add(game_session)
+        await session.commit()
+        await session.refresh(game_session)
+        session_id = game_session.id
+
+    async def mock_completion_with_config(messages, config, stream=False, **kwargs):
+        async def gen():
+            yield "Narration."
+
+        return gen()
+
+    import backend.app.services.chat_service as svc_mod
+
+    original_engine = svc_mod.engine
+    svc_mod.engine = test_engine
+
+    with (
+        patch.object(
+            svc_mod, "completion_with_config", side_effect=mock_completion_with_config
+        ),
+        patch.object(
+            svc_mod,
+            "run_plugin_agent",
+            side_effect=[
+                ([], {"plugins_executed": ["guide"], "plugins_run": []}),
+                ([], {"plugins_executed": ["guide"], "plugins_run": []}),
+            ],
+        ),
+    ):
+        async for _ in svc_mod.process_message(session_id, "turn1"):
+            pass
+        async for _ in svc_mod.process_message(session_id, "turn2"):
+            pass
+
+    svc_mod.engine = original_engine
+
+    async with AsyncSession(test_engine) as session:
+        from backend.app.models.session import GameSession
+
+        stored = await session.get(GameSession, session_id)
+        assert stored is not None
+        game_state = json.loads(stored.game_state_json or "{}")
+        execution_counts = game_state.get("plugin_execution_counts", {})
+        legacy_counts = game_state.get("plugin_trigger_counts", {})
+        assert execution_counts.get("guide") == 2
+        assert legacy_counts.get("guide") == 2
 
     await test_engine.dispose()

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import uuid
 from typing import Any, Protocol
 
 from loguru import logger
@@ -185,7 +184,11 @@ async def _session_exists(session_id: str) -> bool:
 
 
 async def _dispatch_incoming_message(
-    sink: EventSink, session_id: str, data: dict[str, Any],
+    sink: EventSink,
+    session_id: str,
+    data: dict[str, Any],
+    *,
+    transport_mode: str = "websocket",
 ) -> None:
     msg_type = str(data.get("type", "message"))
     llm_overrides = _extract_llm_overrides(data)
@@ -201,6 +204,20 @@ async def _dispatch_incoming_message(
                 sink, session_id, content,
                 llm_overrides=llm_overrides, image_overrides=image_overrides,
             )
+            # HTTP fallback returns a finite event list. If a patched/internal
+            # generator forgets terminal events, synthesize a minimal done event
+            # so frontend streaming state can settle.
+            if transport_mode == "http":
+                events = getattr(sink, "events", None)
+                if isinstance(events, list):
+                    has_terminal = any(
+                        isinstance(evt, dict) and evt.get("type") in {"done", "error", "turn_end"}
+                        for evt in events
+                    )
+                    if not has_terminal:
+                        done_event = {"type": "done", "content": ""}
+                        _add_log(session_id, "send", done_event)
+                        await sink.send_json(done_event)
         elif msg_type == "init_game":
             await _handle_init_game(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
         elif msg_type == "form_submit":
@@ -212,7 +229,14 @@ async def _dispatch_incoming_message(
         elif msg_type == "confirm":
             await _handle_confirm(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
         elif msg_type == "block_response":
-            await _handle_block_response(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
+            await _handle_block_response(
+                sink,
+                session_id,
+                data,
+                llm_overrides=llm_overrides,
+                image_overrides=image_overrides,
+                transport_mode=transport_mode,
+            )
         elif msg_type == "force_trigger":
             await _handle_force_trigger(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
         elif msg_type == "generate_message_image":
@@ -236,7 +260,12 @@ async def chat_command(session_id: str, data: dict[str, Any]):
     _add_log(session_id, "recv", payload)
 
     collector = HttpEventCollector()
-    await _dispatch_incoming_message(collector, session_id, payload)
+    await _dispatch_incoming_message(
+        collector,
+        session_id,
+        payload,
+        transport_mode="http",
+    )
     return {"events": collector.events}
 
 
@@ -265,7 +294,12 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
                 continue
 
             _add_log(session_id, "recv", data)
-            await _dispatch_incoming_message(websocket, session_id, data)
+            await _dispatch_incoming_message(
+                websocket,
+                session_id,
+                data,
+                transport_mode="websocket",
+            )
 
     except (WebSocketDisconnect, asyncio.CancelledError):
         logger.info("WebSocket disconnected for session {}", session_id)

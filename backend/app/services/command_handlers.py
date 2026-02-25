@@ -455,6 +455,7 @@ async def _handle_block_response(
     data: dict,
     llm_overrides: dict[str, str] | None = None,
     image_overrides: dict[str, str] | None = None,
+    transport_mode: str = "websocket",
 ) -> None:
     """Handle a user's response to an interactive block (requires_response=true)."""
     from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
@@ -478,6 +479,7 @@ async def _handle_block_response(
             await _handle_story_image_regen(
                 sink, db, game_session, session_id, response_data, image_overrides,
                 llm_overrides=llm_overrides,
+                transport_mode=transport_mode,
             )
             return
 
@@ -510,8 +512,13 @@ async def _handle_story_image_regen(
     response_data: dict,
     image_overrides: dict[str, str] | None = None,
     llm_overrides: dict[str, str] | None = None,
+    transport_mode: str = "websocket",
 ) -> None:
-    """Handle story image regeneration — non-blocking, spawns background task."""
+    """Handle story image regeneration.
+
+    WebSocket mode runs regeneration in background.
+    HTTP fallback runs synchronously so completion event is returned in one response.
+    """
     image_id = str(response_data.get("image_id") or "").strip()
     reason = str(response_data.get("reason") or "").strip()
 
@@ -542,21 +549,22 @@ async def _handle_story_image_regen(
     _add_log(session_id, "send", turn_end_event)
     await sink.send_json(turn_end_event)
 
-    # Spawn background task for actual generation
-    asyncio.create_task(
-        _background_regen_image(
-            sink,
-            project_id=game_session.project_id,
-            session_id=session_id,
-            turn_id=turn_id,
-            regen_block_id=regen_block_id,
-            image_id=image_id,
-            reason=reason,
-            response_data=response_data,
-            image_overrides=image_overrides,
-            llm_overrides=llm_overrides,
-        )
+    regen_coro = _background_regen_image(
+        sink,
+        project_id=game_session.project_id,
+        session_id=session_id,
+        turn_id=turn_id,
+        regen_block_id=regen_block_id,
+        image_id=image_id,
+        reason=reason,
+        response_data=response_data,
+        image_overrides=image_overrides,
+        llm_overrides=llm_overrides,
     )
+    if transport_mode == "http":
+        await regen_coro
+    else:
+        asyncio.create_task(regen_coro)
 
 
 async def _background_regen_image(
