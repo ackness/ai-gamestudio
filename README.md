@@ -98,15 +98,14 @@ plugins/
 - 必需字段：`name/version/type/required/description`
 - 插件加载不走 fallback
 
-### Plugin Agent 工具（固定 7 个）
+### Plugin Agent 工具（固定 6 个）
 
-1. `update_and_emit`
-2. `emit_block`
-3. `db_read`
-4. `db_log_append`
-5. `db_log_query`
-6. `db_graph_add`
-7. `execute_script`
+1. `emit` — 统一的 block 输出工具（通过 `items` 数组批量输出）
+2. `db_read`
+3. `db_log_append`
+4. `db_log_query`
+5. `db_graph_add`
+6. `execute_script`
 
 ## 测试与验证
 

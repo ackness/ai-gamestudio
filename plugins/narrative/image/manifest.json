@@ -12,15 +12,24 @@
   "dependencies": [
     "database"
   ],
+  "trigger": {
+    "mode": "manual",
+    "mode_setting_key": "emit_mode",
+    "mode_map": {
+      "manual": "manual",
+      "key_moments": "always",
+      "every_turn": "always"
+    }
+  },
   "prompt": {
     "position": "pre-response",
     "priority": 92,
     "template": "prompts/story-image-instruction.md"
   },
   "capabilities": {},
-  "blocks": {
+  "outputs": {
     "story_image": {
-      "instruction": "When the current moment should be visualized, append:\n```json:story_image\n{\"title\": \"Scene title\", \"story_background\": \"Context.\", \"prompt\": \"Current frame.\", \"continuity_notes\": \"Visual constraints.\"}\n```\nRules: story_background required. prompt describes current frame only. Include reference_image_ids for continuity.",
+      "instruction": "仅在图像触发策略允许时，用 `emit.items` 输出 `story_image`。`data.story_background` 与 `data.prompt` 必填；`prompt` 描述当前画面，必要时附 `reference_image_ids` 保持连续性。",
       "schema": {
         "type": "object",
         "properties": {
@@ -148,7 +157,7 @@
         "emit_mode": {
           "type": "enum",
           "label": "Image Emission Mode",
-          "description": "When to emit story_image blocks.",
+          "description": "When to emit story_image items.",
           "default": "manual",
           "options": [
             {

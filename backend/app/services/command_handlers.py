@@ -9,6 +9,7 @@ from typing import Any
 from loguru import logger
 
 from backend.app.core.game_state import GameStateManager
+from backend.app.core.json_utils import safe_json_loads
 from backend.app.db.engine import engine
 from backend.app.models.session import GameSession
 
@@ -371,8 +372,16 @@ async def _handle_character_edit(
                 "id": char.id,
                 "name": char.name,
                 "role": char.role,
-                "attributes": json.loads(char.attributes_json) if char.attributes_json else {},
-                "inventory": json.loads(char.inventory_json) if char.inventory_json else [],
+                "attributes": safe_json_loads(
+                    char.attributes_json,
+                    fallback={},
+                    context=f"Character attributes ({char.id})",
+                ),
+                "inventory": safe_json_loads(
+                    char.inventory_json,
+                    fallback=[],
+                    context=f"Character inventory ({char.id})",
+                ),
             }]
         },
     })

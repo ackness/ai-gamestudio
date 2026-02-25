@@ -14,9 +14,9 @@
     "template": "prompts/codex-context.md"
   },
   "capabilities": {},
-  "blocks": {
+  "outputs": {
     "codex_entry": {
-      "instruction": "当玩家发现新知识、遭遇新怪物、获得新物品、到达新地点或了解到重要传说时，在回复末尾附加：\n```json:codex_entry\n{\"action\": \"unlock\", \"category\": \"monster\", \"entry_id\": \"goblin\", \"title\": \"哥布林\", \"content\": \"矮小的绿皮生物...\", \"tags\": [\"敌人\", \"弱小\"]}\n```\naction: unlock/update。category: monster/item/location/lore/character。",
+      "instruction": "当玩家获得新知识时，用 `emit.items` 输出 `codex_entry`。`action` 为 `unlock/update`；`category` 为 `monster/item/location/lore/character`。避免重复记录已知条目。",
       "schema": {
         "type": "object",
         "properties": {
@@ -67,8 +67,9 @@
       "handler": {
         "actions": [
           {
-            "type": "storage_write",
-            "key": "codex-entries"
+            "type": "storage_list_upsert",
+            "key": "codex-entries",
+            "match_field": "entry_id"
           },
           {
             "type": "emit_event",

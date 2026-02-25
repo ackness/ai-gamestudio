@@ -37,6 +37,24 @@ class TestManifestIntegration:
             assert data["schema_version"] == "1.0"
             assert data["name"] == manifest.parent.name
 
+    def test_all_declared_outputs_define_schema(self):
+        for manifest in Path(PLUGINS_DIR).glob("**/manifest.json"):
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            outputs = data.get("outputs", {})
+            if not isinstance(outputs, dict):
+                continue
+            for output_type, output_cfg in outputs.items():
+                assert isinstance(output_cfg, dict), (
+                    f"{manifest}: outputs.{output_type} must be an object"
+                )
+                assert "schema" in output_cfg, (
+                    f"{manifest}: outputs.{output_type} must define schema"
+                )
+                schema = output_cfg.get("schema")
+                assert isinstance(schema, (dict, str)), (
+                    f"{manifest}: outputs.{output_type}.schema must be object or path"
+                )
+
     def test_discover_includes_capabilities(self, engine: PluginEngine):
         plugins = engine.discover(PLUGINS_DIR)
         combat = next(p for p in plugins if p["name"] == "combat")
@@ -64,6 +82,76 @@ class TestPromptInjectionConsistency:
         char = [i for i in injections if i["position"] == "character"]
         assert len(char) == 1
         assert char[0]["priority"] == 10
+
+    def test_all_builtin_plugin_templates_render_without_jinja_markers(
+        self,
+        engine: PluginEngine,
+    ):
+        all_plugins = sorted(CURRENT_PLUGIN_IDS)
+        context = {
+            "project": {"id": "proj", "name": "Demo", "description": "test"},
+            "player": {
+                "id": "player-1",
+                "name": "Hero",
+                "role": "player",
+                "description": "Brave adventurer",
+                "attributes": {"hp": 100},
+                "inventory": ["sword"],
+            },
+            "npcs": [{"id": "npc-1", "name": "Guide", "role": "npc"}],
+            "characters": [
+                {"id": "player-1", "name": "Hero", "role": "player"},
+                {"id": "npc-1", "name": "Guide", "role": "npc"},
+            ],
+            "current_scene": {"id": "scene-1", "name": "Tavern", "description": "Busy and warm"},
+            "scene_npcs": [{"character_id": "npc-1", "name": "Guide", "role_in_scene": "host"}],
+            "active_events": [
+                {
+                    "id": "evt-1",
+                    "event_type": "quest",
+                    "name": "Find the map",
+                    "description": "A clue awaits",
+                    "status": "active",
+                }
+            ],
+            "world_state": {"project_name": "Demo"},
+            "compression_summary": "Earlier the party reached town.",
+            "archive": {"has_snapshot": False},
+            "memories": [{"timestamp": "t1", "content": "Met the innkeeper"}],
+            "story_images": [{"image_id": "img-1", "title": "Tavern", "prompt": "A cozy tavern"}],
+            "runtime_settings": {
+                "guide": {"guide_mode": "guide"},
+                "image": {"emit_mode": "manual"},
+                "state": {"narrative_tone": "neutral"},
+                "event": {"quest_complexity": "standard", "show_rewards": "preview"},
+                "codex": {"codex_detail": "detailed"},
+                "social": {"relationship_depth": "rich", "reputation_visibility": "fuzzy"},
+            },
+            "storage": {
+                "flat": {
+                    "active-effects": [],
+                    "active-quests": [{"id": "q1", "name": "Find map"}],
+                    "faction-standings": {},
+                },
+                "by_plugin": {
+                    "codex": {"codex-entries": []},
+                    "social": {"npc-relationships": []},
+                    "event": {"active-quests": [{"id": "q1", "name": "Find map"}]},
+                    "combat": {"active-effects": []},
+                },
+            },
+            "storage_by_plugin": {
+                "codex": {"codex-entries": []},
+                "social": {"npc-relationships": []},
+            },
+        }
+
+        injections = engine.get_prompt_injections(all_plugins, context=context, plugins_dir=PLUGINS_DIR)
+        assert injections, "expected prompt injections for builtin plugins"
+        for injection in injections:
+            content = str(injection.get("content", ""))
+            assert "{{" not in content
+            assert "{%" not in content
 
 
 class TestBlockDeclarationConsistency:

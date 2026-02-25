@@ -5,6 +5,11 @@ import type {
 import { StorageFactory } from './settingsStorage'
 import { idbGetSession, idbGetProject } from './localDb'
 import * as api from './api'
+import {
+  type OutputEnvelope,
+  normalizeBlockLike,
+  normalizeServerEvent,
+} from './outputContract.js'
 
 type ChunkCallback = (content: string) => void
 type DoneCallback = (fullContent: string, turnId: string, hasBlocks: boolean, messageId: string, rawContent: string) => void
@@ -14,6 +19,7 @@ type BlockCallback = (
   data: unknown,
   turnId: string,
   blockId: string,
+  output?: OutputEnvelope,
 ) => void
 type ErrorCallback = (error: string) => void
 type PhaseChangeCallback = (phase: string) => void
@@ -24,7 +30,15 @@ type NotificationCallback = (
   blockId: string,
 ) => void
 type TurnEndCallback = (turnId: string) => void
-type MessageBlocksUpdatedCallback = (messageId: string, blocks: { type: string; data: unknown; block_id?: string }[]) => void
+type MessageBlocksUpdatedCallback = (
+  messageId: string,
+  blocks: {
+    type: string
+    data: unknown
+    block_id?: string
+    output?: OutputEnvelope
+  }[],
+) => void
 type PluginSummaryCallback = (data: { rounds: number; tool_calls: string[]; blocks_emitted: string[] }) => void
 type PluginProgressCallback = (data: { round: number; tool_calls: string[]; blocks_so_far: string[] }) => void
 type MessageImageCallback = (messageId: string, data: Record<string, unknown>) => void
@@ -273,7 +287,13 @@ export class GameWebSocket {
   }
 
   private handleServerEvent(data: Record<string, unknown>) {
-    const type = typeof data.type === 'string' ? data.type : ''
+    const {
+      type,
+      output,
+      blockId,
+      normalizedPayload,
+      payload,
+    } = normalizeServerEvent(data)
     switch (type) {
       case 'chunk':
         this.onChunk(String(data.content || ''))
@@ -282,11 +302,11 @@ export class GameWebSocket {
         this.onDone(String(data.content || ''), String(data.turn_id || ''), !!data.has_blocks, String(data.message_id || ''), String(data.raw_content || data.content || ''))
         break
       case 'state_update':
-        this.onStateUpdate((data.data as Record<string, unknown>) || {})
-        this.onBlock('state_update', data.data, String(data.turn_id || ''), String(data.block_id || ''))
+        this.onStateUpdate((normalizedPayload as Record<string, unknown>) || {})
+        this.onBlock('state_update', payload, String(data.turn_id || ''), blockId, output)
         break
       case 'phase_change': {
-        const phaseData = data.data
+        const phaseData = normalizedPayload
         const phase =
           phaseData && typeof phaseData === 'object' && !Array.isArray(phaseData)
             ? String((phaseData as Record<string, unknown>).phase || '')
@@ -295,16 +315,16 @@ export class GameWebSocket {
         break
       }
       case 'scene_update':
-        this.onSceneUpdate((data.data as Record<string, unknown>) || {})
-        this.onBlock('scene_update', data.data, String(data.turn_id || ''), String(data.block_id || ''))
+        this.onSceneUpdate((normalizedPayload as Record<string, unknown>) || {})
+        this.onBlock('scene_update', payload, String(data.turn_id || ''), blockId, output)
         break
       case 'notification':
         this.onNotification(
-          (data.data as Record<string, unknown>) || {},
+          (normalizedPayload as Record<string, unknown>) || {},
           String(data.turn_id || ''),
-          String(data.block_id || ''),
+          blockId,
         )
-        this.onBlock('notification', data.data, String(data.turn_id || ''), String(data.block_id || ''))
+        this.onBlock('notification', payload, String(data.turn_id || ''), blockId, output)
         break
       case 'plugin_progress': {
         const progressData = (data.data || {}) as { round: number; tool_calls: string[]; blocks_so_far: string[] }
@@ -319,14 +339,23 @@ export class GameWebSocket {
       case 'message_blocks_updated':
         this.onMessageBlocksUpdated(
           String(data.message_id || ''),
-          Array.isArray(data.blocks) ? (data.blocks as { type: string; data: unknown; block_id?: string }[]) : [],
+          Array.isArray(data.blocks)
+            ? data.blocks
+              .map((item, idx) =>
+                normalizeBlockLike(
+                  item as { type?: unknown; data?: unknown; block_id?: unknown; output?: unknown },
+                  `${String(data.message_id || '')}:${idx}`,
+                ),
+              )
+              .filter((item): item is { type: string; data: unknown; block_id?: string; output?: OutputEnvelope } => !!item)
+            : [],
         )
         break
       case 'turn_end':
         this.onTurnEnd(String(data.turn_id || ''))
         break
       case 'message_image':
-        this.onMessageImage(String(data.message_id || ''), (data.data as Record<string, unknown>) || {})
+        this.onMessageImage(String(data.message_id || ''), (normalizedPayload as Record<string, unknown>) || {})
         break
       case 'message_image_loading':
         this.onMessageImageLoading(String(data.message_id || ''))
@@ -338,8 +367,8 @@ export class GameWebSocket {
         this.onTokenUsage((data.data as Record<string, unknown>) || {})
         break
       default:
-        if (type && data.data !== undefined) {
-          this.onBlock(type, data.data, String(data.turn_id || ''), String(data.block_id || ''))
+        if (type && normalizedPayload !== undefined) {
+          this.onBlock(type, payload, String(data.turn_id || ''), blockId, output)
         }
     }
   }

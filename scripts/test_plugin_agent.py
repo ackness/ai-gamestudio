@@ -21,7 +21,6 @@ import json
 import sys
 import time
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +38,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
 from backend.app.core.config import Settings
 from backend.app.core.game_db import GameDB
-from backend.app.core.plugin_engine import PluginEngine
+from backend.app.core.block_validation import validate_block_data
+from backend.app.core.plugin_engine import BlockDeclaration, PluginEngine
 from backend.app.core.plugin_tools import get_all_tools
 from backend.app.models.game_kv import GameKV  # noqa: F401 — table registration
 from backend.app.models.game_graph import GameGraph  # noqa: F401
@@ -134,8 +134,7 @@ SYSTEM_PROMPT = """\
 
 ## 规则
 - 当前游戏状态已在上下文中，无需 db_read 查询已有数据
-- 有状态变化时用 update_and_emit 一次完成 DB 写入 + 前端通知
-- 纯展示插件（如 guide）直接用 emit_block
+- 优先一次调用 emit 同时完成写库（writes/logs）和结构化输出（items）
 - 叙事中没有相关变化则直接结束，不要臆造
 """
 
@@ -152,6 +151,22 @@ def resolve_plugin_config(settings: Settings, args: argparse.Namespace) -> dict[
     api_key = args.api_key or settings.PLUGIN_LLM_API_KEY or settings.LLM_API_KEY
     api_base = args.api_base or settings.PLUGIN_LLM_API_BASE or settings.LLM_API_BASE
     return {"model": model, "api_key": api_key, "api_base": api_base}
+
+
+def sanitize_plugin_content(content: str) -> str:
+    """Drop legacy block/JSON-output wording to enforce tool-first testing."""
+    lines: list[str] = []
+    for raw in content.splitlines():
+        lower = raw.lower()
+        if "json:" in lower:
+            continue
+        if "update_and_emit" in lower:
+            continue
+        if "emit_block" in lower:
+            continue
+        lines.append(raw)
+    text = "\n".join(lines).strip()
+    return text or "遵循插件目标；所有结构化输出通过 emit.items 产生。"
 
 
 def discover_plugins(plugins_dir: str) -> list[dict]:
@@ -173,18 +188,133 @@ def discover_plugins(plugins_dir: str) -> list[dict]:
     return result
 
 
+def _example_string_for_key(key: str) -> str:
+    mapping = {
+        "action": "create",
+        "character_id": "new",
+        "content": "提示内容",
+        "description": "简短描述",
+        "event_type": "world",
+        "level": "info",
+        "name": "名称",
+        "prompt": "请选择下一步行动",
+        "quest_id": "quest_001",
+        "title": "标题",
+        "type": "single",
+    }
+    return mapping.get(key, "text")
+
+
+def _build_example_from_schema(schema: dict[str, Any] | None, *, key: str = "") -> Any:
+    if not isinstance(schema, dict):
+        return {}
+
+    enum_values = schema.get("enum")
+    if isinstance(enum_values, list) and enum_values:
+        return enum_values[0]
+
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        schema_type = next((t for t in schema_type if isinstance(t, str)), None)
+
+    if schema_type == "string":
+        return _example_string_for_key(key)
+    if schema_type == "integer":
+        return 1
+    if schema_type == "number":
+        return 1
+    if schema_type == "boolean":
+        return True
+    if schema_type == "array":
+        min_items = schema.get("minItems")
+        count = int(min_items) if isinstance(min_items, int) and min_items > 0 else 1
+        count = max(1, min(count, 2))
+        item_schema = schema.get("items") if isinstance(schema.get("items"), dict) else {}
+        if key == "options":
+            return ["选项A", "选项B"][: max(2, count)]
+        if key == "editable_fields":
+            return ["name"]
+        return [
+            _build_example_from_schema(item_schema, key=key[:-1] if key.endswith("s") else key)
+            for _ in range(count)
+        ]
+    if schema_type == "object":
+        props = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+        required = schema.get("required") if isinstance(schema.get("required"), list) else []
+        keys: list[str] = [str(k) for k in required if isinstance(k, str)]
+        if not keys:
+            keys = [str(k) for k in list(props.keys())[:2]]
+        result: dict[str, Any] = {}
+        for prop_key in keys:
+            child_schema = props.get(prop_key) if isinstance(props.get(prop_key), dict) else {}
+            result[prop_key] = _build_example_from_schema(child_schema, key=prop_key)
+        return result
+    return {}
+
+
+def _build_emit_example(output_type: str, output_cfg: dict[str, Any]) -> str:
+    schema = output_cfg.get("schema") if isinstance(output_cfg.get("schema"), dict) else {}
+    data_example = _build_example_from_schema(schema, key="data")
+    if not isinstance(data_example, dict):
+        data_example = {}
+    payload = {"items": [{"type": output_type, "data": data_example}]}
+    return "emit(" + json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + ")"
+
+
+def _build_output_declarations(
+    outputs: dict[str, Any],
+    plugin_name: str,
+) -> dict[str, BlockDeclaration]:
+    declarations: dict[str, BlockDeclaration] = {}
+    for output_type, output_cfg in outputs.items():
+        if not isinstance(output_cfg, dict):
+            continue
+        raw_schema = output_cfg.get("schema")
+        schema = raw_schema if isinstance(raw_schema, dict) else None
+        schema_ref = raw_schema if isinstance(raw_schema, str) else None
+        declarations[str(output_type)] = BlockDeclaration(
+            block_type=str(output_type),
+            plugin_name=plugin_name,
+            instruction=output_cfg.get("instruction"),
+            schema=schema,
+            schema_ref=schema_ref,
+            handler=output_cfg.get("handler") if isinstance(output_cfg.get("handler"), dict) else None,
+            ui=output_cfg.get("ui") if isinstance(output_cfg.get("ui"), dict) else None,
+            requires_response=bool(output_cfg.get("requires_response", False)),
+            trigger=output_cfg.get("trigger") if isinstance(output_cfg.get("trigger"), dict) else None,
+        )
+    return declarations
+
+
 def build_block_instructions(metadata: dict) -> str:
-    """Extract block format instructions from manifest metadata."""
-    blocks = metadata.get("blocks", {})
-    if not blocks or not isinstance(blocks, dict):
+    """Build concise tool-first output hints from manifest metadata."""
+    outputs = metadata.get("outputs")
+    if not outputs or not isinstance(outputs, dict):
         return ""
     parts: list[str] = []
-    for block_type, decl in blocks.items():
+    for output_type, decl in outputs.items():
         if not isinstance(decl, dict):
             continue
-        instruction = decl.get("instruction", "")
-        if instruction:
-            parts.append(f"### {block_type}\n{instruction}")
+        schema = decl.get("schema")
+        schema_summary = "data 必须是对象。"
+        if isinstance(schema, dict):
+            props = schema.get("properties")
+            required = [str(k) for k in (schema.get("required") or []) if isinstance(k, str)]
+            keys = [str(k) for k in props.keys()][:6] if isinstance(props, dict) else []
+            schema_summary = (
+                f"required={', '.join(required) if required else '无'}; "
+                f"keys={', '.join(keys) if keys else '无'}"
+            )
+        parts.append(
+            "\n".join(
+                [
+                    f"### {output_type}",
+                    f"- schema: {schema_summary}",
+                    f"- 调用模板: emit({{\"items\":[{{\"type\":\"{output_type}\",\"data\":{{...}}}}]}})",
+                    f"- 简例: {_build_emit_example(output_type, decl)}",
+                ]
+            )
+        )
     return "\n\n".join(parts)
 
 
@@ -206,21 +336,79 @@ async def setup_test_db(db_path: str) -> Any:
 # Block validation
 # ---------------------------------------------------------------------------
 
-def validate_block(block_type: str, data: Any) -> list[str]:
-    """Basic validation of emitted blocks."""
-    errors: list[str] = []
-    if not isinstance(data, dict):
-        errors.append(f"{block_type}: data is not a dict")
-        return errors
-    if block_type == "character_sheet" and not data.get("name"):
-        errors.append("character_sheet: missing required 'name'")
-    elif block_type == "scene_update" and data.get("action") == "move" and not data.get("name"):
-        errors.append("scene_update: missing 'name' when action=move")
-    elif block_type == "state_update" and not data.get("characters") and not data.get("world"):
-        errors.append("state_update: must contain 'characters' or 'world'")
-    elif block_type == "notification" and not data.get("content"):
-        errors.append("notification: missing 'content'")
+def validate_block(
+    block_type: str,
+    data: Any,
+    declaration: BlockDeclaration | None = None,
+) -> list[str]:
+    """Validation of emitted blocks using runtime schema + built-in semantics."""
+    errors = validate_block_data(block_type, data, declaration)
+
+    if block_type == "character_sheet" and isinstance(data, dict):
+        editable_fields = data.get("editable_fields")
+        if editable_fields is not None:
+            if not isinstance(editable_fields, list):
+                errors.append("character_sheet.data.editable_fields must be an array")
+            else:
+                normalized = {
+                    str(field or "").strip()
+                    for field in editable_fields
+                    if str(field or "").strip()
+                }
+                if "name" not in normalized:
+                    errors.append("character_sheet.data.editable_fields must include 'name'")
+
+    if block_type in {"choice", "choices"} and isinstance(data, dict):
+        options = data.get("options")
+        if not isinstance(options, list):
+            errors.append("choices.data.options must be an array")
+            return errors
+        if len(options) < 2:
+            errors.append("choices.data.options must contain at least 2 separate options")
+        for idx, option in enumerate(options):
+            if not isinstance(option, str) or not option.strip():
+                errors.append(f"choices.data.options[{idx}] must be a non-empty string")
+                continue
+            text = option.strip()
+            if "\n" in text or "\r" in text:
+                errors.append(
+                    f"choices.data.options[{idx}] must be one-line plain text; split options into separate array items"
+                )
+            if " / " in text:
+                errors.append(
+                    f"choices.data.options[{idx}] appears to merge multiple options; one option per array item"
+                )
+            if "**" in text or "`" in text:
+                errors.append(
+                    f"choices.data.options[{idx}] must be plain text without markdown formatting"
+                )
     return errors
+
+
+def _tool_error_payload(
+    *,
+    tool: str,
+    code: str,
+    message: str,
+    details: str | None = None,
+    retryable: bool = True,
+) -> dict[str, Any]:
+    text = f"TOOL_ERROR [{tool}] {code}: {message}"
+    if details:
+        text += f" | details: {details}"
+    if retryable:
+        text += " | action: fix arguments/state and retry this tool call."
+    return {
+        "ok": False,
+        "error": {
+            "tool": tool,
+            "code": code,
+            "message": message,
+            "details": details,
+            "retryable": retryable,
+        },
+        "text": text,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +423,7 @@ async def execute_tool(
     plugins_dir: str,
     blocks: list[dict],
     errors: list[str],
+    warnings: list[str],
     verbose: bool = False,
 ) -> dict:
     """Execute a tool call against real GameDB. Returns tool result."""
@@ -243,7 +432,13 @@ async def execute_tool(
         args = json.loads(tool_call.function.arguments)
     except json.JSONDecodeError:
         args = {}
-        errors.append(f"Invalid JSON args for {name}")
+        warnings.append(f"{name}: invalid JSON args")
+        return _tool_error_payload(
+            tool=name,
+            code="INVALID_ARGUMENTS",
+            message="arguments must be valid JSON object",
+            retryable=True,
+        )
 
     if verbose:
         args_str = json.dumps(args, ensure_ascii=False)
@@ -252,30 +447,135 @@ async def execute_tool(
         print(f"    tool: {name}({args_str})")
 
     try:
-        if name == "emit_block":
-            return _handle_emit(args, blocks, errors)
-        if name == "update_and_emit":
-            return await _handle_update_and_emit(args, game_db, blocks, errors)
+        if name == "emit":
+            return await _handle_emit(
+                args,
+                game_db,
+                blocks,
+                errors,
+                warnings,
+                plugin_name=plugin_name,
+                pe=pe,
+                plugins_dir=plugins_dir,
+            )
         if name == "db_read":
             return await _handle_db_read(args, game_db)
         if name.startswith("db_"):
             return await _handle_db(name, args, game_db)
-        return {"error": f"Unknown tool: {name}"}
+        errors.append(f"Unknown tool: {name}")
+        return _tool_error_payload(
+            tool=name,
+            code="UNKNOWN_TOOL",
+            message=f"unknown tool '{name}'",
+            retryable=False,
+        )
     except Exception as exc:
-        errors.append(f"Tool {name} error: {exc}")
-        return {"error": str(exc)}
+        warnings.append(f"Tool {name} error: {exc}")
+        return _tool_error_payload(
+            tool=name,
+            code="EXECUTION_FAILED",
+            message=str(exc),
+            details=type(exc).__name__,
+            retryable=True,
+        )
 
 
-def _handle_emit(args: dict, blocks: list[dict], errors: list[str]) -> dict:
-    block_type = args.get("type", "unknown")
-    if block_type.startswith("json:"):
-        block_type = block_type[5:]
-    data = args.get("data", {})
-    block = {"type": block_type, "data": data}
-    blocks.append(block)
-    errs = validate_block(block_type, data)
-    errors.extend(errs)
-    return {"status": "emitted", "type": block_type}
+async def _handle_emit(
+    args: dict,
+    db: GameDB,
+    blocks: list[dict],
+    errors: list[str],
+    warnings: list[str],
+    *,
+    plugin_name: str,
+    pe: PluginEngine,
+    plugins_dir: str,
+) -> dict:
+    writes = args.get("writes", [])
+    logs = args.get("logs", [])
+    items = args.get("items")
+    if not isinstance(items, list):
+        items = []
+
+    declared_output_types: set[str] = set()
+    declared_output_declarations: dict[str, BlockDeclaration] = {}
+    loaded = pe.load(plugin_name, plugins_dir)
+    if loaded:
+        metadata = loaded.get("metadata", {})
+        outputs = metadata.get("outputs") if isinstance(metadata, dict) else None
+        if isinstance(outputs, dict):
+            declared_output_types = {
+                str(name).strip()
+                for name in outputs.keys()
+                if str(name).strip()
+            }
+            declared_output_declarations = _build_output_declarations(outputs, plugin_name)
+
+    pending_blocks: list[dict[str, Any]] = []
+    strict_errors: list[str] = []
+    emitted_types: list[str] = []
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        block_type = str(item.get("type") or item.get("block_type") or "").strip() or "unknown"
+        if block_type.startswith("json:"):
+            block_type = block_type[5:]
+        if block_type not in declared_output_types:
+            continue
+        data = item.get("data", item.get("payload", {}))
+        if not isinstance(data, dict):
+            strict_errors.append(f"items[{idx}] ({block_type}): data must be an object")
+            continue
+        declaration = declared_output_declarations.get(block_type)
+        errs = validate_block(
+            block_type,
+            data,
+            declaration if isinstance(declaration, BlockDeclaration) else None,
+        )
+        if errs:
+            strict_errors.extend([f"items[{idx}] ({block_type}): {err}" for err in errs])
+            continue
+        pending_blocks.append({"type": block_type, "data": data})
+        emitted_types.append(block_type)
+
+    if strict_errors:
+        warnings.extend(strict_errors)
+        return {
+            "status": "error",
+            "errors": strict_errors,
+            "warnings": warnings,
+            "text": "EMIT_ERROR: " + "; ".join(strict_errors[:3]),
+        }
+
+    written = 0
+    for write in writes:
+        if not isinstance(write, dict):
+            continue
+        collection = str(write.get("collection") or "").strip()
+        key = str(write.get("key") or "").strip()
+        if not collection or not key or "value" not in write:
+            warnings.append("emit.writes item ignored: requires collection/key/value")
+            continue
+        await db.kv_set(collection, key, write["value"])
+        written += 1
+
+    for log_entry in logs:
+        if isinstance(log_entry, dict):
+            collection = str(log_entry.get("collection") or "").strip()
+            entry = log_entry.get("entry")
+            if not collection or not isinstance(entry, dict):
+                warnings.append("emit.logs item ignored: requires collection/object entry")
+                continue
+            await db.log_append(collection, entry)
+
+    blocks.extend(pending_blocks)
+
+    result: dict[str, Any] = {"status": "ok", "written": written}
+    if emitted_types:
+        result["emitted"] = emitted_types
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 async def _handle_db(name: str, args: dict, db: GameDB) -> Any:
@@ -288,41 +588,6 @@ async def _handle_db(name: str, args: dict, db: GameDB) -> Any:
     if name == "db_log_query":
         return await db.log_query(args["collection"], args.get("limit", 10))
     return {"error": f"Unknown db tool: {name}"}
-
-
-async def _handle_update_and_emit(args: dict, db: GameDB, blocks: list[dict], errors: list[str]) -> dict:
-    """Handle the composite update_and_emit tool."""
-    writes = args.get("writes", [])
-    written = 0
-    for w in writes:
-        await db.kv_set(w["collection"], w["key"], w["value"])
-        written += 1
-
-    logs = args.get("logs", [])
-    for log_entry in logs:
-        if isinstance(log_entry, dict):
-            await db.log_append(log_entry["collection"], log_entry["entry"])
-
-    emits = args.get("emits", [])
-
-    emitted_types: list[str] = []
-    for emit in emits:
-        if not isinstance(emit, dict):
-            continue
-        block_type = emit.get("type", "unknown")
-        if block_type.startswith("json:"):
-            block_type = block_type[5:]
-        data = emit.get("data", {})
-        block = {"type": block_type, "data": data}
-        blocks.append(block)
-        errs = validate_block(block_type, data)
-        errors.extend(errs)
-        emitted_types.append(block_type)
-
-    result: dict[str, Any] = {"status": "ok", "written": written}
-    if emitted_types:
-        result["emitted"] = emitted_types
-    return result
 
 
 async def _handle_db_read(args: dict, db: GameDB) -> Any:
@@ -355,9 +620,9 @@ async def test_one_plugin(
 
     # Build system prompt
     block_instructions = build_block_instructions(metadata)
-    system_parts = [SYSTEM_PROMPT, f"## 插件指令 ({name})\n{content}"]
+    system_parts = [SYSTEM_PROMPT, f"## 插件指令 ({name})\n{sanitize_plugin_content(content)}"]
     if block_instructions:
-        system_parts.append(f"## Block 格式参考\n{block_instructions}")
+        system_parts.append(f"## 结构化输出参考\n{block_instructions}")
 
     state_json = json.dumps(game_state, ensure_ascii=False, default=str)
     context_text = f"## 叙事文本\n{narrative}\n\n## 当前游戏状态\n{state_json}"
@@ -382,7 +647,7 @@ async def test_one_plugin(
 
     result: dict[str, Any] = {
         "plugin": name, "ok": False, "rounds": 0,
-        "tool_calls": [], "blocks": [], "errors": [],
+        "tool_calls": [], "blocks": [], "errors": [], "warnings": [],
         "db_ops": [], "latency_ms": 0,
     }
     blocks: list[dict] = []
@@ -426,7 +691,7 @@ async def test_one_plugin(
             for tc in message.tool_calls:
                 tool_result = await execute_tool(
                     tc, game_db, pe, name, plugins_dir,
-                    blocks, result["errors"], verbose,
+                    blocks, result["errors"], result["warnings"], verbose,
                 )
                 result["tool_calls"].append(tc.function.name)
                 messages.append({
@@ -471,8 +736,8 @@ def parse_args() -> argparse.Namespace:
                         help=f"跳过的插件名（--all 模式默认跳过: {', '.join(DEFAULT_SKIP)}）")
     parser.add_argument("--delay", type=float, default=0,
                         help="串行时为插件间延迟；并发时为任务启动错峰延迟（秒）")
-    parser.add_argument("-j", "--concurrency", type=positive_int, default=1,
-                        help="并发运行的插件数（默认: 1，1=串行）")
+    parser.add_argument("-j", "--concurrency", type=positive_int, default=None,
+                        help="并发运行的插件数（--all 默认自动并行，其他场景默认 1）")
     parser.add_argument("--list", action="store_true",
                         help="列出所有可用插件")
     parser.add_argument("--narrative", type=str,
@@ -527,6 +792,9 @@ def print_results(results: list[dict]) -> None:
         if r["errors"]:
             for err in r["errors"]:
                 print(f"  ERROR  : {err}")
+        if r.get("warnings"):
+            for warn in r["warnings"]:
+                print(f"  WARN   : {warn}")
 
         # Print block data details
         for b in r["blocks"]:
@@ -627,7 +895,13 @@ async def main() -> int:
             "game_state": p_game_state,
         })
 
-    # Run tests (sequential by default, parallel when --concurrency > 1)
+    # Default concurrency:
+    # - --all mode: parallel by default to reduce wall-clock test time
+    # - targeted mode: sequential by default
+    if args.concurrency is None:
+        args.concurrency = min(4, max(1, len(test_plan))) if run_all else 1
+
+    # Run tests (parallel when --concurrency > 1)
     ordered_results: list[dict[str, Any] | None] = [None] * len(test_plan)
 
     if args.concurrency <= 1:

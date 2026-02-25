@@ -96,11 +96,13 @@ class TestLoadManifest:
             "dependencies": ["core-blocks"],
             "prompt": {"position": "pre-response", "priority": 50},
             "capabilities": {"test.run": {"description": "test"}},
-            "blocks": {"test_block": {"instruction": "do something"}},
+            "outputs": {"test_block": {"instruction": "do something"}},
             "events": {"emit": ["test-done"], "listen": []},
             "storage": {"keys": ["data"]},
             "permissions": {"network": False},
             "extensions": {"custom": {"key": "value"}},
+            "hooks": ["post_model_output"],
+            "trigger": {"mode": "interval", "interval_turns": 2},
         })
         _write_manifest(plugin_dir, data)
         manifest = load_manifest(plugin_dir)
@@ -108,11 +110,14 @@ class TestLoadManifest:
         assert manifest.dependencies == ["core-blocks"]
         assert manifest.prompt == {"position": "pre-response", "priority": 50}
         assert "test.run" in manifest.capabilities
-        assert "test_block" in manifest.blocks
+        assert "test_block" in manifest.outputs
         assert manifest.events["emit"] == ["test-done"]
         assert manifest.storage["keys"] == ["data"]
         assert manifest.permissions["network"] is False
         assert manifest.extensions["custom"]["key"] == "value"
+        assert manifest.hooks == ["post_model_output"]
+        assert manifest.trigger["mode"] == "interval"
+        assert manifest.trigger["interval_turns"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +163,36 @@ class TestValidateManifest:
         errors = validate_manifest(data, "test-plugin")
         assert any("boolean" in e for e in errors)
 
+    def test_hooks_must_be_array(self):
+        data = _minimal_manifest()
+        data["hooks"] = "post_model_output"
+        errors = validate_manifest(data, "test-plugin")
+        assert any("hooks must be an array" in e for e in errors)
+
+    def test_hooks_reject_unknown_values(self):
+        data = _minimal_manifest()
+        data["hooks"] = ["post_model_output", "unknown_hook"]
+        errors = validate_manifest(data, "test-plugin")
+        assert any("unknown values" in e for e in errors)
+
+    def test_trigger_must_be_object(self):
+        data = _minimal_manifest()
+        data["trigger"] = "manual"
+        errors = validate_manifest(data, "test-plugin")
+        assert any("trigger must be an object" in e for e in errors)
+
+    def test_trigger_mode_must_be_known(self):
+        data = _minimal_manifest()
+        data["trigger"] = {"mode": "sometimes"}
+        errors = validate_manifest(data, "test-plugin")
+        assert any("trigger.mode" in e for e in errors)
+
+    def test_trigger_interval_must_be_positive_integer(self):
+        data = _minimal_manifest()
+        data["trigger"] = {"mode": "interval", "interval_turns": 0}
+        errors = validate_manifest(data, "test-plugin")
+        assert any("trigger.interval_turns" in e for e in errors)
+
 
 # ---------------------------------------------------------------------------
 # manifest_to_metadata
@@ -183,8 +218,11 @@ class TestManifestToMetadata:
         assert meta["required"] is False
         assert meta["dependencies"] == ["dep-a"]
         assert meta["prompt"]["position"] == "world-state"
+        assert meta["hooks"] == ["post_model_output"]
+        assert meta["trigger"]["mode"] == "always"
+        assert meta["trigger"]["interval_turns"] == 1
 
-    def test_blocks_pass_through(self):
+    def test_outputs_pass_through(self):
         manifest = PluginManifest(
             schema_version="1.0",
             name="test-plugin",
@@ -192,12 +230,12 @@ class TestManifestToMetadata:
             type="gameplay",
             required=False,
             description="test",
-            blocks={"my_block": {"instruction": "do it"}},
+            outputs={"my_output": {"instruction": "do it"}},
         )
         meta = manifest_to_metadata(manifest)
-        assert meta["blocks"]["my_block"]["instruction"] == "do it"
+        assert meta["outputs"]["my_output"]["instruction"] == "do it"
 
-    def test_blocks_with_inline_schema(self):
+    def test_outputs_with_inline_schema(self):
         schema = {"type": "object", "properties": {"x": {"type": "string"}}}
         manifest = PluginManifest(
             schema_version="1.0",
@@ -206,12 +244,12 @@ class TestManifestToMetadata:
             type="gameplay",
             required=False,
             description="test",
-            blocks={"my_block": {"schema": schema}},
+            outputs={"my_output": {"schema": schema}},
         )
         meta = manifest_to_metadata(manifest)
-        assert meta["blocks"]["my_block"]["schema"] == schema
+        assert meta["outputs"]["my_output"]["schema"] == schema
 
-    def test_blocks_with_schema_path_string(self):
+    def test_outputs_with_schema_path_string(self):
         """Schema as a string path should pass through as-is."""
         manifest = PluginManifest(
             schema_version="1.0",
@@ -220,10 +258,10 @@ class TestManifestToMetadata:
             type="gameplay",
             required=False,
             description="test",
-            blocks={"my_block": {"schema": "schemas/blocks/my_block.yaml"}},
+            outputs={"my_output": {"schema": "schemas/outputs/my_output.yaml"}},
         )
         meta = manifest_to_metadata(manifest)
-        assert meta["blocks"]["my_block"]["schema"] == "schemas/blocks/my_block.yaml"
+        assert meta["outputs"]["my_output"]["schema"] == "schemas/outputs/my_output.yaml"
 
     def test_runtime_settings_array_to_dict_conversion(self):
         """Runtime settings array should be normalized to fields dict."""

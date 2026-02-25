@@ -1,131 +1,169 @@
 # Plugin Ecosystem Architecture (v1)
 
-本文档描述当前插件生态在后端与前端的实际运行方式。这里的 v1 指插件规范版本（`schema_version: 1.0`）。
+本文档描述当前插件系统在后端、前端与测试链路中的真实运行方式。
 
-## 1. 内置插件版图
+## 1. 设计目标
 
-### 1.1 `core`
+- 核心只提供阶段 Hook、调度、校验、分发与基础渲染契约。
+- 插件负责业务扩展（可影响模型输入/输出、前端交互、状态更新）。
+- 结构化结果统一通过 `emit` 工具返回，避免模型直接输出漂移 JSON。
 
-- `database`：持久状态上下文（required）
-- `state`：角色/场景/通知/状态同步（required）
-- `event`：事件与任务生命周期（required）
-- `memory`：记忆、归档、自动压缩（default_enabled）
+## 2. 当前插件版图
 
-### 1.2 `narrative`
+### 2.1 core
 
-- `guide`：行动建议与交互选项（default_enabled）
-- `codex`：图鉴百科
-- `image`：剧情图片（default_enabled）
+- `database`（required）
+- `state`（required）
+- `event`（required）
+- `memory`（default_enabled）
 
-### 1.3 `rpg-mechanics`
+### 2.2 narrative
 
-- `combat`：战斗/检定/骰子/状态效果
-- `inventory`：物品与装备
-- `social`：关系与声望
+- `guide`（default_enabled）
+- `codex`
+- `image`（default_enabled）
 
-## 2. 生态核心组件
+### 2.3 rpg-mechanics
+
+- `combat`
+- `inventory`
+- `social`
+
+## 3. 核心组件
 
 | 组件 | 代码位置 | 职责 |
 |---|---|---|
-| PluginEngine | `backend/app/core/plugin_engine.py` | 发现、加载、校验插件；提取 block/capability 声明 |
-| ManifestLoader | `backend/app/core/manifest_loader.py` | `manifest.json` 解析与 v1 校验 |
-| Plugin Agent | `backend/app/services/plugin_agent.py` | 回合后并行执行插件 LLM 与工具链 |
-| Plugin Tools | `backend/app/core/plugin_tools.py` | 平台固定 7 工具定义 |
-| Plugin Service | `backend/app/services/plugin_service.py` | 启用状态合并、依赖补全、supersedes 抑制 |
-| Runtime Settings | `backend/app/services/runtime_settings_service.py` | 跨插件 runtime settings 聚合与合并 |
-| Block Dispatch | `backend/app/core/block_handlers.py` | 校验后执行 builtin/声明式 handler |
+| `PluginEngine` | `backend/app/core/plugin_engine.py` | 发现/加载/校验插件；渲染 prompt 模板；提取输出与能力声明 |
+| `ManifestLoader` | `backend/app/core/manifest_loader.py` | `manifest.json` v1 解析与归一化 |
+| `plugin_hooks` | `backend/app/core/plugin_hooks.py` | Hook 常量与归一化 |
+| `plugin_trigger` | `backend/app/core/plugin_trigger.py` | 插件级与输出级触发策略 |
+| `turn_context` | `backend/app/services/turn_context.py` | 构建叙事回合上下文（含 storage/runtime settings） |
+| `prompt_assembly` | `backend/app/services/prompt_assembly.py` | 组装叙事 Prompt（不注入插件模板） |
+| `plugin_agent` | `backend/app/services/plugin_agent.py` | 回合后并行执行插件工具调用 |
+| `plugin_tools` | `backend/app/core/plugin_tools.py` | 定义平台工具（`emit` 等） |
+| `block_handlers` | `backend/app/core/block_handlers.py` | 校验与分发结构化输出 |
 
-## 3. 回合执行链路（插件视角）
+## 4. 两阶段运行链路
 
-1. 主 LLM 先输出叙事文本。
-2. `chat_service` 触发 `phase_change: plugins`。
-3. `run_plugin_agent()` 对启用插件并行执行，每插件最多 8 轮工具调用。
-4. 运行中持续发 `plugin_progress`，结束后返回 `plugin_summary`。
-5. 所有 block 进入 `validate_block_data()`。
-6. 校验通过后进入 `dispatch_block()` 执行副作用。
-7. 非基础设施 block 发给前端；`state_update` 等基础设施 block 仅服务端处理。
-8. 本轮触发插件会更新 `plugin_trigger_counts`，用于 `max_triggers` 限流。
+### 4.1 叙事阶段（Narrative LLM）
 
-## 4. 前端对接链路（插件相关）
+1. `build_turn_context()` 聚合角色、场景、世界状态、事件、storage、runtime settings。
+2. `assemble_narrative_prompt()` 仅注入叙事所需的世界文档、场景、角色、历史消息。
+3. 主模型输出纯叙事文本（不要求结构化输出）。
 
-| 环节 | 前端代码 | 作用 |
-|---|---|---|
-| 连接管理 | `frontend/src/hooks/useGameWebSocket.ts` | 接收插件阶段事件并分发到 stores |
-| 传输层 | `frontend/src/services/websocket.ts` | WebSocket/HTTP fallback 统一事件协议 |
-| 进度状态 | `frontend/src/stores/sessionStore.ts` | `pluginProcessing/pluginProgress/lastPluginSummary` |
-| schema 缓存 | `frontend/src/stores/blockSchemaStore.ts` | 缓存 `/api/plugins/block-schemas` |
-| 渲染路由 | `frontend/src/services/blockRenderers.ts` | 自定义 renderer 与 schema renderer 选择 |
+### 4.2 插件阶段（Plugin Agent）
 
-## 5. 工具调用模型
+1. `run_plugin_agent()` 按 Hook + Trigger 过滤插件。
+2. 插件并行执行（`asyncio.gather`），每插件最多 `MAX_TOOL_ROUNDS`。
+3. 插件通过工具调用产生副作用与结构化输出：
+   - 状态写入：`emit.writes / emit.logs`
+   - 前端输出：`emit.items`
+4. 输出进入 `dispatch_block()`：
+   - 基础设施输出（如 `state_update`）仅后端处理
+   - 前端可见输出按 renderer/schema 渲染
 
-插件运行时仅可用以下平台工具：
+## 5. Prompt 上下文契约（Jinja2）
 
-1. `update_and_emit`
-2. `emit_block`
-3. `db_read`
-4. `db_log_append`
-5. `db_log_query`
-6. `db_graph_add`
-7. `execute_script`
+`PluginEngine.get_prompt_injections()` 支持 Jinja2 模板渲染能力，但默认主叙事链路不启用插件模板注入。
+该能力用于插件开发/调试或未来可选链路，不影响当前双模型主架构。
+
+模板可使用统一上下文：
+
+- `core`
+- `events`
+- `storage`（含 `flat` 与 `by_plugin`）
+- `runtime_settings`
+- `plugin_context`
+
+同时提供兼容别名（如 `player`, `current_scene`, `plugin_storage`, `settings`）。
+
+约束：
+
+- Jinja2 只负责展示层逻辑（条件/循环/格式化）。
+- 业务计算与状态变更必须通过工具执行。
+
+## 6. 输出与工具契约
+
+### 6.1 工具集（固定）
+
+1. `emit`
+2. `db_read`
+3. `db_log_append`
+4. `db_log_query`
+5. `db_graph_add`
+6. `execute_script`
+
+### 6.2 输出白名单
+
+- 插件只能输出 `manifest.outputs` 中声明的类型。
+- 每个 `manifest.outputs.<type>` 都应声明明确 schema，作为提示和运行时校验基准。
+- 插件 Agent 在构造输出提示时，会按 schema 自动附带最小调用模板与单行示例，减少无效工具调用。
+- 未声明类型会被忽略，不会进入分发。
+- `emit.items` 采用严格字段校验：关键字段缺失/为空会直接返回错误并要求模型重试。
+
+### 6.3 错误反馈（面向模型可重试）
+
+工具失败时返回结构化错误与可读文本，例如：
+
+```json
+{
+  "ok": false,
+  "error": {
+    "tool": "execute_script",
+    "code": "SCRIPT_EXECUTION_FAILED",
+    "message": "...",
+    "retryable": true
+  },
+  "text": "TOOL_ERROR [execute_script] ... | action: fix arguments/state and retry this tool call."
+}
+```
+
+这使模型可以根据错误位置（工具名/错误码）进行自修复重试。
+
+## 7. 前端消费模型
+
+前端统一消费标准输出 envelope：
+
+```json
+{
+  "id": "out_xxx",
+  "version": "1.0",
+  "type": "choices",
+  "data": {},
+  "meta": {},
+  "status": "done"
+}
+```
+
+渲染策略：
+
+- 先走 `renderer_name`（自定义组件）
+- 再走 schema 渲染
+- 最后 JSON fallback
+
+## 8. 测试链路
+
+### 8.1 后端测试
+
+- `backend/tests/test_plugin_engine.py`
+- `backend/tests/test_manifest_integration.py`
+- `backend/tests/test_plugin_agent_hooks.py`
+- `backend/tests/test_chat_service.py`
+
+### 8.2 插件集成脚本
+
+```bash
+uv run python scripts/test_plugin_agent.py --all
+```
 
 说明：
 
-- 工具集合固定，旧工具名不再参与执行分支。
-- `execute_script` 通过 capability 声明映射到插件目录内脚本执行。
+- `--all` 模式默认并行执行（自动设置并发，默认上限 4）。
+- 可用 `-j` 自定义并发。
+- 脚本与后端一致：`emit` 仅接受声明过的输出类型。
 
-## 6. 插件状态隔离与存储
+## 9. 可扩展性原则
 
-插件存储使用 `PluginStorage(project_id, plugin_name, key)` 三元组隔离。
-
-- 项目隔离：不同项目互不影响
-- 插件隔离：不同插件互不污染
-- key 粒度：插件可自定义内部键空间
-
-补充：
-
-- runtime settings 使用独立存储命名空间插件名 `runtime-settings`。
-
-## 7. 安全边界
-
-- `manifest.json` 必需，且 `schema_version` 必须是 `1.0`。
-- prompt template 与脚本路径必须在插件目录内（禁止越界路径）。
-- script capability 统一走 `PythonScriptRunner`，可通过审计 API 查询记录。
-
-## 8. 启用策略
-
-最终启用集合由以下来源合并：
-
-1. `required`
-2. `default_enabled`
-3. 世界文档 frontmatter `plugins`
-4. 用户显式开关
-5. 依赖自动补全
-6. `supersedes` 抑制（用户显式启用可覆盖）
-
-## 9. API 接口概览
-
-| 路由 | 说明 |
-|---|---|
-| `GET /api/plugins` | 列出插件元数据 |
-| `POST /api/plugins/{name}/toggle` | 开关插件 |
-| `GET /api/plugins/enabled/{project_id}` | 查询项目启用插件 |
-| `GET /api/plugins/block-schemas` | 查询 block UI schema |
-| `GET /api/plugins/block-conflicts` | 查询 block 冲突 |
-| `POST /api/plugins/import/validate` | 校验导入插件 |
-| `POST /api/plugins/import/install` | 安装插件 |
-| `GET /api/plugins/{name}/detail` | 获取插件详情 |
-| `GET /api/plugins/{name}/audit` | 查询脚本审计 |
-
-## 10. 运维与验证
-
-```bash
-mise run plugin:list
-mise run plugin:validate
-mise run plugin:test:list
-mise run plugin:test:dry-run
-```
-
-## 11. 版本说明
-
-- 本文档对应插件规范 v1。
-- 代码与文档按单版本维护，不再区分历史分支叙述。
+- 扩展插件能力优先走 `manifest` 声明与工具契约，不在核心写死业务分支。
+- 插件之间通过结构化状态与事件协作，不依赖隐式字符串协议。
+- 新增前端 UI 类型时，优先新增 `type + renderer/schema`，无需改模型输出格式。

@@ -3,38 +3,24 @@
 {% set image_cfg = runtime_settings.get('image', {}) if runtime_settings else {} %}
 
 {% if image_cfg.get('emit_mode', 'manual') == 'manual' %}
-Do NOT output any `json:story_image` block. Image generation is handled manually by the player.
+当前为手动模式：不要主动输出 `story_image`。
 {% else %}
-Use `json:story_image` only when the scene benefits from a visual frame.
+当画面值得可视化时，调用 `emit`，在 `items` 中输出 `type=story_image`。
 
-Required block format:
-```json:story_image
-{
-  "title": "Frame title",
-  "story_background": "Recent narrative context.",
-  "prompt": "Detailed visual for the current frame.",
-  "continuity_notes": "Style and character continuity hints.",
-  "reference_image_ids": ["optional-previous-image-id"],
-  "layout_preference": "auto",
-  "scene_frames": ["optional scene beat 1"]
-}
-```
-
-Rules:
-- `story_background` is mandatory.
-- `prompt` must describe the present frame only.
-- Include `reference_image_ids` from prior images for continuity.
-- Style preset: {{ image_cfg.get('style_preset', 'cinematic') }}.
-- Emission mode: {{ image_cfg.get('emit_mode', 'key_moments') }}.
-- Multi-scene policy: {{ image_cfg.get('multi_scene_policy', 'comic') }}.
-- Reference count: {{ image_cfg.get('reference_count', 2) }}.
-- Strict continuity: {{ image_cfg.get('strict_continuity', true) }}.
-- Skip if this turn includes `json:character_sheet`.
+要求：
+- 必填字段：`story_background`、`prompt`
+- `prompt` 只描述当前画面
+- 如需连续性，补充 `reference_image_ids`
+- 风格预设：{{ image_cfg.get('style_preset', 'cinematic') }}
+- 触发模式：{{ image_cfg.get('emit_mode', 'key_moments') }}
+- 多场景策略：{{ image_cfg.get('multi_scene_policy', 'comic') }}
+- 参考帧数量：{{ image_cfg.get('reference_count', 2) }}
+- 严格连续性：{{ image_cfg.get('strict_continuity', true) }}
 
 {% if image_cfg.get('emit_mode', 'manual') == 'every_turn' %}
-Mandatory: append one `json:story_image` per narration response (except character creation).
+每个叙事回合都应输出一次 `story_image`（角色创建回合除外）。
 {% else %}
-Emit at major reveals, scene transitions, combat beats, or emotional close-ups.
+优先在关键揭示、场景切换、战斗高潮、情绪特写时输出。
 {% endif %}
 
 {% if story_images %}

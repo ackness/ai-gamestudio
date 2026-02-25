@@ -18,7 +18,6 @@ from backend.app.services.archive_service import (
 )
 from backend.app.services.plugin_service import get_enabled_plugins, storage_get
 from backend.app.services.runtime_settings_service import (
-    build_runtime_settings_prompt_block,
     resolve_runtime_settings,
 )
 
@@ -37,7 +36,6 @@ class TurnContext:
     archive_context: dict[str, Any] = field(default_factory=dict)
     runtime_settings_by_plugin: dict[str, Any] = field(default_factory=dict)
     runtime_settings_flat: dict[str, Any] = field(default_factory=dict)
-    runtime_settings_prompt: str | None = None
     block_declarations: dict[str, BlockDeclaration] = field(default_factory=dict)
     capability_declarations: list[dict[str, Any]] = field(default_factory=list)
     current_scene: Any | None = None
@@ -72,7 +70,6 @@ async def build_turn_context(
     archive_context: dict[str, Any] = {}
     runtime_settings_by_plugin: dict[str, Any] = {}
     runtime_settings_flat: dict[str, Any] = {}
-    runtime_settings_prompt: str | None = None
     try:
         enabled = await get_enabled_plugins(db, project.id, world_doc=project.world_doc)
         enabled_names = [p["plugin_name"] for p in enabled]
@@ -83,7 +80,6 @@ async def build_turn_context(
         )
         runtime_settings_by_plugin = dict(resolved.get("by_plugin") or {})
         runtime_settings_flat = dict(resolved.get("values") or {})
-        runtime_settings_prompt = build_runtime_settings_prompt_block(resolved)
     except Exception:
         logger.exception("Failed to resolve enabled plugins")
 
@@ -153,7 +149,6 @@ async def build_turn_context(
         archive_context=archive_context,
         runtime_settings_by_plugin=runtime_settings_by_plugin,
         runtime_settings_flat=runtime_settings_flat,
-        runtime_settings_prompt=runtime_settings_prompt,
         block_declarations=block_declarations,
         capability_declarations=capability_declarations,
         current_scene=current_scene,

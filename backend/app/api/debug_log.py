@@ -174,7 +174,7 @@ async def get_debug_prompt(session_id: str):
 
         # Plugin Agent info
         from backend.app.core.plugin_tools import get_all_tools
-        from backend.app.services.plugin_agent import PLUGIN_AGENT_SYSTEM_PROMPT
+        from backend.app.services import plugin_agent as plugin_agent_module
 
         agent_tools = get_all_tools()
         block_decls = ctx.block_declarations or {}
@@ -191,7 +191,11 @@ async def get_debug_prompt(session_id: str):
             "total_chars": sum(len(m["content"]) for m in messages),
             "message_count": len(messages),
             "plugin_agent": {
-                "system_prompt": PLUGIN_AGENT_SYSTEM_PROMPT,
+                # Keep debug endpoint compatible across prompt constant renames.
+                "system_prompt": (
+                    getattr(plugin_agent_module, "PLUGIN_AGENT_SYSTEM_PROMPT", None)
+                    or getattr(plugin_agent_module, "SINGLE_PLUGIN_SYSTEM_PROMPT", "")
+                ),
                 "tools": [
                     {"name": t["function"]["name"], "description": t["function"].get("description", "")}
                     for t in agent_tools

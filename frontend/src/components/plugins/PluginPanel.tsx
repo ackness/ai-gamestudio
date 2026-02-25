@@ -81,7 +81,7 @@ function PluginDetailPanel({ name, language }: { name: string; language: string 
     return <div className="text-xs text-destructive py-2">{t.detailLoadFailed}</div>
   }
 
-  const blockNames = Object.keys(detail.blocks)
+  const blockNames = Object.keys(detail.outputs)
   const hasTabs = detail.prompt && blockNames.length > 0
   const scriptCapabilities = Object.entries(detail.capabilities || {})
     .filter(([, cfg]) => cfg?.type === 'script')
@@ -144,7 +144,7 @@ function PluginDetailPanel({ name, language }: { name: string; language: string 
       {(activeTab === 'blocks' || !hasTabs) && blockNames.length > 0 && (
         <div className="space-y-2">
           {blockNames.map((blockType) => {
-            const block = detail.blocks[blockType]
+            const block = detail.outputs[blockType]
             return (
               <div key={blockType}>
                 <code className="text-[10px] text-primary">json:{blockType}</code>

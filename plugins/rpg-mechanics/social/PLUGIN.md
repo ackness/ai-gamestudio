@@ -12,30 +12,19 @@ avoid_when:
 
 ## Social Plugin
 
-Merged from: relationship + reputation + faction
+管理 NPC 关系与阵营声望的结构化变化。
 
 ### 工作流程
-1. 阅读上下文中的 NPC/阵营数据（已提供，无需 db_read）
-2. 用 update_and_emit 一次完成关系更新 + 前端通知
+1. 从上下文读取当前关系状态。
+2. 调用 `emit.items` 输出 `relationship_change` 与/或 `reputation_change`。
+3. 按需写入存储，保持长期一致性。
 
-### 示例：同时更新 NPC 关系和阵营声望
-```
-update_and_emit({
-  "writes": [
-    {"collection": "npc", "key": "NPC名", "value": {"name": "...", "affinity": 60, "relationship": "友好"}},
-    {"collection": "world", "key": "faction_阵营名", "value": {"name": "...", "reputation": 30, "level": "友好"}}
-  ],
-  "emits": [
-    {"type": "relationship_change", "data": {"npc_name": "...", "change": 10, "reason": "...", "new_level": 60, "rank": "友好"}},
-    {"type": "reputation_change", "data": {"faction": "...", "change": 10, "new_level": 30, "rank": "友好"}}
+### 示例
+```json
+{
+  "items": [
+    {"type": "relationship_change", "data": {"npc_name": "王掌柜", "change": 10, "reason": "玩家帮助修复酒馆", "new_level": 60, "rank": "友好", "relationship_type": "friend"}},
+    {"type": "reputation_change", "data": {"faction": "港务会", "change": 8, "reason": "协助处理走私", "new_standing": 35, "rank": "友好"}}
   ]
-})
+}
 ```
-
-### NPC Relationships (json:relationship_change)
-追踪 NPC 与玩家的好感度（0-100）和关系类型。
-好感等级：亲密(80-100) / 友好(60-79) / 中立(40-59) / 冷淡(20-39) / 敌对(0-19)
-
-### Faction Reputation (json:reputation_change)
-追踪玩家与各阵营的声望关系。
-声望等级：崇拜(>=80) / 尊敬(>=50) / 友好(>=20) / 中立(-19~19) / 冷淡(<=-20) / 敌对(<=-50) / 仇恨(<=-80)

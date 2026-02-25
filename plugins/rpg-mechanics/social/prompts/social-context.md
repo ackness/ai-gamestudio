@@ -1,5 +1,9 @@
 ## NPC 关系状态
 
+{% set plugin_storage = plugin_storage | default({}, true) %}
+{% set storage = storage | default({}, true) %}
+{% set runtime_settings = runtime_settings | default({}, true) %}
+
 {% if plugin_storage.get('npc-relationships') %}
 当前玩家与 NPC 的关系：
 
@@ -12,7 +16,7 @@
 暂无已建立的 NPC 关系记录。
 {% endif %}
 
-{% if settings.relationship_depth == 'rich' %}
+{% if runtime_settings.get('relationship_depth', 'rich') == 'rich' %}
 在描写 NPC 互动时，请体现关系深度：包括 NPC 的情感反应、称呼变化、特殊对话选项等。
 {% endif %}
 
@@ -33,4 +37,4 @@
 尚未与任何阵营建立关系。
 {% endif %}
 
-当玩家行为影响阵营声望时，输出 `json:reputation_change` block。
+当玩家行为影响关系或声望时，调用 `emit` 输出 `relationship_change` 或 `reputation_change`。

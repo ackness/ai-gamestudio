@@ -139,6 +139,7 @@ async def get_messages(
                                 "type": block_type,
                                 "data": item.get("data"),
                                 "block_id": item.get("block_id"),
+                                "output": item.get("output"),
                             }
                         )
             except Exception:

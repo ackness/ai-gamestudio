@@ -56,7 +56,7 @@ def assemble_narrative_prompt(
     user_content: str,
     save_user_msg: bool,
 ) -> list[dict[str, str]]:
-    """Build a narrative-only prompt (no block instructions, no plugin injections)."""
+    """Build a narrative-only prompt (no plugin prompt injection)."""
     builder = PromptBuilder()
 
     # World doc
@@ -95,5 +95,3 @@ def assemble_narrative_prompt(
     builder.inject("pre-response", 0, NARRATIVE_INSTRUCTION)
 
     return builder.build()
-
-

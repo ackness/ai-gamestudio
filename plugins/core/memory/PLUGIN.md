@@ -13,24 +13,26 @@ avoid_when:
 
 ## Memory Plugin
 
-Merged from: memory + archive + auto-compress
-
-本插件是基础设施插件，**不输出任何 emit_block**。仅使用 DB 工具管理记忆数据。
+用于长期上下文维护，不向前端输出交互项。
 
 ### 工作流程
-1. 阅读上下文中的游戏状态（已提供，无需 db_read）
-2. 将当前叙事摘要存入 DB：
-```
-update_and_emit({
+1. 阅读当前叙事与历史压缩摘要。
+2. 通过 `emit` 的 `writes/logs` 持久化记忆数据。
+3. 不在 `items` 中输出任何前端结构。
+
+### 示例调用
+```json
+{
   "writes": [
-    {"collection": "plugin.memory", "key": "memory_<N>", "value": {"id": "memory_<N>", "content": "摘要", "timestamp": N}},
-    {"collection": "plugin.memory", "key": "memory_index", "value": {"count": N, "latest": "memory_<N>"}}
+    {"collection": "plugin.memory", "key": "memory_42", "value": {"id": "memory_42", "content": "玩家在港口获得线索", "timestamp": 42}},
+    {"collection": "plugin.memory", "key": "memory_index", "value": {"count": 42, "latest": "memory_42"}}
+  ],
+  "logs": [
+    {"collection": "memory_log", "entry": {"turn": 42, "reason": "quest-progress"}}
   ]
-})
+}
 ```
-3. 如果叙事内容简单或无重要信息，可以跳过不存储
 
 ### 规则
-- **禁止使用 emit_block**，本插件不向前端输出任何 block
-- 记忆摘要应简洁，提取关键事件、人物、地点信息
-- collection 统一使用 "plugin.memory"
+- 仅记录关键信息：事件、人物关系、地点变化、未完线索。
+- 无重要新增信息时可跳过写入。

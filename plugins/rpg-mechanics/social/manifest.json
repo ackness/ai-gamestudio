@@ -19,9 +19,9 @@
     "template": "prompts/social-context.md"
   },
   "capabilities": {},
-  "blocks": {
+  "outputs": {
     "relationship_change": {
-      "instruction": "当 NPC 与玩家的关系发生显著变化时，在回复末尾附加：\n```json:relationship_change\n{\"npc_name\": \"NPC名\", \"change\": 10, \"reason\": \"变化原因\", \"new_level\": 60, \"rank\": \"友好\", \"relationship_type\": \"friend\"}\n```\nrank: 亲密/友好/中立/冷淡/敌对。relationship_type: friend/rival/romantic/mentor/enemy。",
+      "instruction": "当 NPC 关系出现实质变化时，用 `emit.items` 输出 `relationship_change`。",
       "schema": {
         "type": "object",
         "properties": {
@@ -72,7 +72,7 @@
       "requires_response": false
     },
     "reputation_change": {
-      "instruction": "当玩家的行为影响了某个阵营的声望时，输出：\n```json:reputation_change\n{\"faction\": \"精灵议会\", \"change\": 10, \"reason\": \"帮助精灵使者传递密信\", \"new_standing\": 35, \"rank\": \"友好\"}\n```\n必需字段：faction, change, reason, new_standing, rank。",
+      "instruction": "当阵营声望变化时，用 `emit.items` 输出 `reputation_change`。",
       "schema": {
         "type": "object",
         "properties": {

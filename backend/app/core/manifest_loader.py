@@ -9,6 +9,16 @@ from typing import Any
 from loguru import logger
 
 from backend.app.core.plugin_engine import NAME_RE
+from backend.app.core.plugin_hooks import (
+    DEFAULT_PLUGIN_HOOK,
+    KNOWN_PLUGIN_HOOKS,
+    normalize_plugin_hooks,
+)
+from backend.app.core.plugin_trigger import (
+    validate_block_trigger_policy,
+    normalize_plugin_trigger_policy,
+    validate_plugin_trigger_policy,
+)
 
 PLUGIN_SCHEMA_VERSION = "1.0"
 MANIFEST_REQUIRED_FIELDS = {
@@ -32,7 +42,7 @@ class PluginManifest:
     dependencies: list[str] = field(default_factory=list)
     prompt: dict[str, Any] | None = None
     capabilities: dict[str, Any] = field(default_factory=dict)
-    blocks: dict[str, Any] = field(default_factory=dict)
+    outputs: dict[str, Any] = field(default_factory=dict)
     events: dict[str, Any] = field(default_factory=dict)
     storage: dict[str, Any] = field(default_factory=dict)
     permissions: dict[str, Any] = field(default_factory=dict)
@@ -41,6 +51,8 @@ class PluginManifest:
     default_enabled: bool = False
     supersedes: list[str] = field(default_factory=list)
     max_triggers: int | None = None  # None = unlimited; per-session trigger limit
+    hooks: list[str] = field(default_factory=lambda: [DEFAULT_PLUGIN_HOOK])
+    trigger: dict[str, Any] = field(default_factory=lambda: normalize_plugin_trigger_policy(None))
 
 
 def load_manifest(plugin_dir: pathlib.Path) -> PluginManifest | None:
@@ -82,7 +94,7 @@ def load_manifest(plugin_dir: pathlib.Path) -> PluginManifest | None:
         dependencies=data.get("dependencies", []),
         prompt=data.get("prompt"),
         capabilities=data.get("capabilities") or {},
-        blocks=data.get("blocks") or {},
+        outputs=data.get("outputs") or data.get("blocks") or {},
         events=data.get("events") or {},
         storage=data.get("storage") or {},
         permissions=data.get("permissions") or {},
@@ -91,6 +103,8 @@ def load_manifest(plugin_dir: pathlib.Path) -> PluginManifest | None:
         default_enabled=bool(data.get("default_enabled", False)),
         supersedes=data.get("supersedes") or [],
         max_triggers=data.get("max_triggers"),
+        hooks=normalize_plugin_hooks(data.get("hooks")),
+        trigger=normalize_plugin_trigger_policy(data.get("trigger")),
     )
 
 
@@ -137,6 +151,71 @@ def validate_manifest(data: dict[str, Any], plugin_dir_name: str) -> list[str]:
     if not isinstance(data.get("required"), bool):
         errors.append("required must be a boolean")
 
+    # hooks are optional but must be a non-empty array of known hook names when provided
+    hooks = data.get("hooks")
+    if hooks is not None:
+        if not isinstance(hooks, list):
+            errors.append("hooks must be an array")
+        else:
+            normalized = normalize_plugin_hooks(hooks, default_hooks=[])
+            if not normalized:
+                errors.append("hooks must contain at least one hook name")
+            else:
+                unknown = [h for h in normalized if h not in KNOWN_PLUGIN_HOOKS]
+                if unknown:
+                    errors.append(
+                        "hooks contains unknown values: " + ", ".join(sorted(set(unknown)))
+                    )
+
+    errors.extend(validate_plugin_trigger_policy(data.get("trigger")))
+
+    # Validate optional output-level trigger/instruction-file declarations.
+    outputs = data.get("outputs")
+    if outputs is not None:
+        if not isinstance(outputs, dict):
+            errors.append("outputs must be an object")
+        else:
+            for output_type, output_cfg in outputs.items():
+                if not isinstance(output_cfg, dict):
+                    continue
+                output_path = f"outputs.{output_type}"
+                errors.extend(
+                    validate_block_trigger_policy(
+                        output_cfg.get("trigger"),
+                        path=f"{output_path}.trigger",
+                    )
+                )
+                if "instruction_file" in output_cfg:
+                    rel = str(output_cfg.get("instruction_file") or "").strip()
+                    if not rel:
+                        errors.append(f"{output_path}.instruction_file must be a non-empty string")
+
+    # Validate optional agent prompt module config.
+    extensions = data.get("extensions")
+    if isinstance(extensions, dict) and "agent_prompt" in extensions:
+        ap = extensions.get("agent_prompt")
+        if not isinstance(ap, dict):
+            errors.append("extensions.agent_prompt must be an object")
+        else:
+            base_file = ap.get("base_file")
+            if base_file is not None and not str(base_file).strip():
+                errors.append("extensions.agent_prompt.base_file must be a non-empty string")
+            for key in ("output_files", "tool_files"):
+                mapping = ap.get(key)
+                if mapping is None:
+                    continue
+                if not isinstance(mapping, dict):
+                    errors.append(f"extensions.agent_prompt.{key} must be an object")
+                    continue
+                for name, rel in mapping.items():
+                    if not str(name or "").strip():
+                        errors.append(f"extensions.agent_prompt.{key} keys must be non-empty strings")
+                        continue
+                    if not str(rel or "").strip():
+                        errors.append(
+                            f"extensions.agent_prompt.{key}.{name} must be a non-empty string"
+                        )
+
     return errors
 
 
@@ -155,9 +234,9 @@ def manifest_to_metadata(manifest: PluginManifest) -> dict[str, Any]:
     if manifest.prompt:
         metadata["prompt"] = manifest.prompt
 
-    # Blocks — pass through as-is.
-    if manifest.blocks:
-        metadata["blocks"] = manifest.blocks
+    # Outputs — pass through as-is.
+    if manifest.outputs:
+        metadata["outputs"] = manifest.outputs
 
     # Events — pass through
     if manifest.events:
@@ -198,6 +277,8 @@ def manifest_to_metadata(manifest: PluginManifest) -> dict[str, Any]:
         metadata["supersedes"] = manifest.supersedes
     if manifest.max_triggers is not None:
         metadata["max_triggers"] = manifest.max_triggers
+    metadata["hooks"] = list(manifest.hooks or [DEFAULT_PLUGIN_HOOK])
+    metadata["trigger"] = normalize_plugin_trigger_policy(manifest.trigger)
 
     return metadata
 

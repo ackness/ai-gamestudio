@@ -42,6 +42,7 @@ class BlockDeclaration:
     handler: dict | None = None
     ui: dict | None = None
     requires_response: bool = False
+    trigger: dict[str, Any] | None = None
 
 
 class PluginEngine:
@@ -130,6 +131,8 @@ class PluginEngine:
             "required": meta.get("required", False),
             "default_enabled": meta.get("default_enabled", False),
             "supersedes": meta.get("supersedes", []),
+            "hooks": meta.get("hooks", []),
+            "trigger": meta.get("trigger", {}),
             "version": meta.get("version", ""),
             "dependencies": meta.get("dependencies", []),
             "capabilities": list(manifest.capabilities.keys()) if manifest else [],
@@ -359,12 +362,59 @@ class PluginEngine:
             else:
                 tpl_text = data["content"]
 
+            render_context = dict(context or {})
+
+            runtime_settings = (
+                render_context.get("runtime_settings")
+                if isinstance(render_context.get("runtime_settings"), dict)
+                else {}
+            )
+            plugin_settings = (
+                runtime_settings.get(name)
+                if isinstance(runtime_settings, dict)
+                and isinstance(runtime_settings.get(name), dict)
+                else {}
+            )
+
+            storage_flat: dict[str, Any] = {}
+            storage_by_plugin: dict[str, Any] = {}
+            storage_raw = render_context.get("storage")
+            if isinstance(storage_raw, dict):
+                maybe_flat = storage_raw.get("flat")
+                maybe_by_plugin = storage_raw.get("by_plugin")
+                if isinstance(maybe_flat, dict):
+                    storage_flat = dict(maybe_flat)
+                else:
+                    storage_flat = {
+                        k: v
+                        for k, v in storage_raw.items()
+                        if k not in {"flat", "by_plugin"}
+                    }
+                if isinstance(maybe_by_plugin, dict):
+                    storage_by_plugin = dict(maybe_by_plugin)
+            if not storage_by_plugin and isinstance(render_context.get("storage_by_plugin"), dict):
+                storage_by_plugin = dict(render_context.get("storage_by_plugin") or {})
+            plugin_storage = (
+                storage_by_plugin.get(name)
+                if isinstance(storage_by_plugin.get(name), dict)
+                else {}
+            )
+            storage_view = dict(storage_flat)
+            storage_view["flat"] = storage_flat
+            storage_view["by_plugin"] = storage_by_plugin
+
+            # Backward-compatible aliases for legacy plugin templates.
+            render_context.setdefault("plugin_name", name)
+            render_context.setdefault("settings", plugin_settings)
+            render_context.setdefault("plugin_storage", plugin_storage)
+            render_context["storage"] = storage_view
+
             # Render template with context
             try:
                 template = jinja_env.from_string(tpl_text)
-                rendered = template.render(**context)
-            except Exception:
-                logger.warning("Failed to render template for plugin {}", name)
+                rendered = template.render(**render_context)
+            except Exception as exc:
+                logger.warning("Failed to render template for plugin {}: {}", name, exc)
                 rendered = tpl_text
 
             injections.append(
@@ -405,10 +455,10 @@ class PluginEngine:
             data = self.load(name, plugins_dir)
             if not data:
                 continue
-            blocks = data["metadata"].get("blocks")
-            if not blocks or not isinstance(blocks, dict):
+            outputs = data["metadata"].get("outputs")
+            if not outputs or not isinstance(outputs, dict):
                 continue
-            for block_type, block_cfg in blocks.items():
+            for block_type, block_cfg in outputs.items():
                 if not isinstance(block_cfg, dict):
                     continue
                 if block_type in declarations:
@@ -445,6 +495,7 @@ class PluginEngine:
                     handler=block_cfg.get("handler"),
                     ui=block_cfg.get("ui"),
                     requires_response=block_cfg.get("requires_response", False),
+                    trigger=block_cfg.get("trigger") if isinstance(block_cfg.get("trigger"), dict) else None,
                 )
 
         self._last_block_conflicts = conflicts

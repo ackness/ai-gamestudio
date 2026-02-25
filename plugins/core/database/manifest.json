@@ -12,7 +12,7 @@
     "template": "prompts/world-state.md"
   },
   "capabilities": {},
-  "blocks": {},
+  "outputs": {},
   "events": { "emit": [], "listen": [] },
   "storage": { "keys": ["world-state", "event-log"] },
   "i18n": {

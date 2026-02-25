@@ -34,7 +34,12 @@ export interface Message {
   message_type: 'chat' | 'narration' | 'system_event'
   scene_id?: string
   raw_content?: string
-  blocks?: { type: string; data: unknown; block_id?: string }[]
+  blocks?: {
+    type: string
+    data: unknown
+    block_id?: string
+    output?: import('../services/outputContract').OutputEnvelope
+  }[]
   created_at: string
 }
 
@@ -117,7 +122,7 @@ export interface PluginDetail {
     template: string | null
     content: string | null
   } | null
-  blocks: Record<string, {
+  outputs: Record<string, {
     instruction?: string
     schema?: Record<string, unknown>
     ui?: Record<string, unknown>

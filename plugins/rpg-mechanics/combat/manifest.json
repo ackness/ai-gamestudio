@@ -4,9 +4,15 @@
   "name": "combat",
   "type": "gameplay",
   "required": false,
-  "supersedes": ["skill-check", "dice-roll", "status-effect"],
+  "supersedes": [
+    "skill-check",
+    "dice-roll",
+    "status-effect"
+  ],
   "description": "Unified combat system: turn-based combat, dice rolls, skill checks, and status effects.",
-  "dependencies": ["state"],
+  "dependencies": [
+    "state"
+  ],
   "prompt": {
     "position": "pre-response",
     "priority": 70,
@@ -15,96 +21,194 @@
   "capabilities": {
     "dice.roll": {
       "description": "解析骰子表达式（如 2d6+3）并执行随机掷骰",
-      "implementation": { "type": "script", "script": "scripts/roll.py", "timeout_ms": 5000 },
+      "implementation": {
+        "type": "script",
+        "script": "scripts/roll.py",
+        "timeout_ms": 5000
+      },
       "result_block_type": "dice_result"
     },
     "skill_check.resolve": {
       "description": "执行技能检定：掷 1d20 + 修正值，与难度等级比较",
-      "implementation": { "type": "script", "script": "scripts/resolve_skill_check.py", "timeout_ms": 5000 },
+      "implementation": {
+        "type": "script",
+        "script": "scripts/resolve_skill_check.py",
+        "timeout_ms": 5000
+      },
       "result_block_type": "skill_check_result"
     },
     "combat.resolve_action": {
       "description": "解析战斗行动：掷攻击骰、计算伤害、返回回合结果",
-      "implementation": { "type": "script", "script": "scripts/resolve_action.py", "timeout_ms": 5000 },
+      "implementation": {
+        "type": "script",
+        "script": "scripts/resolve_action.py",
+        "timeout_ms": 5000
+      },
       "result_block_type": "combat_round"
     },
     "status_effect.tick": {
       "description": "处理回合结束时所有活跃状态效果的持续时间递减、伤害/治疗计算",
-      "implementation": { "type": "script", "script": "scripts/tick.py", "timeout_ms": 5000 },
+      "implementation": {
+        "type": "script",
+        "script": "scripts/tick.py",
+        "timeout_ms": 5000
+      },
       "result_block_type": "status_effect"
     }
   },
-  "blocks": {
+  "outputs": {
     "dice_result": {
-      "instruction": "当需要随机判定时（攻击/防御/技能检定/概率事件），你必须输出 json:dice_result block。格式：\n```json:dice_result\n{\"dice\": \"2d6+3\", \"result\": 11, \"success\": true, \"description\": \"掷出 2d6+3 = 11\"}\n```\n不要在纯叙事中无故输出此 block。",
+      "instruction": "当发生随机判定时，用 `emit.items` 输出 `dice_result`，记录骰式与结果；仅在需要判定时输出。",
       "schema": {
         "type": "object",
         "properties": {
-          "dice": { "type": "string" },
-          "result": { "type": "integer" },
-          "success": { "type": "boolean" },
-          "description": { "type": "string" }
+          "dice": {
+            "type": "string"
+          },
+          "result": {
+            "type": "integer"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          }
         },
-        "required": ["dice", "result"]
+        "required": [
+          "dice",
+          "result"
+        ]
       },
       "handler": {
         "actions": [
-          { "type": "storage_write", "key": "last-roll" },
-          { "type": "emit_event", "event": "dice-rolled" }
+          {
+            "type": "storage_write",
+            "key": "last-roll"
+          },
+          {
+            "type": "emit_event",
+            "event": "dice-rolled"
+          }
         ]
       },
       "ui": {
         "component": "card",
         "title": "🎲 {{ dice }}",
-        "sections": [{ "type": "key-value", "fields": ["result", "success", "description"] }]
+        "sections": [
+          {
+            "type": "key-value",
+            "fields": [
+              "result",
+              "success",
+              "description"
+            ]
+          }
+        ]
       },
       "requires_response": false
     },
     "skill_check": {
-      "instruction": "当玩家尝试需要技能检定的行动时（如潜行、说服、攀爬、开锁等），输出 json:skill_check block 请求检定。格式：\n```json:skill_check\n{\"skill\": \"stealth\", \"difficulty\": 15, \"modifier\": 3, \"attribute_bonus\": 2, \"description\": \"尝试潜行通过守卫\"}\n```\n必需字段：skill, difficulty。可选字段：modifier, attribute_bonus, description。",
+      "instruction": "当玩家行为需要技能检定时，用 `emit.items` 输出 `skill_check` 请求检定。",
       "schema": {
         "type": "object",
         "properties": {
-          "skill": { "type": "string" },
-          "difficulty": { "type": "integer" },
-          "modifier": { "type": "integer" },
-          "attribute_bonus": { "type": "integer" },
-          "description": { "type": "string" }
+          "skill": {
+            "type": "string"
+          },
+          "difficulty": {
+            "type": "integer"
+          },
+          "modifier": {
+            "type": "integer"
+          },
+          "attribute_bonus": {
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          }
         },
-        "required": ["skill", "difficulty"]
+        "required": [
+          "skill",
+          "difficulty"
+        ]
       },
-      "handler": { "actions": [] },
-      "ui": { "component": "none" },
+      "handler": {
+        "actions": []
+      },
+      "ui": {
+        "component": "none"
+      },
       "requires_response": false
     },
     "skill_check_result": {
-      "instruction": "此 block 由系统自动生成，不要手动输出。",
+      "instruction": "该类型通常由系统能力通过 `emit.items` 返回，LLM 不应手动构造。",
       "schema": {
         "type": "object",
         "properties": {
-          "dice": { "type": "string" },
-          "roll": { "type": "integer" },
-          "modifier": { "type": "integer" },
-          "attribute_bonus": { "type": "integer" },
-          "total": { "type": "integer" },
-          "difficulty": { "type": "integer" },
-          "success_level": { "type": "string", "enum": ["critical_success", "success", "failure", "critical_failure"] },
-          "skill": { "type": "string" },
-          "description": { "type": "string" }
+          "dice": {
+            "type": "string"
+          },
+          "roll": {
+            "type": "integer"
+          },
+          "modifier": {
+            "type": "integer"
+          },
+          "attribute_bonus": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "difficulty": {
+            "type": "integer"
+          },
+          "success_level": {
+            "type": "string",
+            "enum": [
+              "critical_success",
+              "success",
+              "failure",
+              "critical_failure"
+            ]
+          },
+          "skill": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
         },
-        "required": ["dice", "roll", "total", "difficulty", "success_level"]
+        "required": [
+          "dice",
+          "roll",
+          "total",
+          "difficulty",
+          "success_level"
+        ]
       },
       "handler": {
         "actions": [
-          { "type": "storage_write", "key": "last-check" },
-          { "type": "emit_event", "event": "skill-checked" }
+          {
+            "type": "storage_write",
+            "key": "last-check"
+          },
+          {
+            "type": "emit_event",
+            "event": "skill-checked"
+          }
         ]
       },
-      "ui": { "component": "custom", "renderer_name": "skill_check_result" },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "skill_check_result"
+      },
       "requires_response": false
     },
     "combat_start": {
-      "instruction": "当战斗开始时，输出 json:combat_start block 声明参战者。格式：\n```json:combat_start\n{\"combatants\": [{\"name\": \"勇者\", \"hp\": 30, \"initiative\": 18}, {\"name\": \"哥布林\", \"hp\": 12, \"initiative\": 8}], \"description\": \"哥布林从灌木丛中跳出！\"}\n```",
+      "instruction": "战斗开始时，用 `emit.items` 输出 `combat_start` 声明参战者。",
       "schema": {
         "type": "object",
         "properties": {
@@ -112,158 +216,391 @@
             "type": "array",
             "items": {
               "type": "object",
-              "properties": { "name": { "type": "string" }, "hp": { "type": "integer" }, "initiative": { "type": "integer" } },
-              "required": ["name", "hp", "initiative"]
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "hp": {
+                  "type": "integer"
+                },
+                "initiative": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "hp",
+                "initiative"
+              ]
             }
           },
-          "description": { "type": "string" }
+          "description": {
+            "type": "string"
+          }
         },
-        "required": ["combatants"]
+        "required": [
+          "combatants"
+        ]
       },
       "handler": {
         "actions": [
-          { "type": "storage_write", "key": "active-combat" },
-          { "type": "emit_event", "event": "combat-started" }
+          {
+            "type": "storage_write",
+            "key": "active-combat"
+          },
+          {
+            "type": "emit_event",
+            "event": "combat-started"
+          }
         ]
       },
-      "ui": { "component": "custom", "renderer_name": "combat_start" },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "combat_start"
+      },
       "requires_response": false
     },
     "combat_action": {
-      "instruction": "此 block 为战斗行动请求，由 LLM 输出以触发 combat.resolve_action。格式：\n```json:combat_action\n{\"actor\": \"勇者\", \"action_type\": \"attack\", \"target\": \"哥布林\", \"weapon\": \"长剑\", \"attack_bonus\": 5, \"defense\": 12, \"damage_dice\": \"1d8+3\"}\n```\n必需字段：actor, action_type, target。",
+      "instruction": "每个战斗行动都应通过 `emit.items` 输出 `combat_action`，再触发解算能力。",
       "schema": {
         "type": "object",
         "properties": {
-          "actor": { "type": "string" },
-          "action_type": { "type": "string", "enum": ["attack", "defend", "skill", "flee"] },
-          "target": { "type": "string" },
-          "weapon": { "type": "string" },
-          "skill": { "type": "string" },
-          "attack_bonus": { "type": "integer" },
-          "defense": { "type": "integer" },
-          "damage_dice": { "type": "string" },
-          "description": { "type": "string" }
+          "actor": {
+            "type": "string"
+          },
+          "action_type": {
+            "type": "string",
+            "enum": [
+              "attack",
+              "defend",
+              "skill",
+              "flee"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "weapon": {
+            "type": "string"
+          },
+          "skill": {
+            "type": "string"
+          },
+          "attack_bonus": {
+            "type": "integer"
+          },
+          "defense": {
+            "type": "integer"
+          },
+          "damage_dice": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
         },
-        "required": ["actor", "action_type", "target"]
+        "required": [
+          "actor",
+          "action_type",
+          "target"
+        ]
       },
-      "handler": { "actions": [] },
-      "ui": { "component": "none" },
+      "handler": {
+        "actions": []
+      },
+      "ui": {
+        "component": "none"
+      },
       "requires_response": false
     },
     "combat_round": {
-      "instruction": "此 block 由系统自动生成，不要手动输出。包含战斗行动的解析结果。",
+      "instruction": "该类型通常由系统解算后通过 `emit.items` 返回，LLM 不应手动构造。",
       "schema": {
         "type": "object",
         "properties": {
-          "actor": { "type": "string" },
-          "action_type": { "type": "string" },
-          "target": { "type": "string" },
-          "hit": { "type": "boolean" },
-          "attack_roll": { "type": "integer" },
-          "damage": { "type": "integer" },
-          "damage_roll": { "type": "string" },
-          "effects": { "type": "array", "items": { "type": "string" } },
+          "actor": {
+            "type": "string"
+          },
+          "action_type": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "hit": {
+            "type": "boolean"
+          },
+          "attack_roll": {
+            "type": "integer"
+          },
+          "damage": {
+            "type": "integer"
+          },
+          "damage_roll": {
+            "type": "string"
+          },
+          "effects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "hp_changes": {
             "type": "array",
             "items": {
               "type": "object",
-              "properties": { "name": { "type": "string" }, "current_hp": { "type": "integer" }, "max_hp": { "type": "integer" }, "change": { "type": "integer" } },
-              "required": ["name", "current_hp", "change"]
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "current_hp": {
+                  "type": "integer"
+                },
+                "max_hp": {
+                  "type": "integer"
+                },
+                "change": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "current_hp",
+                "change"
+              ]
             }
           },
-          "description": { "type": "string" }
+          "description": {
+            "type": "string"
+          }
         },
-        "required": ["actor", "action_type", "target"]
+        "required": [
+          "actor",
+          "action_type",
+          "target"
+        ]
       },
-      "handler": { "actions": [{ "type": "storage_write", "key": "combat-log" }] },
-      "ui": { "component": "custom", "renderer_name": "combat_round" },
+      "handler": {
+        "actions": [
+          {
+            "type": "storage_write",
+            "key": "combat-log"
+          }
+        ]
+      },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "combat_round"
+      },
       "requires_response": false
     },
     "combat_end": {
-      "instruction": "当战斗结束时输出 json:combat_end block。格式：\n```json:combat_end\n{\"outcome\": \"victory\", \"survivors\": [\"勇者\"], \"rewards\": {\"xp\": 50, \"items\": [\"哥布林短刀\"]}}\n```\n必需字段：outcome（victory/defeat/flee/truce）。",
+      "instruction": "战斗结束时，用 `emit.items` 输出 `combat_end` 声明结果。",
       "schema": {
         "type": "object",
         "properties": {
-          "outcome": { "type": "string", "enum": ["victory", "defeat", "flee", "truce"] },
-          "survivors": { "type": "array", "items": { "type": "string" } },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "victory",
+              "defeat",
+              "flee",
+              "truce"
+            ]
+          },
+          "survivors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "rewards": {
             "type": "object",
-            "properties": { "xp": { "type": "integer" }, "items": { "type": "array", "items": { "type": "string" } } }
+            "properties": {
+              "xp": {
+                "type": "integer"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
           },
-          "description": { "type": "string" }
+          "description": {
+            "type": "string"
+          }
         },
-        "required": ["outcome"]
+        "required": [
+          "outcome"
+        ]
       },
       "handler": {
         "actions": [
-          { "type": "storage_write", "key": "combat-log" },
-          { "type": "emit_event", "event": "combat-ended" }
+          {
+            "type": "storage_write",
+            "key": "combat-log"
+          },
+          {
+            "type": "emit_event",
+            "event": "combat-ended"
+          }
         ]
       },
-      "ui": { "component": "custom", "renderer_name": "combat_end" },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "combat_end"
+      },
       "requires_response": false
     },
     "status_effect": {
-      "instruction": "当需要施加、移除或触发状态效果时，输出 json:status_effect block。\n```json:status_effect\n{\"action\": \"apply\", \"effect_name\": \"中毒\", \"effect_type\": \"dot\", \"duration\": 3, \"target\": \"玩家\", \"damage_per_turn\": 5, \"description\": \"被毒蛇咬伤\"}\n```\naction: apply/remove/tick。effect_type: buff/debuff/dot/hot。",
+      "instruction": "施加、移除或结算状态效果时，用 `emit.items` 输出 `status_effect`；`action` 为 `apply/remove/tick`。",
       "schema": {
         "type": "object",
         "properties": {
-          "action": { "type": "string", "enum": ["apply", "remove", "tick"] },
-          "effect_name": { "type": "string" },
-          "effect_type": { "type": "string", "enum": ["buff", "debuff", "dot", "hot"] },
-          "duration": { "type": "number" },
-          "target": { "type": "string" },
-          "stats": { "type": "object" },
-          "damage_per_turn": { "type": "number" },
-          "heal_per_turn": { "type": "number" },
-          "description": { "type": "string" }
+          "action": {
+            "type": "string",
+            "enum": [
+              "apply",
+              "remove",
+              "tick"
+            ]
+          },
+          "effect_name": {
+            "type": "string"
+          },
+          "effect_type": {
+            "type": "string",
+            "enum": [
+              "buff",
+              "debuff",
+              "dot",
+              "hot"
+            ]
+          },
+          "duration": {
+            "type": "number"
+          },
+          "target": {
+            "type": "string"
+          },
+          "stats": {
+            "type": "object"
+          },
+          "damage_per_turn": {
+            "type": "number"
+          },
+          "heal_per_turn": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          }
         },
-        "required": ["action", "effect_name", "effect_type", "target", "description"]
+        "required": [
+          "action",
+          "effect_name",
+          "effect_type",
+          "target",
+          "description"
+        ]
       },
       "handler": {
         "actions": [
-          { "type": "storage_write", "key": "active-effects" },
-          { "type": "emit_event", "event": "effect-applied" }
+          {
+            "type": "storage_write",
+            "key": "active-effects"
+          },
+          {
+            "type": "emit_event",
+            "event": "effect-applied"
+          }
         ]
       },
-      "ui": { "component": "custom", "renderer_name": "status_effect" },
+      "ui": {
+        "component": "custom",
+        "renderer_name": "status_effect"
+      },
       "requires_response": false
     }
   },
   "events": {
-    "emit": ["dice-rolled", "skill-checked", "combat-started", "combat-ended", "effect-applied", "effect-expired"],
+    "emit": [
+      "dice-rolled",
+      "skill-checked",
+      "combat-started",
+      "combat-ended",
+      "effect-applied",
+      "effect-expired"
+    ],
     "listen": []
   },
   "storage": {
-    "keys": ["last-roll", "last-check", "active-combat", "combat-log", "active-effects"]
+    "keys": [
+      "last-roll",
+      "last-check",
+      "active-combat",
+      "combat-log",
+      "active-effects"
+    ]
   },
   "permissions": {
     "network": false,
-    "filesystem_scope": ["plugin", "data"],
-    "script_languages": ["python"]
+    "filesystem_scope": [
+      "plugin",
+      "data"
+    ],
+    "script_languages": [
+      "python"
+    ]
   },
   "runtime_settings": {
     "combat_style": {
       "type": "enum",
-      "options": ["narrative", "tactical"],
+      "options": [
+        "narrative",
+        "tactical"
+      ],
       "default": "narrative",
       "i18n": {
-        "en": { "label": "Combat Style", "description": "Narrative: story-driven combat. Tactical: detailed mechanics." },
-        "zh": { "label": "战斗风格", "description": "叙事：以故事推进为主。战术：注重机制细节。" }
+        "en": {
+          "label": "Combat Style",
+          "description": "Narrative: story-driven combat. Tactical: detailed mechanics."
+        },
+        "zh": {
+          "label": "战斗风格",
+          "description": "叙事：以故事推进为主。战术：注重机制细节。"
+        }
       }
     },
     "auto_resolve_minor": {
       "type": "enum",
-      "options": ["yes", "no"],
+      "options": [
+        "yes",
+        "no"
+      ],
       "default": "no",
       "i18n": {
-        "en": { "label": "Auto-resolve Minor Combats", "description": "Automatically resolve trivial encounters." },
-        "zh": { "label": "自动解决小型战斗", "description": "自动解决无关紧要的遭遇战。" }
+        "en": {
+          "label": "Auto-resolve Minor Combats",
+          "description": "Automatically resolve trivial encounters."
+        },
+        "zh": {
+          "label": "自动解决小型战斗",
+          "description": "自动解决无关紧要的遭遇战。"
+        }
       }
     }
   },
   "i18n": {
-    "en": { "name": "Combat", "description": "Unified combat system: turn-based combat, dice rolls, skill checks, and status effects." },
-    "zh": { "name": "战斗系统", "description": "统一战斗系统：回合制战斗、骰子判定、技能检定与状态效果。" }
+    "en": {
+      "name": "Combat",
+      "description": "Unified combat system: turn-based combat, dice rolls, skill checks, and status effects."
+    },
+    "zh": {
+      "name": "战斗系统",
+      "description": "统一战斗系统：回合制战斗、骰子判定、技能检定与状态效果。"
+    }
   }
 }

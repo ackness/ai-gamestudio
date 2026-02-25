@@ -7,6 +7,11 @@ AI GameStudio 当前采用双阶段回合架构：
 
 插件规范为单版本 v1（`schema_version: "1.0"`），无 v2/v3 分支逻辑。
 
+核心与插件边界：
+
+- 核心负责阶段编排（Hook）、状态与存储、统一事件协议、基础 UI 渲染能力。
+- 插件负责“在 Hook 上扩展行为”，并可通过 block + UI schema 同时影响后端副作用与前端呈现。
+
 ## 1. 关键模块映射
 
 | 模块 | 代码位置 | 职责 |
@@ -15,6 +20,8 @@ AI GameStudio 当前采用双阶段回合架构：
 | 上下文装配 | `backend/app/services/turn_context.py` | 会话/项目/状态/插件与运行时设置聚合 |
 | 叙事提示组装 | `backend/app/services/prompt_assembly.py` | 叙事模式 prompt（内部使用 `PromptBuilder`） |
 | 插件代理 | `backend/app/services/plugin_agent.py` | 插件并行调用、工具循环、block 收集 |
+| Hook 契约 | `backend/app/core/plugin_hooks.py` | 核心阶段 Hook 常量与归一化规则 |
+| Trigger 策略 | `backend/app/core/plugin_trigger.py` | 插件/Block 触发策略归一化与校验 |
 | 插件引擎 | `backend/app/core/plugin_engine.py` | 发现/加载/校验插件，提取 block/capability 声明 |
 | Manifest 解析 | `backend/app/core/manifest_loader.py` | `manifest.json` v1 校验与 metadata 归一化 |
 | Block 校验 | `backend/app/core/block_validation.py` | block 数据 schema 校验 |
@@ -29,7 +36,7 @@ AI GameStudio 当前采用双阶段回合架构：
 3. 主 LLM 流式输出文本（`chunk` 事件），结束后发 `done`。
 4. 落库 assistant 叙事消息，更新 token/cost 统计（`token_usage`）。
 5. 进入插件阶段（`phase_change: plugins`）。
-6. `run_plugin_agent()` 对已启用插件并行执行工具调用，流式发 `plugin_progress`。
+6. `run_plugin_agent(hook="post_narrative")` 对声明该 Hook 的插件并行执行工具调用，流式发 `plugin_progress`。
 7. 插件完成后发 `plugin_summary`，阶段切到 `phase_change: complete`。
 8. 对每个 block：`validate_block_data()` -> `dispatch_block()` -> 发送前端事件。
 9. 持久化消息 metadata 中的 blocks，更新 `plugin_trigger_counts`。
@@ -39,16 +46,21 @@ AI GameStudio 当前采用双阶段回合架构：
 
 - 并发粒度：按插件并发（`asyncio.gather`）。
 - 每插件工具轮数上限：`MAX_TOOL_ROUNDS = 8`。
-- 工具契约固定 7 个：
-1. `update_and_emit`
-2. `emit_block`
-3. `db_read`
-4. `db_log_append`
-5. `db_log_query`
-6. `db_graph_add`
-7. `execute_script`
+- 工具契约固定 6 个：
+1. `emit`
+2. `db_read`
+3. `db_log_append`
+4. `db_log_query`
+5. `db_graph_add`
+6. `execute_script`
+- 结构化输出统一由 `emit.items` 产生，核心按标准 envelope 校验与分发。
 
 - 触发上限：若插件配置 `max_triggers` 且达到会话计数，将跳过该插件本轮执行。
+- Hook 过滤：插件可通过 `manifest.hooks` 声明参与阶段；核心按当前阶段只调度匹配 Hook 的插件。
+- 触发策略：插件可通过 `manifest.trigger` 声明 `always / interval / manual`。
+  - 示例：`memory` 可设为每 3 回合执行一次；
+  - 示例：`image` 可设为 `manual`，仅走前端按钮触发的图片生成入口。
+- 指令可见性：对 `once_per_session` 等受限 block，核心会在后续轮次从插件 block 指令中隐藏对应提示，减少幻觉与 token 消耗。
 - 产物汇总：返回 `blocks + plugin_summary`，其中 summary 含 `rounds/tool_calls/blocks_emitted/plugins_run`。
 
 ## 4. 插件发现、加载与启用
@@ -82,8 +94,9 @@ AI GameStudio 当前采用双阶段回合架构：
 
 ## 5. Block 管道细节
 
-- 生成来源：`emit_block` / `update_and_emit.emits`。
+- 生成来源：`emit.items`。
 - 校验：优先插件声明 schema（或 builtin schema）+ 基础约束。
+- block 触发策略：支持 `once_per_session`（如 `character_sheet`）。
 - 调度顺序：
 1. builtin handler
 2. manifest 声明式 handler（如 `storage_write`/`emit_event`/`builtin`）

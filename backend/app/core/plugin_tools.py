@@ -1,4 +1,4 @@
-"""Plugin Agent tool definitions (optimized: 14 → 7 tools)."""
+"""Plugin Agent tool definitions."""
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
@@ -9,41 +9,32 @@ PLUGIN_AGENT_TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "update_and_emit",
-            "description": "批量写入 DB 并可选输出多个 block 到前端。最常用的复合操作。",
+            "name": "emit",
+            "description": "统一输出工具。一次调用可写入状态（writes/logs）并输出一个或多个结构化 item。",
             "parameters": {
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
                     "writes": {
                         "type": "array",
-                        "description": "KV 写入列表",
+                        "description": "可选：KV 写入列表",
                         "items": {
                             "type": "object",
+                            "additionalProperties": False,
                             "properties": {
                                 "collection": {"type": "string"},
                                 "key": {"type": "string"},
-                                "value": {"description": "任意 JSON 值"},
+                                "value": {},
                             },
                             "required": ["collection", "key", "value"],
                         },
                     },
-                    "emits": {
-                        "type": "array",
-                        "description": "可选：输出多个 block 到前端",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "type": {"type": "string", "description": "block 类型"},
-                                "data": {"type": "object", "description": "block 数据"},
-                            },
-                            "required": ["type", "data"],
-                        },
-                    },
                     "logs": {
                         "type": "array",
-                        "description": "可选：追加多条日志",
+                        "description": "可选：日志追加列表",
                         "items": {
                             "type": "object",
+                            "additionalProperties": False,
                             "properties": {
                                 "collection": {"type": "string"},
                                 "entry": {"type": "object"},
@@ -51,23 +42,32 @@ PLUGIN_AGENT_TOOLS: list[dict] = [
                             "required": ["collection", "entry"],
                         },
                     },
+                    "items": {
+                        "type": "array",
+                        "description": "可选：待输出结构列表（仅支持插件 manifest.outputs 声明过的类型）",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "id": {"type": "string", "description": "可选：输出 ID，用于异步更新同一输出"},
+                                "type": {
+                                    "type": "string",
+                                    "description": "输出类型，如 choices/notification/story_image（必须是插件 manifest.outputs 已声明类型）",
+                                },
+                                "data": {"type": "object", "description": "输出数据对象"},
+                                "meta": {"type": "object", "description": "可选元信息（如 group_id）"},
+                                "status": {
+                                    "type": "string",
+                                    "description": "输出状态，默认 done",
+                                    "enum": ["queued", "generating", "done", "failed"],
+                                },
+                            },
+                            "required": ["type", "data"],
+                        },
+                    },
+                    "meta": {"type": "object", "description": "默认元信息，会并入每个 item.meta"},
                 },
-                "required": ["writes"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "emit_block",
-            "description": "输出纯展示 block（无需 DB 写入的插件用，如 guide）",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "type": {"type": "string", "description": "block 类型"},
-                    "data": {"type": "object", "description": "block 数据"},
-                },
-                "required": ["type", "data"],
+                "required": [],
             },
         },
     },

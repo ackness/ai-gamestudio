@@ -7,6 +7,7 @@ from loguru import logger
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from backend.app.core.game_state import GameStateManager
+from backend.app.core.json_utils import safe_json_loads
 
 if TYPE_CHECKING:
     from backend.app.core.capability_executor import CapabilityExecutor
@@ -129,6 +130,39 @@ class DeclarativeBlockHandler:
                         autocommit=context.autocommit,
                     )
 
+                elif action_type == "storage_list_upsert":
+                    from backend.app.services.plugin_service import storage_get
+
+                    key = action.get("key", "data")
+                    match_field = action.get("match_field", "entry_id")
+                    max_entries = action.get("max_entries", 1000)
+                    existing = await storage_get(
+                        context.db, context.project_id, self.plugin_name, key
+                    )
+                    entries = existing if isinstance(existing, list) else []
+                    match_val = data.get(match_field)
+                    if match_val is not None:
+                        idx = next(
+                            (i for i, e in enumerate(entries) if isinstance(e, dict) and e.get(match_field) == match_val),
+                            None,
+                        )
+                        if idx is not None:
+                            entries[idx] = data
+                        else:
+                            entries.append(data)
+                    else:
+                        entries.append(data)
+                    if len(entries) > max_entries:
+                        entries = entries[-max_entries:]
+                    await storage_set(
+                        context.db,
+                        context.project_id,
+                        self.plugin_name,
+                        key,
+                        entries,
+                        autocommit=context.autocommit,
+                    )
+
                 elif action_type == "emit_event":
                     event_name = action.get("event")
                     if event_name and context.event_bus:
@@ -170,8 +204,6 @@ class DeclarativeBlockHandler:
 
 class StateUpdateHandler:
     async def process(self, data: dict, context: BlockContext) -> dict | None:
-        import json as _json
-
         mgr = context.state_mgr
         # Update characters and collect enriched records with DB ids
         if "characters" in data:
@@ -185,12 +217,16 @@ class StateUpdateHandler:
                         "role": char.role,
                         "description": char.description,
                         "personality": char.personality,
-                        "attributes": _json.loads(char.attributes_json)
-                        if char.attributes_json
-                        else {},
-                        "inventory": _json.loads(char.inventory_json)
-                        if char.inventory_json
-                        else [],
+                        "attributes": safe_json_loads(
+                            char.attributes_json,
+                            fallback={},
+                            context=f"Character attributes ({char.id})",
+                        ),
+                        "inventory": safe_json_loads(
+                            char.inventory_json,
+                            fallback=[],
+                            context=f"Character inventory ({char.id})",
+                        ),
                     }
                 )
             data["characters"] = enriched

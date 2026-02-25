@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -145,6 +146,34 @@ def _validate_schema(value: Any, schema: dict[str, Any], path: str = "$") -> lis
     enum_values = schema.get("enum")
     if isinstance(enum_values, list) and value not in enum_values:
         errors.append(f"{path}: value {value!r} not in enum {enum_values!r}")
+
+    if isinstance(value, str):
+        min_length = schema.get("minLength")
+        if isinstance(min_length, int) and len(value) < min_length:
+            errors.append(
+                f"{path}: expected length >= {min_length}, got {len(value)}"
+            )
+        max_length = schema.get("maxLength")
+        if isinstance(max_length, int) and len(value) > max_length:
+            errors.append(
+                f"{path}: expected length <= {max_length}, got {len(value)}"
+            )
+        pattern = schema.get("pattern")
+        if isinstance(pattern, str) and len(pattern) <= 200:
+            try:
+                compiled = re.compile(pattern)
+                if not compiled.search(value[:10000]):
+                    errors.append(f"{path}: value does not match pattern {pattern!r}")
+            except re.error:
+                logger.warning("Invalid schema pattern ignored at {}: {}", path, pattern)
+
+    if ((isinstance(value, int) and not isinstance(value, bool)) or isinstance(value, float)):
+        minimum = schema.get("minimum")
+        if isinstance(minimum, (int, float)) and value < minimum:
+            errors.append(f"{path}: expected >= {minimum}, got {value}")
+        maximum = schema.get("maximum")
+        if isinstance(maximum, (int, float)) and value > maximum:
+            errors.append(f"{path}: expected <= {maximum}, got {value}")
 
     if isinstance(value, dict):
         required = schema.get("required") or []

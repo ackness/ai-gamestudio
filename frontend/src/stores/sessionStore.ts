@@ -58,7 +58,15 @@ interface SessionStore {
   clearMessageImages: () => void
   hydrateMessageImages: (sessionId: string) => Promise<void>
   updateBlockData: (blockId: string, data: unknown) => void
-  updateMessageBlocks: (messageId: string, blocks: { type: string; data: unknown; block_id?: string }[]) => void
+  updateMessageBlocks: (
+    messageId: string,
+    blocks: {
+      type: string
+      data: unknown
+      block_id?: string
+      output?: import('../services/outputContract').OutputEnvelope
+    }[],
+  ) => void
 }
 
 export const useSessionStore = create<SessionStore>((set) => ({
@@ -334,6 +342,9 @@ export const useSessionStore = create<SessionStore>((set) => ({
         const updatedBlocks = msg.blocks.map((b) => {
           if (b.block_id === blockId) {
             found = true
+            if (b.output && typeof b.output === 'object') {
+              return { ...b, data, output: { ...b.output, data } }
+            }
             return { ...b, data }
           }
           return b
@@ -346,6 +357,9 @@ export const useSessionStore = create<SessionStore>((set) => ({
       const nextPending = state.pendingBlocks.map((b) => {
         if (b.blockId === blockId) {
           found = true
+          if (b.output && typeof b.output === 'object') {
+            return { ...b, data, output: { ...b.output, data } }
+          }
           return { ...b, data }
         }
         return b

@@ -9,7 +9,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "outDir": ".tmp-tests",
-    "types": ["node"],
+    "types": ["node", "vite/client"],
     "declaration": false,
     "sourceMap": false
   },
@@ -20,12 +20,23 @@
     "src/stores/sessionTurnUtils.ts",
     "src/stores/blockInteractionStore.ts",
     "src/stores/notificationStore.ts",
+    "src/stores/gameStateStore.ts",
+    "src/stores/sessionStore.ts",
+    "src/services/idbSync.ts",
+    "src/services/localDb.ts",
+    "src/services/settingsStorage.ts",
     "src/components/status/eventTree.ts",
     "src/components/game/blockInteractionState.ts",
     "src/components/game/AutoGuideRenderer.tsx",
     "src/components/game/CharacterSheetRenderer.tsx",
     "src/components/game/ChoicesRenderer.tsx",
     "src/components/game/FormRenderer.tsx",
-    "src/services/blockRenderers.ts"
+    "src/services/blockRenderers.ts",
+    "src/services/outputContract.ts",
+    "src/stores/codexStore.ts",
+    "src/stores/pluginStore.ts",
+    "src/services/api.ts",
+    "src/stores/projectStore.ts",
+    "src/utils/browserLlmConfig.ts"
   ]
 }

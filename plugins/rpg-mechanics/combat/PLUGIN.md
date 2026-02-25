@@ -13,40 +13,24 @@ avoid_when:
 
 ## Combat Plugin
 
-Merged from: combat + skill-check + dice-roll + status-effect
+管理战斗相关的结构化输出，并可调用脚本能力进行解算。
 
 ### 工作流程
-1. 阅读上下文中的角色数据（已提供，无需 db_read）
-2. 如需随机判定，调用 execute_script 掷骰
-3. 用 update_and_emit 一次完成角色属性更新 + 战斗日志 + 前端通知
+1. 依据叙事决定是否需要判定/战斗流程。
+2. 需要解算时调用 `execute_script`（如 `dice.roll`、`skill_check.resolve`）。
+3. 使用 `emit` 输出战斗结构与状态变化。
 
-### 示例：战斗结算
-```
-update_and_emit({
-  "writes": [
-    {"collection": "characters", "key": "角色名", "value": {"name": "...", "attributes": {"气血": 80}, "inventory": [...]}}
-  ],
-  "logs": [
-    {"collection": "combat_log", "entry": {"participants": [...], "outcome": "...", "damage": 20}}
-  ],
-  "emits": [
-    {"type": "dice_result", "data": {"expression": "2d6+3", "result": 11}},
-    {"type": "combat_action", "data": {"attacker": "...", "target": "...", "damage": 20}}
+### 示例
+```json
+{
+  "logs": [{"collection": "combat_log", "entry": {"round": 3, "summary": "Ayla 命中哥布林"}}],
+  "items": [
+    {"type": "dice_result", "data": {"dice": "1d20+5", "result": 17, "success": true}},
+    {"type": "combat_action", "data": {"actor": "Ayla", "action_type": "attack", "target": "Goblin"}}
   ]
-})
+}
 ```
 
-### Dice Rolling (json:dice_result)
-当需要随机判定时输出。重大判定建议使用 execute_script 调用 dice.roll。
-
-### Skill Checks (json:skill_check / json:skill_check_result)
-成功等级：critical_success / success / failure / critical_failure。
-
-### Turn-Based Combat
-- json:combat_start — 声明参战者
-- json:combat_action — 声明行动，触发解算
-- json:combat_round — 系统自动生成结果
-- json:combat_end — 结束战斗
-
-### Status Effects (json:status_effect)
-管理 buff/debuff/dot/hot 效果。回合结束可调用 status_effect.tick 批量结算。
+### 规则
+- 战斗流程建议：`combat_start -> combat_action -> combat_round -> combat_end`。
+- `skill_check_result`、`combat_round` 通常由系统能力回填。

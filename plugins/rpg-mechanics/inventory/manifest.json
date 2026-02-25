@@ -24,9 +24,9 @@
       "result_block_type": "item_effect"
     }
   },
-  "blocks": {
+  "outputs": {
     "item_update": {
-      "instruction": "When a character gains, loses, uses, equips, or unequips an item, output:\n```json:item_update\n{\"action\": \"gain\", \"item_name\": \"Health Potion\", \"quantity\": 1, \"item_type\": \"consumable\", \"description\": \"A red potion that restores HP.\", \"stats\": {\"hp\": 20}}\n```\nValid actions: gain, lose, use, equip, unequip.\nValid item_type: weapon, armor, consumable, quest, misc, currency, material, key.",
+      "instruction": "当物品获得、失去、使用、装备或卸下时，用 `emit.items` 输出 `item_update`。",
       "schema": {
         "type": "object",
         "properties": {
@@ -103,7 +103,7 @@
       "requires_response": false
     },
     "loot": {
-      "instruction": "After combat or exploration when items are found, output:\n```json:loot\n{\"source\": \"Goblin Camp Chest\", \"items\": [{\"name\": \"Iron Sword\", \"type\": \"weapon\", \"quantity\": 1, \"rarity\": \"uncommon\", \"description\": \"A sturdy blade.\"}], \"gold\": 50}\n```\nrarity values: common, uncommon, rare, epic, legendary.",
+      "instruction": "战斗或探索获得战利品时，用 `emit.items` 输出 `loot`。",
       "schema": {
         "type": "object",
         "properties": {

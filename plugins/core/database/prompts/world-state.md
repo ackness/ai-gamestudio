@@ -1,9 +1,14 @@
 ## Runtime State Snapshot
 
-Project: {{ project.name }}
+{% set project = project | default({}, true) %}
+{% set current_scene = current_scene | default({}, true) %}
+{% set active_events = active_events | default([], true) %}
+{% set world_state = world_state | default({}, true) %}
+
+Project: {{ project.get('name', 'Unknown') }}
 
 {% if current_scene %}
-Current scene: {{ current_scene.name }}{% if current_scene.description %} - {{ current_scene.description }}{% endif %}
+Current scene: {{ current_scene.get('name', 'Unknown') }}{% if current_scene.get('description') %} - {{ current_scene.get('description') }}{% endif %}
 {% endif %}
 
 {% if active_events %}

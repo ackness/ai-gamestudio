@@ -24,6 +24,7 @@ test('pending blocks are attached to assistant message with matching turn_id', (
     {
       type: 'choices',
       data: { prompt: 'go?' },
+      output: { id: 'out-a', version: '1.0', type: 'choices', data: { prompt: 'go?' } },
       turnId: 'turn-a',
       blockId: 'block-a',
     },
@@ -33,6 +34,8 @@ test('pending blocks are attached to assistant message with matching turn_id', (
 
   assert.equal(merged.pendingBlocks.length, 0)
   assert.equal(merged.messages[0].blocks?.[0].block_id, 'block-a')
+  assert.equal(merged.messages[0].blocks?.[0].output?.id, 'out-a')
+  assert.equal(merged.messages[0].blocks?.[0].output?.type, 'choices')
   assert.equal(merged.messages[1].blocks, undefined)
 })
 

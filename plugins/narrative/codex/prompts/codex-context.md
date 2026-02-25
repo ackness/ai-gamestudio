@@ -1,5 +1,8 @@
 ## 图鉴知识库
 
+{% set plugin_storage = plugin_storage | default({}, true) %}
+{% set runtime_settings = runtime_settings | default({}, true) %}
+
 {% if plugin_storage.get('codex-entries') %}
 玩家已发现的知识条目：
 
@@ -10,7 +13,7 @@
 {% if cat_entries %}
 ### {{ cat_name }}
 {% for e in cat_entries %}
-{% if settings.codex_detail == 'detailed' %}
+{% if runtime_settings.get('codex_detail', 'detailed') == 'detailed' %}
 - 【{{ e.title }}】{{ e.content }}{% if e.tags %}（{{ e.tags | join('、') }}）{% endif %}
 {% else %}
 - 【{{ e.title }}】{{ e.content[:50] }}…
@@ -19,8 +22,8 @@
 {% endif %}
 {% endfor %}
 
-请基于玩家已知的图鉴内容来叙事，不要重复解释玩家已经了解的信息。
-当玩家遇到新事物时，记得输出 codex_entry block。
+请基于玩家已知信息叙事，避免重复解释已知内容。
+如出现新知识点，调用 `emit` 输出 `codex_entry`（action=unlock/update）。
 {% else %}
-玩家尚未发现任何图鉴条目。当玩家遇到新怪物、物品、地点或传说时，请输出 codex_entry block。
+玩家尚未发现图鉴条目。遇到新怪物、物品、地点或传说时，调用 `emit` 输出 `codex_entry`。
 {% endif %}

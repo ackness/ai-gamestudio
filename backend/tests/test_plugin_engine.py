@@ -50,7 +50,7 @@ def _write_plugin(
         "required": False,
         "description": f"{name} plugin",
         "dependencies": [],
-        "blocks": blocks or {},
+        "outputs": blocks or {},
         "capabilities": capabilities or {},
     }
     if prompt:
@@ -227,6 +227,44 @@ class TestPromptInjections:
         )
         assert len(injections) == 1
         assert "second: B" in injections[0]["content"]
+
+    def test_template_receives_plugin_scoped_settings_and_storage(
+        self,
+        engine: PluginEngine,
+        tmp_path: Path,
+    ):
+        plugin_dir = _write_plugin(
+            tmp_path,
+            "scoped-plugin",
+            prompt={"position": "memory", "priority": 20, "template": "prompts/main.md"},
+        )
+        prompts_dir = plugin_dir / "prompts"
+        prompts_dir.mkdir(parents=True)
+        tpl = prompts_dir / "main.md"
+        tpl.write_text(
+            "mode={{ settings.get('mode', 'na') }}\n"
+            "local={{ plugin_storage.get('value', 'none') }}\n"
+            "flat={{ storage.get('value', 'missing') }}",
+            encoding="utf-8",
+        )
+
+        context = {
+            "runtime_settings": {"scoped-plugin": {"mode": "strict"}},
+            "storage": {
+                "flat": {"value": "global-value"},
+                "by_plugin": {"scoped-plugin": {"value": "plugin-value"}},
+            },
+        }
+        injections = engine.get_prompt_injections(
+            ["scoped-plugin"],
+            context=context,
+            plugins_dir=str(tmp_path),
+        )
+        assert len(injections) == 1
+        content = injections[0]["content"]
+        assert "mode=strict" in content
+        assert "local=plugin-value" in content
+        assert "flat=global-value" in content
 
 
 class TestGetBlockDeclarations:

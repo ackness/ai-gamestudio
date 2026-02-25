@@ -5,6 +5,7 @@ import { useSessionStore } from '../../stores/sessionStore'
 import { useUiStore } from '../../stores/uiStore'
 import type { StreamStatus } from '../../stores/sessionStore'
 import { getBlockRenderer } from '../../services/blockRenderers'
+import { normalizeBlockLike, type BlockLike } from '../../services/outputContract.js'
 import type { Message } from '../../types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -100,7 +101,7 @@ function BlockList({
   idPrefix,
   t,
 }: {
-  blocks: { type: string; data: unknown; block_id?: string }[]
+  blocks: BlockLike[]
   onAction: (msg: string) => void
   locked?: boolean
   idPrefix: string
@@ -109,19 +110,22 @@ function BlockList({
   return (
     <>
       {blocks.map((block, i) => {
-        const Renderer = getBlockRenderer(block.type)
-        const blockId = block.block_id || `${idPrefix}:${i}:${block.type}`
+        const normalized = normalizeBlockLike(block, `${idPrefix}:${i}`)
+        if (!normalized) return null
+
+        const Renderer = getBlockRenderer(normalized.type)
+        const blockId = normalized.block_id || `${idPrefix}:${i}:${normalized.type}`
         return (
           <div key={blockId} className="flex justify-start">
             {Renderer ? (
               <Renderer
-                data={block.data}
+                data={normalized.data}
                 blockId={blockId}
                 onAction={onAction}
                 locked={locked}
               />
             ) : (
-              <FallbackBlock type={block.type} data={block.data} label={t.block} />
+              <FallbackBlock type={normalized.type} data={normalized.data} label={t.block} />
             )}
           </div>
         )
@@ -558,6 +562,7 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage, onRetriggerPl
               type: b.type,
               data: b.data,
               block_id: b.blockId,
+              output: b.output,
             }))}
             onAction={onAction}
             idPrefix="pending"

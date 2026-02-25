@@ -2,34 +2,26 @@
 {% set mode = g.get('guide_mode', 'guide') %}
 
 {% if mode == 'guide' %}
-每次叙事回复末尾**必须**附加 `json:guide`（以下情况不输出：含 `json:character_sheet`、开场叙事、用户消息明确要求不输出时）：
+当需要给玩家提供行动建议时，调用 `emit`，在 `items` 中输出 `type=guide`。
 
-```json:guide
-{
-  "categories": [
-    {"style": "safe", "suggestions": ["具体行动"]},
-    {"style": "aggressive", "suggestions": ["具体行动"]}
-  ]
-}
-```
+建议要求：
+- categories 数量：{{ g.get('category_count', 3) }}
+- 建议风格：{{ g.get('suggestion_style', 'concise') }}
+- 是否包含 wild：{{ g.get('include_wild_category', true) }}
+- 每条建议应可立即执行，尽量简洁
+- 调用模板：`emit({"items":[{"type":"guide","data":{"categories":[...]}}]})`
+- 简例：`emit({"items":[{"type":"guide","data":{"categories":[{"style":"safe","suggestions":["先观察敌人动向"]}]}}]})`
 
-- 类别数 {{ g.get('category_count', 3) }}，按场景选用：safe / aggressive / creative / wild
-- 风格：{{ g.get('suggestion_style', 'concise') }}，含 wild：{{ g.get('include_wild_category', true) }}
-- 每条 ≤20 字，口语化，是角色可立即执行的行动
-- 禁止输出 `json:choices`
+当本回合正在创建角色时，不要输出 guide。
 {% else %}
-当叙事到达需要玩家做出明确选择的关键节点时，请在回复末尾附加 `json:choices`：
+当剧情需要玩家做明确决策时，调用 `emit`，在 `items` 中输出 `type=choices`。
 
-```json:choices
-{
-  "prompt": "简短描述当前需要做出的选择",
-  "type": "single",
-  "options": ["选项A", "选项B", "选项C"]
-}
-```
-
-- 目标选项数量：{{ g.get('option_count', 3) }}
+choices 要求：
+- 选项数量目标：{{ g.get('option_count', 3) }}
 - 选项风格偏好：{{ g.get('option_style', 'balanced') }}
-- 仅在叙事自然要求玩家做出决定时使用
-- 如包含 `json:character_sheet` 则不输出
+- 仅在确实需要选择时输出
+- 角色创建阶段不要输出 choices
+- 调用模板：`emit({"items":[{"type":"choices","data":{"prompt":"...","type":"single","options":["选项A","选项B"]}}]})`
+- 简例：`emit({"items":[{"type":"choices","data":{"prompt":"你要先做什么？","type":"single","options":["先调查港口","回客栈问线索","直接去城北"]}}]})`
+- `options` 一项对应一个选项（纯文本），不要在一个字符串里拼接多个选项，不要使用 markdown。
 {% endif %}

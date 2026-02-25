@@ -5,7 +5,6 @@
   "type": "global",
   "required": true,
   "supersedes": [
-    "core-blocks",
     "character"
   ],
   "description": "Core state management: state sync, character sheets, scene updates, and character context injection.",
@@ -18,9 +17,61 @@
     "template": "prompts/state-context.md"
   },
   "capabilities": {},
-  "blocks": {
+  "outputs": {
     "state_update": {
-      "instruction": "When character attributes/HP/MP change, items are gained/lost/used, money changes, or skills are learned — output:\n```json:state_update\n{\"characters\": [{\"name\": \"角色名\", \"attributes\": {\"气血\": 90}, \"inventory\": [\"长剑\"]}], \"world\": {\"key\": \"value\"}}\n```\nOnly include fields that actually changed. Trigger on every combat hit, item pickup, trade, or stat modification.",
+      "instruction": "在角色属性、物品或世界状态发生真实变化时，调用 `emit`，在 `items` 中加入 `{\"type\":\"state_update\",\"data\":{...}}`。`data` 必须是对象，且至少包含 `characters` 或 `world` 之一，只传本回合增量。",
+      "instruction_file": "prompts/agent/outputs/state_update.md",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "characters": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "character_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "role": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "personality": {
+                  "type": "string"
+                },
+                "attributes": {
+                  "type": "object"
+                },
+                "inventory": {
+                  "type": "array"
+                }
+              }
+            }
+          },
+          "world": {
+            "type": "object",
+            "properties": {
+              "_delete": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
       "handler": {
         "actions": [
           {
@@ -35,7 +86,49 @@
       "requires_response": false
     },
     "character_sheet": {
-      "instruction": "When creating or editing a character card, include as much detail as possible:\n```json:character_sheet\n{\"character_id\": \"new\", \"name\": \"待定\", \"editable_fields\": [\"name\"], \"role\": \"武者\", \"description\": \"一名年轻的江湖游侠，身着青衫，腰佩长剑，眉宇间透着一股英气。\", \"background\": \"出身没落武林世家，自幼习武，立志行侠仗义。\", \"attributes\": {\"气血\": 100, \"内力\": 50, \"体力\": 80}, \"inventory\": [\"长剑\", \"干粮\", \"银两×20\"]}\n```\nFields: name (editable), role (character archetype), description (appearance & personality), background (origin story), attributes (numeric stats relevant to the world), inventory (starting items). Always provide description and background for immersion.",
+      "instruction": "仅在角色创建或重建阶段调用 `emit`，在 `items` 中加入 `{\"type\":\"character_sheet\",\"data\":{...}}`。`data.name` 必填；创建新角色时使用 `character_id: \"new\"`。",
+      "instruction_file": "prompts/agent/outputs/character_sheet.md",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "character_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "editable_fields": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "attributes": {
+            "type": "object"
+          },
+          "inventory": {
+            "type": "array"
+          },
+          "description": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "background": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
       "handler": {
         "actions": [
           {
@@ -48,10 +141,60 @@
         "component": "custom",
         "renderer_name": "character_sheet"
       },
-      "requires_response": false
+      "requires_response": false,
+      "trigger": {
+        "mode": "once_per_session"
+      }
     },
     "scene_update": {
-      "instruction": "When the player moves to a new location or the current scene changes:\n```json:scene_update\n{\"action\": \"move\", \"name\": \"新地点名\", \"description\": \"地点描述\", \"npcs\": [{\"character_id\": \"npc_id\", \"role_in_scene\": \"掌柜\"}]}\n```",
+      "instruction": "当玩家切换地点或当前场景发生变化时，调用 `emit` 输出 `scene_update`。若 `action` 为 `move`，必须提供 `name`。",
+      "instruction_file": "prompts/agent/outputs/scene_update.md",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "move",
+              "update"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "scene_id": {
+            "type": "string"
+          },
+          "npcs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "character_id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "character_name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "role_in_scene": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
       "handler": {
         "actions": [
           {
@@ -67,7 +210,35 @@
       "requires_response": false
     },
     "notification": {
-      "instruction": "Send player-facing alerts for: entering dangerous areas, unlocking abilities, rule reminders (low HP/MP, overweight), environment warnings, achievement/reward notices:\n```json:notification\n{\"level\": \"info\", \"title\": \"提示\", \"content\": \"消息内容\"}\n```\nLevels: info, warning, success, danger.",
+      "instruction": "当需要给玩家提示、警告或奖励反馈时，调用 `emit` 输出 `notification`。`data.content` 必填，`level` 使用 `info/warning/success/error`。",
+      "instruction_file": "prompts/agent/outputs/notification.md",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "success",
+              "error"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
       "ui": {
         "component": "custom",
         "renderer_name": "notification"
@@ -87,6 +258,18 @@
     ]
   },
   "extensions": {
+    "agent_prompt": {
+      "base_file": "prompts/agent/base.md",
+      "output_files": {
+        "state_update": "prompts/agent/outputs/state_update.md",
+        "character_sheet": "prompts/agent/outputs/character_sheet.md",
+        "scene_update": "prompts/agent/outputs/scene_update.md",
+        "notification": "prompts/agent/outputs/notification.md"
+      },
+      "tool_files": {
+        "emit": "prompts/agent/tools/emit.md"
+      }
+    },
     "runtime_settings": {
       "fields": {
         "narrative_tone": {

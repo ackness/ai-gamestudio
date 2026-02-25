@@ -17,9 +17,83 @@
     "template": "prompts/event-context.md"
   },
   "capabilities": {},
-  "blocks": {
+  "outputs": {
     "event": {
-      "instruction": "Track quest/event lifecycle. create when player accepts a quest or a plot event begins; evolve on major progress; resolve on success; end on failure/abandonment:\n```json:event\n{\"action\": \"create\", \"event_type\": \"quest\", \"name\": \"事件名\", \"description\": \"事件描述\", \"visibility\": \"known\"}\n```\nActions: create, evolve (with event_id), resolve (with event_id), end (with event_id). Every created event MUST eventually resolve or end.",
+      "instruction": "用 `emit.items` 输出 `event` 追踪事件生命周期。`action` 取值 `create/evolve/resolve/end`。`create` 用于新事件，`evolve` 用于推进，`resolve/end` 用于收束；每个创建事件都应最终收束。",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "evolve",
+              "resolve",
+              "end"
+            ]
+          },
+          "event_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parent_event_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "event_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "dm",
+              "player",
+              "npc",
+              "system"
+            ]
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "known",
+              "hidden",
+              "secret"
+            ]
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "evolved",
+              "resolved",
+              "ended"
+            ]
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
       "handler": {
         "actions": [
           {
@@ -34,7 +108,7 @@
       "requires_response": false
     },
     "quest_update": {
-      "instruction": "When creating, updating, completing, or failing a quest, output:\n```json:quest_update\n{\"action\": \"create\", \"quest_id\": \"find-artifact\", \"title\": \"Find the Lost Artifact\", \"description\": \"Locate the ancient artifact in the ruins.\", \"objectives\": [{\"id\": \"obj1\", \"text\": \"Enter the ruins\", \"completed\": false}], \"rewards\": {\"xp\": 100, \"gold\": 50}, \"status\": \"active\"}\n```\nValid actions: create, update, complete, fail.\nValid status: active, completed, failed.",
+      "instruction": "用 `emit.items` 输出 `quest_update` 维护任务状态。`action` 取值 `create/update/complete/fail`，`status` 取值 `active/completed/failed`。",
       "schema": {
         "type": "object",
         "properties": {
