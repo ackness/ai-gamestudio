@@ -12,7 +12,6 @@ from backend.tests.constants import CURRENT_PLUGIN_IDS, PLUGINS_DIR
 
 @pytest.fixture
 def engine():
-    PluginEngine.clear_cache()
     return PluginEngine()
 
 

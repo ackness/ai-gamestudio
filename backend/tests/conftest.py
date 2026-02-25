@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from loguru import logger
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -18,6 +19,14 @@ os.environ["PLUGINS_DIR"] = "plugins"
 os.environ["SECRET_STORE_DIR"] = str(
     Path(tempfile.gettempdir()) / "ai-gamestudio-test-secrets"
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_loguru():
+    """Remove all loguru sinks during tests to prevent teardown errors."""
+    logger.remove()
+    yield
+    logger.remove()
 
 
 @pytest.fixture(scope="session")
