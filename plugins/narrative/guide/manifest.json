@@ -17,9 +17,57 @@
     "template": "prompts/guide-instruction.md"
   },
   "capabilities": {},
-  "blocks": {
+  "outputs": {
     "guide": {
-      "instruction": "在每次叙事回复的末尾，附加一个 json:guide 代码块为玩家提供行动建议。\n格式：\n```json:guide\n{\"categories\": [{\"style\": \"safe\", \"suggestions\": [\"行动描述\"]}, {\"style\": \"aggressive\", \"suggestions\": [\"行动描述\"]}]}\n```\n按场景选用 safe/aggressive/creative/wild，如包含 json:character_sheet 则不输出。",
+      "instruction": "当需要给玩家行动建议时，用 `emit.items` 输出 `guide`。`data.categories` 提供 `safe/aggressive/creative/wild` 等分类建议。",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "categories": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "style": {
+                  "type": "string",
+                  "enum": [
+                    "safe",
+                    "aggressive",
+                    "creative",
+                    "wild"
+                  ]
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                "suggestions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                }
+              },
+              "required": [
+                "style",
+                "suggestions"
+              ]
+            }
+          }
+        },
+        "required": [
+          "categories"
+        ]
+      },
       "requires_response": false,
       "ui": {
         "component": "custom",
@@ -27,7 +75,40 @@
       }
     },
     "choices": {
-      "instruction": "When the player must choose:\n```json:choices\n{\"prompt\": \"你要做什么？\", \"type\": \"single\", \"options\": [\"选项A\", \"选项B\", \"选项C\"]}\n```\n`options` must be an array of strings.",
+      "instruction": "当需要玩家做明确选择时，用 `emit.items` 输出 `choices`。`data` 必须包含 `prompt`、`type`（`single/multi`）和字符串数组 `options`。`options` 至少 2 项、最多 6 项；每项必须是短文本单一动作。一个选项占数组一个元素，不要把多个选项拼在同一字符串里；不要使用 markdown 标记（如 `**`、列表符、代码块）。",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "single",
+              "multi"
+            ]
+          },
+          "options": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 6,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          }
+        },
+        "required": [
+          "prompt",
+          "type",
+          "options"
+        ]
+      },
       "requires_response": true,
       "ui": {
         "component": "custom",
@@ -70,6 +151,10 @@
               }
             }
           ],
+          "output_gate": {
+            "guide": "guide",
+            "choices": "choices"
+          },
           "affects": [
             "choices"
           ],
@@ -159,7 +244,7 @@
         "option_count": {
           "type": "integer",
           "label": "Choice Count",
-          "description": "Preferred number of options in json:choices.",
+          "description": "Preferred number of options in choices 输出.",
           "default": 3,
           "min": 2,
           "max": 5,
@@ -169,7 +254,7 @@
           "i18n": {
             "zh": {
               "label": "选项数量",
-              "description": "json:choices 中偏好的选项个数。"
+              "description": "choices 输出 中偏好的选项个数。"
             }
           }
         },
