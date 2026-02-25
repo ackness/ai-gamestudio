@@ -41,3 +41,4 @@ audit/
 plans/
 plugins/backup/
 debug/
+.omc/
