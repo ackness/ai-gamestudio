@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Literal, Protocol
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable, Literal, Protocol
 
 from loguru import logger
 
@@ -67,6 +68,38 @@ class ChatCommandResponse(BaseModel):
     terminal: TerminalSummary | None = None
 
 
+@dataclass(slots=True)
+class CommandContext:
+    sink: EventSink
+    session_id: str
+    data: dict[str, Any]
+    transport_mode: Literal["http", "websocket"]
+    llm_overrides: dict[str, str] | None = None
+    image_overrides: dict[str, str] | None = None
+
+
+CommandHandler = Callable[[CommandContext], Awaitable[None]]
+
+
+class CommandRouter:
+    def __init__(self) -> None:
+        self._handlers: dict[str, CommandHandler] = {}
+
+    def register(self, msg_type: str, handler: CommandHandler) -> None:
+        self._handlers[msg_type] = handler
+
+    async def dispatch(self, ctx: CommandContext) -> None:
+        msg_type = str(ctx.data.get("type", "message"))
+        handler = self._handlers.get(msg_type)
+        if handler is None:
+            await _send_error(
+                ctx.sink,
+                f"Unknown message type: {msg_type}",
+            )
+            return
+        await handler(ctx)
+
+
 def _build_terminal_summary(events: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Compute terminal status from collected command events."""
     last_terminal: dict[str, Any] | None = None
@@ -95,68 +128,8 @@ def _extract_overrides(data: dict[str, Any], field_name: str) -> dict[str, str] 
     return parsed.to_non_empty_dict()
 
 
-async def _background_generate_image(
-    sink: EventSink,
-    session_id: str,
-    block_id: str,
-    turn_id: str,
-    params: dict[str, Any],
-) -> None:
-    """Run story image generation in the background and push the result via WebSocket."""
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-
-    from backend.app.services.image_service import generate_story_image
-
-    try:
-        async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
-            result = await generate_story_image(
-                db,
-                project_id=params["project_id"],
-                session_id=params["session_id"],
-                title=params.get("title", "Story Image"),
-                story_background=params.get("story_background", ""),
-                prompt=params.get("prompt", ""),
-                continuity_notes=params.get("continuity_notes", ""),
-                reference_image_ids=params.get("reference_image_ids", []),
-                scene_frames=params.get("scene_frames", []),
-                layout_preference=params.get("layout_preference", "auto"),
-                turn_id=params.get("turn_id"),
-                autocommit=True,
-                image_overrides=params.get("image_overrides"),
-                llm_overrides=params.get("llm_overrides"),
-            )
-        event = {
-            "type": "story_image",
-            "data": result,
-            "block_id": block_id,
-            "turn_id": turn_id,
-        }
-        _add_log(session_id, "send", event)
-        await sink.send_json(event)
-    except Exception as exc:
-        logger.exception("Background story_image generation failed")
-        try:
-            error_event = {
-                "type": "story_image",
-                "data": {
-                    "status": "error",
-                    "title": params.get("title", "Story Image"),
-                    "story_background": params.get("story_background", ""),
-                    "prompt": params.get("prompt", ""),
-                    "continuity_notes": params.get("continuity_notes", ""),
-                    "reference_image_ids": params.get("reference_image_ids", []),
-                    "scene_frames": params.get("scene_frames", []),
-                    "layout_preference": params.get("layout_preference", "auto"),
-                    "error": f"Image generation failed: {exc}",
-                    "can_regenerate": True,
-                },
-                "block_id": block_id,
-                "turn_id": turn_id,
-            }
-            _add_log(session_id, "send", error_event)
-            await sink.send_json(error_event)
-        except Exception:
-            logger.warning("Failed to send image error event (WebSocket likely closed)")
+async def _send_error(sink: EventSink, content: str) -> None:
+    await sink.send_json({"type": "error", "content": content})
 
 
 async def _handle_retrigger_plugins(
@@ -177,6 +150,23 @@ async def _handle_retrigger_plugins(
     ):
         _add_log(session_id, "send", event)
         await sink.send_json(event)
+
+
+async def _ensure_http_terminal_event(ctx: CommandContext) -> None:
+    if ctx.transport_mode != "http":
+        return
+    events = getattr(ctx.sink, "events", None)
+    if not isinstance(events, list):
+        return
+    has_terminal = any(
+        isinstance(evt, dict) and evt.get("type") in {"done", "error", "turn_end"}
+        for evt in events
+    )
+    if has_terminal:
+        return
+    done_event = {"type": "done", "content": ""}
+    _add_log(ctx.session_id, "send", done_event)
+    await ctx.sink.send_json(done_event)
 
 
 async def _stream_process_message(
@@ -212,71 +202,146 @@ async def _session_exists(session_id: str) -> bool:
         return bool(game_session)
 
 
+async def _handle_message(ctx: CommandContext) -> None:
+    content = str(ctx.data.get("content", "")).strip()
+    if not content:
+        await _send_error(ctx.sink, "Empty message")
+        return
+    await _stream_process_message(
+        ctx.sink,
+        ctx.session_id,
+        content,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+    await _ensure_http_terminal_event(ctx)
+
+
+async def _handle_init_game_command(ctx: CommandContext) -> None:
+    await _handle_init_game(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+
+
+async def _handle_form_submit_command(ctx: CommandContext) -> None:
+    await _handle_form_submit(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+
+
+async def _handle_character_edit_command(ctx: CommandContext) -> None:
+    await _handle_character_edit(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+
+
+async def _handle_scene_switch_command(ctx: CommandContext) -> None:
+    await _handle_scene_switch(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+
+
+async def _handle_confirm_command(ctx: CommandContext) -> None:
+    await _handle_confirm(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+
+
+async def _handle_block_response_command(ctx: CommandContext) -> None:
+    await _handle_block_response(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+        transport_mode=ctx.transport_mode,
+    )
+
+
+async def _handle_force_trigger_command(ctx: CommandContext) -> None:
+    await _handle_force_trigger(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+
+
+async def _handle_generate_message_image_command(ctx: CommandContext) -> None:
+    await _handle_generate_message_image(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        image_overrides=ctx.image_overrides,
+        llm_overrides=ctx.llm_overrides,
+    )
+
+
+async def _handle_retrigger_plugins_command(ctx: CommandContext) -> None:
+    await _handle_retrigger_plugins(
+        ctx.sink,
+        ctx.session_id,
+        ctx.data,
+        llm_overrides=ctx.llm_overrides,
+        image_overrides=ctx.image_overrides,
+    )
+
+
+_COMMAND_ROUTER = CommandRouter()
+_COMMAND_ROUTER.register("message", _handle_message)
+_COMMAND_ROUTER.register("init_game", _handle_init_game_command)
+_COMMAND_ROUTER.register("form_submit", _handle_form_submit_command)
+_COMMAND_ROUTER.register("character_edit", _handle_character_edit_command)
+_COMMAND_ROUTER.register("scene_switch", _handle_scene_switch_command)
+_COMMAND_ROUTER.register("confirm", _handle_confirm_command)
+_COMMAND_ROUTER.register("block_response", _handle_block_response_command)
+_COMMAND_ROUTER.register("force_trigger", _handle_force_trigger_command)
+_COMMAND_ROUTER.register("generate_message_image", _handle_generate_message_image_command)
+_COMMAND_ROUTER.register("retrigger_plugins", _handle_retrigger_plugins_command)
+
+
 async def _dispatch_incoming_message(
     sink: EventSink,
     session_id: str,
     data: dict[str, Any],
     *,
-    transport_mode: str = "websocket",
+    transport_mode: Literal["http", "websocket"] = "websocket",
 ) -> None:
     msg_type = str(data.get("type", "message"))
-    llm_overrides = _extract_overrides(data, "llm_overrides")
-    image_overrides = _extract_overrides(data, "image_overrides")
-
+    ctx = CommandContext(
+        sink=sink,
+        session_id=session_id,
+        data=data,
+        transport_mode=transport_mode,
+        llm_overrides=_extract_overrides(data, "llm_overrides"),
+        image_overrides=_extract_overrides(data, "image_overrides"),
+    )
     try:
-        if msg_type == "message":
-            content = str(data.get("content", "")).strip()
-            if not content:
-                await sink.send_json({"type": "error", "content": "Empty message"})
-                return
-            await _stream_process_message(
-                sink, session_id, content,
-                llm_overrides=llm_overrides, image_overrides=image_overrides,
-            )
-            # HTTP fallback returns a finite event list. If a patched/internal
-            # generator forgets terminal events, synthesize a minimal done event
-            # so frontend streaming state can settle.
-            if transport_mode == "http":
-                events = getattr(sink, "events", None)
-                if isinstance(events, list):
-                    has_terminal = any(
-                        isinstance(evt, dict) and evt.get("type") in {"done", "error", "turn_end"}
-                        for evt in events
-                    )
-                    if not has_terminal:
-                        done_event = {"type": "done", "content": ""}
-                        _add_log(session_id, "send", done_event)
-                        await sink.send_json(done_event)
-        elif msg_type == "init_game":
-            await _handle_init_game(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
-        elif msg_type == "form_submit":
-            await _handle_form_submit(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
-        elif msg_type == "character_edit":
-            await _handle_character_edit(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
-        elif msg_type == "scene_switch":
-            await _handle_scene_switch(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
-        elif msg_type == "confirm":
-            await _handle_confirm(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
-        elif msg_type == "block_response":
-            await _handle_block_response(
-                sink,
-                session_id,
-                data,
-                llm_overrides=llm_overrides,
-                image_overrides=image_overrides,
-                transport_mode=transport_mode,
-            )
-        elif msg_type == "force_trigger":
-            await _handle_force_trigger(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
-        elif msg_type == "generate_message_image":
-            await _handle_generate_message_image(sink, session_id, data, image_overrides=image_overrides, llm_overrides=llm_overrides)
-        elif msg_type == "retrigger_plugins":
-            await _handle_retrigger_plugins(sink, session_id, data, llm_overrides=llm_overrides, image_overrides=image_overrides)
-        else:
-            await sink.send_json({"type": "error", "content": f"Unknown message type: {msg_type}"})
+        await _COMMAND_ROUTER.dispatch(ctx)
     except Exception:
         logger.exception("Error processing {} message", msg_type)
-        await sink.send_json({"type": "error", "content": "Internal server error"})
+        await _send_error(sink, "Internal server error")
 
 
 @router.post("/api/chat/{session_id}/command", response_model=ChatCommandResponse)
