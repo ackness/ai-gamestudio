@@ -234,6 +234,10 @@ def manifest_to_metadata(manifest: PluginManifest) -> dict[str, Any]:
     if manifest.prompt:
         metadata["prompt"] = manifest.prompt
 
+    # Capabilities — pass through for plugin_use dispatch
+    if manifest.capabilities:
+        metadata["capabilities"] = manifest.capabilities
+
     # Outputs — pass through as-is.
     if manifest.outputs:
         metadata["outputs"] = manifest.outputs

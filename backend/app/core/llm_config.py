@@ -135,6 +135,10 @@ def resolve_plugin_llm_config(
     p_key = str(overrides.get("plugin_api_key") or "").strip()
     p_base = str(overrides.get("plugin_api_base") or "").strip()
     if p_model:
+        # Security: if api_base is overridden, require api_key too
+        # to prevent leaking the server's default key to attacker-controlled URLs
+        if p_base and not p_key:
+            p_base = ""
         return ResolvedLlmConfig(
             model=p_model,
             api_key=p_key or settings.PLUGIN_LLM_API_KEY or main_config.api_key,

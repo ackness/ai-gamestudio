@@ -256,6 +256,78 @@ def _merge_blocks_into_metadata(
     return json.dumps(existing_meta, ensure_ascii=False, default=str)
 
 
+async def _dispatch_and_persist_blocks(
+    *,
+    blocks: list[dict[str, Any]],
+    db: SQLModelAsyncSession,
+    ctx: Any,
+    state_mgr: GameStateManager,
+    session_id: str,
+    turn_id: str,
+    block_trigger_counts: dict[str, int],
+    plugin_summary: dict[str, Any],
+    message_id: str | None,
+    emit_front_events: bool,
+    llm_calls: dict[str, Any] | None = None,
+    image_overrides: dict[str, str] | None = None,
+    llm_overrides: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """Dispatch blocks, persist metadata, and update trigger counts.
+
+    Shared by ``process_message`` and ``retrigger_plugins`` to eliminate
+    duplicated block-dispatch + trigger-count + metadata-persist logic.
+
+    Returns front-end events to yield (empty list when *emit_front_events* is False).
+    """
+    from backend.app.models.message import Message
+
+    block_trigger_counts_before = dict(block_trigger_counts)
+    block_context = BlockContext(
+        session_id=session_id, project_id=ctx.project.id, db=db,
+        state_mgr=state_mgr, autocommit=False, turn_id=turn_id,
+        image_overrides=image_overrides, llm_overrides=llm_overrides,
+    )
+    stage_events, persisted_blocks = await _dispatch_blocks_stage(
+        blocks,
+        block_context=block_context,
+        block_declarations=ctx.block_declarations,
+        turn_id=turn_id,
+        emit_front_events=emit_front_events,
+        log_prefix="process_message" if emit_front_events else "retrigger",
+        block_trigger_counts=block_trigger_counts,
+    )
+
+    # Persist blocks to message metadata for reload recovery
+    if message_id and persisted_blocks:
+        dispatched_blocks = _to_message_blocks(message_id, persisted_blocks)
+        msg_obj = await db.get(Message, message_id)
+        if msg_obj:
+            msg_obj.metadata_json = _merge_blocks_into_metadata(
+                msg_obj.metadata_json,
+                message_id,
+                dispatched_blocks,
+                llm_calls=llm_calls,
+            )
+            db.add(msg_obj)
+
+    # Update block trigger counts if changed
+    if block_trigger_counts != block_trigger_counts_before:
+        ctx.session.game_state_json = SessionStateAccessor(
+            ctx.session.game_state_json, session_id
+        ).set_block_trigger_counts(block_trigger_counts)
+        db.add(ctx.session)
+
+    # Update trigger counts for plugins that emitted blocks
+    plugins_counted = _plugins_to_count(plugin_summary)
+    if plugins_counted:
+        ctx.session.game_state_json = SessionStateAccessor(
+            ctx.session.game_state_json, session_id
+        ).increment_plugin_trigger_counts(plugins_counted)
+        db.add(ctx.session)
+
+    return stage_events
+
+
 async def _finalize_turn_stage(
     *,
     db: SQLModelAsyncSession,
@@ -586,60 +658,31 @@ async def process_message(
                 pname = pm.get("plugin", "")
                 if pname and "messages" in pm:
                     plugin_calls[pname] = {
-                        "messages": pm.pop("messages"),
+                        "messages": pm.get("messages"),
                         "rounds": pm.get("rounds", 0),
                         "model": plugin_config.model,
                     }
             if plugin_calls:
                 llm_calls["plugins"] = plugin_calls
 
-        # 7. Dispatch blocks
-        block_trigger_counts_before = dict(block_trigger_counts)
-        block_context = BlockContext(
-            session_id=session_id, project_id=ctx.project.id, db=db,
-            state_mgr=state_mgr, autocommit=False, turn_id=turn_id,
-            image_overrides=image_overrides, llm_overrides=llm_overrides,
-        )
-        stage_events, persisted_blocks = await _dispatch_blocks_stage(
-            blocks,
-            block_context=block_context,
-            block_declarations=ctx.block_declarations,
+        # 7. Dispatch blocks + persist metadata (shared helper)
+        stage_events = await _dispatch_and_persist_blocks(
+            blocks=blocks,
+            db=db,
+            ctx=ctx,
+            state_mgr=state_mgr,
+            session_id=session_id,
             turn_id=turn_id,
-            emit_front_events=True,
-            log_prefix="process_message",
             block_trigger_counts=block_trigger_counts,
+            plugin_summary=plugin_summary,
+            message_id=saved_message_id,
+            emit_front_events=True,
+            llm_calls=llm_calls,
+            image_overrides=image_overrides,
+            llm_overrides=llm_overrides,
         )
         for evt in stage_events:
             yield evt
-
-        # 7b. Persist blocks to message metadata for reload recovery
-        if saved_message_id and persisted_blocks:
-            dispatched_blocks = _to_message_blocks(saved_message_id, persisted_blocks)
-            from backend.app.models.message import Message
-
-            msg_obj = await db.get(Message, saved_message_id)
-            if msg_obj:
-                msg_obj.metadata_json = _merge_blocks_into_metadata(
-                    msg_obj.metadata_json,
-                    saved_message_id,
-                    dispatched_blocks,
-                    llm_calls=llm_calls,
-                )
-                db.add(msg_obj)
-
-        if block_trigger_counts != block_trigger_counts_before:
-            ctx.session.game_state_json = SessionStateAccessor(
-                ctx.session.game_state_json, session_id
-            ).set_block_trigger_counts(block_trigger_counts)
-            db.add(ctx.session)
-
-        # Update trigger counts for plugins that emitted blocks
-        plugins_counted = _plugins_to_count(plugin_summary)
-        if plugins_counted:
-            ctx.session.game_state_json = SessionStateAccessor(
-                ctx.session.game_state_json, session_id
-            ).increment_plugin_trigger_counts(plugins_counted)
-            db.add(ctx.session)
 
         await db.commit()
 
@@ -770,46 +813,21 @@ async def retrigger_plugins(
         if plugin_summary:
             yield {"type": "plugin_summary", "data": plugin_summary, "turn_id": turn_id}
 
-        # Dispatch blocks (side effects like DB writes) but collect for batch update
-        block_trigger_counts_before = dict(block_trigger_counts)
-        block_context = BlockContext(
-            session_id=session_id, project_id=ctx.project.id, db=db,
-            state_mgr=state_mgr, autocommit=False, turn_id=turn_id,
-            image_overrides=image_overrides, llm_overrides=llm_overrides,
-        )
-        _, persisted_blocks = await _dispatch_blocks_stage(
-            blocks,
-            block_context=block_context,
-            block_declarations=ctx.block_declarations,
+        # Dispatch blocks + persist metadata (shared helper)
+        await _dispatch_and_persist_blocks(
+            blocks=blocks,
+            db=db,
+            ctx=ctx,
+            state_mgr=state_mgr,
+            session_id=session_id,
             turn_id=turn_id,
-            emit_front_events=False,
-            log_prefix="retrigger",
             block_trigger_counts=block_trigger_counts,
+            plugin_summary=plugin_summary,
+            message_id=message_id,
+            emit_front_events=False,
+            image_overrides=image_overrides,
+            llm_overrides=llm_overrides,
         )
-        dispatched_blocks = _to_message_blocks(message_id, persisted_blocks)
-
-        # Persist blocks to message metadata
-        if dispatched_blocks:
-            msg_obj.metadata_json = _merge_blocks_into_metadata(
-                msg_obj.metadata_json,
-                message_id,
-                dispatched_blocks,
-            )
-            db.add(msg_obj)
-
-        if block_trigger_counts != block_trigger_counts_before:
-            ctx.session.game_state_json = SessionStateAccessor(
-                ctx.session.game_state_json, session_id
-            ).set_block_trigger_counts(block_trigger_counts)
-            db.add(ctx.session)
-
-        # Update trigger counts for plugins that emitted blocks
-        plugins_counted = _plugins_to_count(plugin_summary)
-        if plugins_counted:
-            ctx.session.game_state_json = SessionStateAccessor(
-                ctx.session.game_state_json, session_id
-            ).increment_plugin_trigger_counts(plugins_counted)
-            db.add(ctx.session)
 
         await db.commit()
 

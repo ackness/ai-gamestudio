@@ -169,7 +169,18 @@ async def validate_plugin_import(
             warnings=[],
         )
 
-    path = pathlib.Path(target_dir)
+    path = pathlib.Path(target_dir).resolve()
+    # Security: restrict target_dir to allowed roots (same as install_plugin)
+    allowed_roots = [
+        pathlib.Path(settings.PLUGINS_DIR).resolve(),
+        pathlib.Path("/tmp").resolve(),
+    ]
+    if not any(path.is_relative_to(root) for root in allowed_roots):
+        return ImportValidationResult(
+            valid=False,
+            errors=["plugin_dir must be within the plugins directory or /tmp"],
+            warnings=[],
+        )
     if not path.is_dir():
         return ImportValidationResult(
             valid=False, errors=[f"Directory not found: {target_dir}"], warnings=[]
