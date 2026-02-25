@@ -196,8 +196,8 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
           setSelectedProfileId(matchedProfile.id)
         }
       }
-    }).catch(() => {})
-    api.getPresetModels().then(setPresetModels).catch(() => {})
+    }).catch((err) => console.warn('[modelConfig] getLlmProfiles', err))
+    api.getPresetModels().then(setPresetModels).catch((err) => console.warn('[modelConfig] getPresets', err))
   }, [currentProject])
 
   // Initialize fields from current project

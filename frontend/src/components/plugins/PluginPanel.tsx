@@ -70,7 +70,7 @@ function PluginDetailPanel({ name, language }: { name: string; language: string 
     setLoading(true)
     getPluginDetail(name)
       .then(setDetail)
-      .catch(() => setDetail(null))
+      .catch((err) => { console.warn('[PluginPanel] failed to load detail:', err); setDetail(null) })
       .finally(() => setLoading(false))
   }, [name])
 

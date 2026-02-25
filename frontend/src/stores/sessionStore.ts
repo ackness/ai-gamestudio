@@ -4,6 +4,7 @@ import * as api from '../services/api'
 import { StorageFactory } from '../services/settingsStorage'
 import { idbGetSessions } from '../services/localDb'
 import { syncToIdb, syncToIdbFireAndForget } from '../services/idbSync'
+import { validateIdbRows } from '../utils/idbValidation'
 import { attachPendingBlocksForTurn, type TurnPendingBlock } from './sessionTurnUtils'
 import { useProjectStore } from './projectStore'
 import { useTokenStore } from './tokenStore'
@@ -78,7 +79,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       const persistent = await StorageFactory.isStoragePersistent()
       if (!persistent) {
         const rows = await idbGetSessions(projectId)
-        set({ sessions: rows as unknown as Session[] })
+        set({ sessions: validateIdbRows<Session>(rows, ['id', 'project_id']) })
       } else {
         const sessions = await api.getSessions(projectId)
         set({ sessions })

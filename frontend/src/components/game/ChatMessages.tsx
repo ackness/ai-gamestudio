@@ -306,7 +306,7 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage, onRetriggerPl
   }, [messages, streamingContent, pendingBlocks])
 
   const handleCopy = useCallback((content: string) => {
-    navigator.clipboard.writeText(content).catch(() => {})
+    navigator.clipboard.writeText(content).catch((err) => console.warn('[chat] clipboard', err))
   }, [])
 
   const handleDelete = useCallback((msgId: string) => {

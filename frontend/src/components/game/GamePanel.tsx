@@ -94,6 +94,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
       return
     }
     useNotificationStore.getState().hydrateFromMessages(currentSession.id, messages)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSession?.id, messages])
 
   // Defensive clear for init sessions
@@ -105,6 +106,7 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
     setEvents([])
     setCharacters([])
     setWorldState({})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSession?.id, currentSession?.phase, setScenes, setCurrentScene, setEvents, setCharacters, setWorldState])
 
   const { wsRef, wsStatus, initError, clearInitError } = useGameWebSocket(currentSession)
@@ -145,8 +147,8 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
         outputCostPerToken: info.output_cost_per_token,
         known: info.known,
       })
-    }).catch(() => {
-      // Silently ignore — model info is optional
+    }).catch((err) => {
+      console.warn('[GamePanel] failed to fetch model info:', err)
     })
   }, [effectiveModel, setModelInfo])
 

@@ -116,7 +116,7 @@ export function ProjectEditorPage() {
   // Fetch llmInfo directly so it's available even before ModelSettings tab is opened
   useEffect(() => {
     if (!currentProject?.id) return
-    api.getLlmInfo(currentProject.id).then(setLlmInfo).catch(() => {})
+    api.getLlmInfo(currentProject.id).then(setLlmInfo).catch((err) => console.warn('[editor] getLlmInfo', err))
   }, [currentProject?.id])
 
   const handleLlmInfoChange = useCallback((info: LlmInfo | null) => setLlmInfo(info), [])
