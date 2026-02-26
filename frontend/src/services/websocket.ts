@@ -401,8 +401,8 @@ export class GameWebSocket {
     this.send({ type: 'block_response', block_type: blockType, block_id: blockId, data })
   }
 
-  sendForceTrigger(blockType: string) {
-    this.send({ type: 'force_trigger', block_type: blockType })
+  sendForceTrigger(blockType: string, extra?: Record<string, unknown>) {
+    this.send({ type: 'force_trigger', block_type: blockType, ...(extra || {}) })
   }
 
   sendGenerateMessageImage(messageId: string) {

@@ -1,4 +1,11 @@
-{% set g = runtime_settings.get('guide', {}) if runtime_settings else {} %}
+{% set g = settings if settings else {} %}
+{% if (not g) and runtime_settings %}
+{% if runtime_settings.get('guide') %}
+{% set g = runtime_settings.get('guide', {}) %}
+{% elif runtime_settings.get('guide_mode') is not none %}
+{% set g = runtime_settings %}
+{% endif %}
+{% endif %}
 {% set mode = g.get('guide_mode', 'guide') %}
 
 {% if mode == 'guide' %}

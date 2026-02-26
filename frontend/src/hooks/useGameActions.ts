@@ -2,12 +2,14 @@ import { useCallback, useRef } from 'react'
 import type { Session } from '../types'
 import type { GameWebSocket, StructuredMessage } from '../services/websocket'
 import { useSessionStore } from '../stores/sessionStore'
+import { useUiStore } from '../stores/uiStore'
 
 export function useGameActions(
   currentSession: Session | null,
   wsRef: React.RefObject<GameWebSocket | null>,
   clearInitError: () => void,
 ) {
+  const language = useUiStore((s) => s.language)
   const lastActionRef = useRef<{ type: string; content?: string; data?: unknown } | null>(null)
 
   const {
@@ -99,9 +101,12 @@ export function useGameActions(
       setStreaming(true)
       setStreamStatus('waiting')
       clearStreamContent()
-      wsRef.current.sendForceTrigger(blockType)
+      wsRef.current.sendForceTrigger(blockType, {
+        lang: language,
+        source: 'quick_actions',
+      })
     },
-    [wsRef, isStreaming, setStreaming, setStreamStatus, clearStreamContent],
+    [wsRef, isStreaming, setStreaming, setStreamStatus, clearStreamContent, language],
   )
 
   const handleGenerateImage = useCallback(

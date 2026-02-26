@@ -413,6 +413,7 @@ async def invoke_single_plugin(
     pe: PluginEngine,
     config: ResolvedLlmConfig,
     plugins_dir: str | None = None,
+    runtime_settings: dict[str, Any] | None = None,
 ) -> list[dict]:
     """Invoke a single plugin directly (e.g. guide from quick-action bar)."""
     plugins_dir = plugins_dir or settings.PLUGINS_DIR
@@ -440,6 +441,7 @@ async def invoke_single_plugin(
         metadata,
         plugin_name=plugin_name,
         plugin_root=plugin_root,
+        runtime_settings=runtime_settings if isinstance(runtime_settings, dict) else {},
     )
     tool_instructions = _build_tool_instructions(
         plugin_root=plugin_root,
