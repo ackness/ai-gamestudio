@@ -36,6 +36,8 @@ SINGLE_PLUGIN_SYSTEM_PROMPT = """\
 - 当前游戏状态已在上下文中，无需 db_read 查询已有数据
 - 优先一次调用 emit 同时完成写库（writes/logs）和结构化输出（items）
 - 叙事中没有相关变化则直接结束，不要臆造
+- 只能 emit 本插件声明的 output type，不要发射其他插件的类型
+- emit 的 data 必须严格符合 schema（注意字段名、类型、enum 取值）
 """
 
 
@@ -84,10 +86,14 @@ def _localized_prompt_rel_paths(rel_path: str | None, session_language: str | No
             return name
         return f"{parent}/{name}"
 
-    candidates = [_join_parent(localized_name)]
-    if lang != "en":
-        candidates.append(_join_parent(fallback_en_name))
+    localized_rel = _join_parent(localized_name)
+    fallback_en_rel = _join_parent(fallback_en_name)
+    candidates = [localized_rel]
+    # Default *.md is the plugin's native prompt (currently mostly zh). For zh
+    # sessions we should prefer that native file before optional en fallback.
     candidates.append(rel)
+    if lang != "en":
+        candidates.append(fallback_en_rel)
 
     deduped: list[str] = []
     for candidate in candidates:
@@ -316,15 +322,44 @@ def _build_example_from_schema(schema: dict[str, Any] | None, *, key: str = "") 
     return {}
 
 
+def _schema_to_compact(schema: dict[str, Any], *, depth: int = 0) -> str:
+    """Convert JSON Schema to a compact human-readable description for LLM prompts."""
+    if not isinstance(schema, dict):
+        return "object"
+    enum_values = schema.get("enum")
+    if isinstance(enum_values, list) and enum_values:
+        return "enum(" + "|".join(str(v) for v in enum_values) + ")"
+    schema_type = schema.get("type", "object")
+    if isinstance(schema_type, list):
+        schema_type = next((t for t in schema_type if isinstance(t, str)), "object")
+    if schema_type in ("string", "integer", "number", "boolean"):
+        return str(schema_type)
+    if schema_type == "array":
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            return "array of " + _schema_to_compact(item_schema, depth=depth + 1)
+        return "array"
+    if schema_type == "object":
+        props = schema.get("properties")
+        if not isinstance(props, dict) or not props:
+            return "object"
+        required = set(str(k) for k in (schema.get("required") or []) if isinstance(k, str))
+        parts: list[str] = []
+        for k, v in props.items():
+            if not isinstance(v, dict):
+                continue
+            field_type = _schema_to_compact(v, depth=depth + 1)
+            tag = " [required]" if k in required else ""
+            parts.append(f"{k}: {field_type}{tag}")
+        return "{" + ", ".join(parts) + "}"
+    return str(schema_type)
+
+
 def _build_output_schema_summary(output_cfg: dict[str, Any]) -> str:
     schema = output_cfg.get("schema")
     if not isinstance(schema, dict):
         return "data 必须是对象并符合该输出定义。"
-    props = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
-    required = [str(k) for k in (schema.get("required") or []) if isinstance(k, str)]
-    required_str = ", ".join(required[:6]) if required else "无"
-    keys = ", ".join(str(k) for k in list(props.keys())[:6]) if props else "无"
-    return f"required={required_str}; keys={keys}"
+    return _schema_to_compact(schema)
 
 
 def _build_emit_example(output_type: str, output_cfg: dict[str, Any]) -> str:
@@ -469,6 +504,8 @@ def _build_block_instructions(
         )
 
     if not parts and not mandatory_notes:
+        if isinstance(outputs, dict) and not outputs:
+            return "此插件没有声明任何输出类型。不要调用 emit 的 items 参数；只使用 writes/logs 或其他工具。"
         return ""
 
     prefix = "所有结构化输出都应通过工具调用返回。"

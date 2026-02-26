@@ -86,7 +86,7 @@
     "listen": []
   },
   "storage": {
-    "keys": []
+    "collections": {}
   },
   "i18n": {
     "en": {

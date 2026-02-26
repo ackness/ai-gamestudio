@@ -14,9 +14,31 @@ def _write(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def test_resolve_base_prompt_falls_back_to_english_when_lang_file_missing(tmp_path: Path) -> None:
+def test_resolve_base_prompt_prefers_default_before_english_for_zh(tmp_path: Path) -> None:
     plugin_root = tmp_path / "plugin"
     _write(plugin_root / "prompts/agent/base.md", "BASE_DEFAULT")
+    _write(plugin_root / "prompts/agent/base.en.md", "BASE_EN")
+
+    metadata = {
+        "extensions": {
+            "agent_prompt": {
+                "base_file": "prompts/agent/base.md",
+            }
+        }
+    }
+
+    resolved = _resolve_base_prompt(
+        plugin_root,
+        metadata,
+        fallback_content="FALLBACK",
+        session_language="zh-CN",
+    )
+
+    assert resolved == "BASE_DEFAULT"
+
+
+def test_resolve_base_prompt_uses_english_fallback_when_default_missing(tmp_path: Path) -> None:
+    plugin_root = tmp_path / "plugin"
     _write(plugin_root / "prompts/agent/base.en.md", "BASE_EN")
 
     metadata = {

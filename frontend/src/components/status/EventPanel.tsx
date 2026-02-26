@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useGameStateStore } from '../../stores/gameStateStore'
+import { useGameDataStore } from '../../stores/gameDataStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useUiStore } from '../../stores/uiStore'
 import type { GameEvent } from '../../types'
@@ -108,7 +108,7 @@ function EventCard({ event, depth = 0, language }: { event: GameEvent; depth?: n
 
 export function EventPanel() {
   const currentSession = useSessionStore((s) => s.currentSession)
-  const allEvents = useGameStateStore((s) => s.events)
+  const allEvents = useGameDataStore((s) => s.events)
   const language = useUiStore((s) => s.language)
   const t = eventText[language] ?? eventText.en
   const events = currentSession

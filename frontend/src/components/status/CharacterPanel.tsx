@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { useGameStateStore } from '../../stores/gameStateStore'
+import { useGameDataStore } from '../../stores/gameDataStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useUiStore } from '../../stores/uiStore'
 import * as api from '../../services/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { normalizeInventoryItemLabel } from '../../utils/inventory'
 
 const characterText: Record<string, Record<string, string>> = {
   zh: {
@@ -31,12 +32,8 @@ const characterText: Record<string, Record<string, string>> = {
   },
 }
 
-function normalizeInventoryItem(item: string | { name: string; [key: string]: unknown }): string {
-  return typeof item === 'string' ? item : item.name || String(item)
-}
-
 export function CharacterPanel() {
-  const { characters } = useGameStateStore()
+  const { characters } = useGameDataStore()
   const currentSession = useSessionStore((s) => s.currentSession)
   const language = useUiStore((s) => s.language)
   const t = characterText[language] ?? characterText.en
@@ -60,7 +57,7 @@ export function CharacterPanel() {
     setSyncing(true)
     try {
       const chars = await api.getCharacters(currentSession.id)
-      useGameStateStore.getState().setCharacters(chars)
+      useGameDataStore.getState().setCharacters(chars)
     } finally {
       setSyncing(false)
     }
@@ -146,7 +143,7 @@ export function CharacterPanel() {
                   <div className="flex flex-wrap gap-1 ml-2">
                     {inv.map((item, i) => (
                       <span key={i} className="text-xs bg-muted text-foreground px-2 py-0.5 rounded">
-                        {normalizeInventoryItem(item)}
+                        {normalizeInventoryItemLabel(item)}
                       </span>
                     ))}
                   </div>

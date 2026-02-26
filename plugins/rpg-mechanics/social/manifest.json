@@ -127,10 +127,10 @@
     "listen": []
   },
   "storage": {
-    "keys": [
-      "npc-relationships",
-      "faction-standings"
-    ]
+    "collections": {
+      "npc-relationships": { "type": "kv", "scope": "session" },
+      "faction-standings": { "type": "kv", "scope": "session" }
+    }
   },
   "extensions": {
     "runtime_settings": {

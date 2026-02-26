@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 
 interface TableData {
@@ -8,6 +8,12 @@ interface TableData {
 interface SessionTables {
   session: TableData
   tables: Record<string, TableData[]>
+}
+
+interface MetadataSections {
+  blocks: unknown[]
+  narrative: Record<string, unknown> | null
+  plugins: Record<string, Record<string, unknown>>
 }
 
 const tableLabels: Record<string, string> = {
@@ -22,7 +28,7 @@ const tableLabels: Record<string, string> = {
   game_graphs: '关系图 Game Graph',
 }
 
-function JsonCell({ value }: { value: unknown }) {
+function JsonCell({ value, maxLen = 80 }: { value: unknown; maxLen?: number }) {
   const [expanded, setExpanded] = useState(false)
   const toggle = () => setExpanded((v) => !v)
 
@@ -36,10 +42,10 @@ function JsonCell({ value }: { value: unknown }) {
     return <span className="text-cyan-400">{value}</span>
   }
   if (typeof value === 'string') {
-    if (value.length > 80) {
+    if (value.length > maxLen) {
       return (
-        <div onDoubleClick={toggle} className="cursor-pointer select-none" title="双击展开/收起">
-          <span className="break-all">{expanded ? value : value.slice(0, 80) + '…'}</span>
+        <div onDoubleClick={toggle} className="cursor-pointer" title="双击展开/收起">
+          <span className="break-all">{expanded ? value : value.slice(0, maxLen) + '…'}</span>
         </div>
       )
     }
@@ -49,7 +55,7 @@ function JsonCell({ value }: { value: unknown }) {
     const compact = JSON.stringify(value)
     if (compact.length > 60) {
       return (
-        <div onDoubleClick={toggle} className="cursor-pointer select-none" title="双击展开/收起">
+        <div onDoubleClick={toggle} className="cursor-pointer" title="双击展开/收起">
           {expanded ? (
             <pre className="text-[11px] whitespace-pre-wrap break-all">{JSON.stringify(value, null, 2)}</pre>
           ) : (
@@ -63,7 +69,7 @@ function JsonCell({ value }: { value: unknown }) {
   return <span>{String(value)}</span>
 }
 
-function DataTable({ rows }: { rows: TableData[] }) {
+function DataTable({ rows, onRowClick, selectedIndex }: { rows: TableData[]; onRowClick?: (i: number) => void; selectedIndex?: number }) {
   if (rows.length === 0) {
     return <p className="text-muted-foreground text-sm py-4 text-center">空表</p>
   }
@@ -84,7 +90,15 @@ function DataTable({ rows }: { rows: TableData[] }) {
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b last:border-0 hover:bg-muted/30">
+            <tr
+              key={i}
+              onClick={() => {
+                const sel = window.getSelection()
+                if (sel && sel.toString().length > 0) return
+                onRowClick?.(i)
+              }}
+              className={`border-b last:border-0 hover:bg-muted/30 ${onRowClick ? 'cursor-pointer' : ''} ${selectedIndex === i ? 'bg-primary/10' : ''}`}
+            >
               {columns.map((col) => (
                 <td key={col} className="px-3 py-2 align-top max-w-xs">
                   <JsonCell value={row[col]} />
@@ -98,12 +112,190 @@ function DataTable({ rows }: { rows: TableData[] }) {
   )
 }
 
+/** Parse metadata_json into separate sections for display. */
+function parseMetadataSections(meta: unknown): MetadataSections | null {
+  if (!meta || typeof meta !== 'object') return null
+  const m = meta as Record<string, unknown>
+  const blocks = Array.isArray(m.blocks) ? m.blocks : []
+  const llm = (m.llm_calls || {}) as Record<string, unknown>
+  const narrative = (llm.narrative || null) as Record<string, unknown> | null
+  const plugins = (llm.plugins || {}) as Record<string, Record<string, unknown>>
+  return { blocks, narrative, plugins }
+}
+
+/** Collapsible section for metadata detail panel. */
+function MetadataSection({ title, badge, data, defaultOpen = false }: {
+  title: string
+  badge?: string
+  data: unknown
+  defaultOpen?: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  if (data === null || data === undefined) return null
+  const json = JSON.stringify(data, null, 2)
+  return (
+    <div className="border rounded-lg overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-3 py-2 bg-muted/30 hover:bg-muted/50 text-xs"
+      >
+        <span className="font-medium">{open ? '▼' : '▶'} {title}</span>
+        <span className="text-muted-foreground text-[10px]">{badge || `${json.length} chars`}</span>
+      </button>
+      {open && (
+        <pre className="text-[11px] p-3 overflow-auto max-h-96 whitespace-pre-wrap break-all bg-background">
+          {json}
+        </pre>
+      )}
+    </div>
+  )
+}
+
+/** Detail panel showing split metadata for a selected message. */
+function MessageMetadataPanel({ row }: { row: TableData }) {
+  const meta = row.metadata_json
+  const sections = parseMetadataSections(meta)
+  if (!sections) {
+    return <p className="text-muted-foreground text-xs py-2">无 metadata</p>
+  }
+  const pluginNames = Object.keys(sections.plugins)
+  return (
+    <div className="space-y-2 py-3">
+      <div className="text-xs text-muted-foreground mb-1">
+        消息 ID: <span className="font-mono">{String(row.id || '').slice(0, 8)}</span>
+        {' · '}角色: {String(row.role)}
+        {' · '}类型: {String(row.message_type || 'chat')}
+      </div>
+      {sections.blocks.length > 0 && (
+        <MetadataSection
+          title="Blocks (输出块)"
+          badge={`${sections.blocks.length} 个`}
+          data={sections.blocks}
+          defaultOpen
+        />
+      )}
+      {sections.narrative && (
+        <MetadataSection
+          title="Narrative LLM (主模型)"
+          badge={sections.narrative.model ? String(sections.narrative.model) : undefined}
+          data={sections.narrative}
+        />
+      )}
+      {pluginNames.length > 0 && (
+        <>
+          <div className="text-xs text-muted-foreground pt-1">插件 LLM 调用 (旧数据):</div>
+          {pluginNames.map((name) => (
+            <MetadataSection
+              key={name}
+              title={`Plugin: ${name}`}
+              badge={`${(sections.plugins[name]?.rounds as number) || 0} rounds`}
+              data={sections.plugins[name]}
+            />
+          ))}
+        </>
+      )}
+    </div>
+  )
+}
+
+/** Tables that support namespace/collection filtering. */
+const FILTERABLE_TABLES = new Set(['game_kvs', 'game_logs', 'game_graphs', 'plugin_storage'])
+
+/** Extract unique values for a field from rows. */
+function uniqueValues(rows: TableData[], field: string): string[] {
+  const set = new Set<string>()
+  for (const r of rows) {
+    const v = r[field]
+    if (typeof v === 'string' && v) set.add(v)
+  }
+  return Array.from(set).sort()
+}
+
+/** The field used as "namespace" for each filterable table. */
+function nsField(table: string): string {
+  if (table === 'plugin_storage') return 'plugin_name'
+  return 'namespace'
+}
+
+function FilterBar({
+  tableName,
+  rows,
+  nsFilter,
+  setNsFilter,
+  colFilter,
+  setColFilter,
+  keyFilter,
+  setKeyFilter,
+}: {
+  tableName: string
+  rows: TableData[]
+  nsFilter: string
+  setNsFilter: (v: string) => void
+  colFilter: string
+  setColFilter: (v: string) => void
+  keyFilter: string
+  setKeyFilter: (v: string) => void
+}) {
+  const ns = nsField(tableName)
+  const namespaces = useMemo(() => uniqueValues(rows, ns), [rows, ns])
+  const collections = useMemo(() => {
+    const filtered = nsFilter ? rows.filter((r) => r[ns] === nsFilter) : rows
+    return uniqueValues(filtered, 'collection')
+  }, [rows, ns, nsFilter])
+  const hasKey = tableName === 'game_kvs' || tableName === 'plugin_storage'
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <select
+        value={nsFilter}
+        onChange={(e) => { setNsFilter(e.target.value); setColFilter('') }}
+        className="bg-muted border rounded px-2 py-1 text-xs"
+      >
+        <option value="">全部插件</option>
+        {namespaces.map((n) => <option key={n} value={n}>{n}</option>)}
+      </select>
+      {collections.length > 0 && (
+        <select
+          value={colFilter}
+          onChange={(e) => setColFilter(e.target.value)}
+          className="bg-muted border rounded px-2 py-1 text-xs"
+        >
+          <option value="">全部 collection</option>
+          {collections.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      )}
+      {hasKey && (
+        <input
+          type="text"
+          value={keyFilter}
+          onChange={(e) => setKeyFilter(e.target.value)}
+          placeholder="搜索 key..."
+          className="bg-muted border rounded px-2 py-1 text-xs w-36"
+        />
+      )}
+      {(nsFilter || colFilter || keyFilter) && (
+        <button
+          onClick={() => { setNsFilter(''); setColFilter(''); setKeyFilter('') }}
+          className="text-xs text-muted-foreground hover:text-foreground"
+        >
+          清除
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function DebugTablesPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const [data, setData] = useState<SessionTables | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeTable, setActiveTable] = useState<string>('characters')
+  const [nsFilter, setNsFilter] = useState('')
+  const [colFilter, setColFilter] = useState('')
+  const [keyFilter, setKeyFilter] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedMsgIdx, setSelectedMsgIdx] = useState<number | null>(null)
 
   useEffect(() => {
     if (!sessionId) return
@@ -127,6 +319,37 @@ export function DebugTablesPage() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
   }, [sessionId])
+
+  const currentRows = data?.tables[activeTable] || []
+
+  const filteredRows = useMemo(() => {
+    let rows = currentRows
+    // Apply namespace/collection/key filters for filterable tables
+    if (FILTERABLE_TABLES.has(activeTable)) {
+      const ns = nsField(activeTable)
+      if (nsFilter) rows = rows.filter((r) => r[ns] === nsFilter)
+      if (colFilter) rows = rows.filter((r) => r.collection === colFilter)
+      if (keyFilter) {
+        const q = keyFilter.toLowerCase()
+        rows = rows.filter((r) => {
+          const k = r.key
+          return typeof k === 'string' && k.toLowerCase().includes(q)
+        })
+      }
+    }
+    // Apply global text search
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      rows = rows.filter((r) =>
+        Object.values(r).some((v) => {
+          if (v === null || v === undefined) return false
+          const s = typeof v === 'string' ? v : JSON.stringify(v)
+          return s.toLowerCase().includes(q)
+        }),
+      )
+    }
+    return rows
+  }, [currentRows, activeTable, nsFilter, colFilter, keyFilter, searchQuery])
 
   if (loading) {
     return (
@@ -153,7 +376,6 @@ export function DebugTablesPage() {
   if (!data) return null
 
   const tableNames = Object.keys(data.tables)
-  const currentRows = data.tables[activeTable] || []
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -181,7 +403,7 @@ export function DebugTablesPage() {
             return (
               <button
                 key={name}
-                onClick={() => setActiveTable(name)}
+                onClick={() => { setActiveTable(name); setNsFilter(''); setColFilter(''); setKeyFilter(''); setSearchQuery(''); setSelectedMsgIdx(null) }}
                 className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center justify-between ${
                   activeTable === name
                     ? 'bg-primary/10 text-primary'
@@ -201,13 +423,47 @@ export function DebugTablesPage() {
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-medium">
+          <div className="flex items-center justify-between mb-3 gap-4">
+            <h2 className="text-sm font-medium shrink-0">
               {tableLabels[activeTable] || activeTable}
-              <span className="text-muted-foreground ml-2">({currentRows.length} 行)</span>
+              <span className="text-muted-foreground ml-2">({filteredRows.length} 行)</span>
             </h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="搜索..."
+                className="bg-muted border rounded px-2 py-1 text-xs w-40"
+              />
+              {FILTERABLE_TABLES.has(activeTable) && (
+                <FilterBar
+                  tableName={activeTable}
+                  rows={currentRows}
+                  nsFilter={nsFilter}
+                  setNsFilter={setNsFilter}
+                  colFilter={colFilter}
+                  setColFilter={setColFilter}
+                  keyFilter={keyFilter}
+                  setKeyFilter={setKeyFilter}
+                />
+              )}
+            </div>
           </div>
-          <DataTable rows={currentRows} />
+          <DataTable
+            rows={filteredRows}
+            onRowClick={activeTable === 'messages' ? (i) => setSelectedMsgIdx(selectedMsgIdx === i ? null : i) : undefined}
+            selectedIndex={activeTable === 'messages' ? (selectedMsgIdx ?? undefined) : undefined}
+          />
+          {activeTable === 'messages' && selectedMsgIdx !== null && filteredRows[selectedMsgIdx] && (
+            <div className="mt-3 border rounded-lg p-4 bg-card">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium">消息详情 — metadata 拆分视图</span>
+                <button onClick={() => setSelectedMsgIdx(null)} className="text-xs text-muted-foreground hover:text-foreground">关闭</button>
+              </div>
+              <MessageMetadataPanel row={filteredRows[selectedMsgIdx]} />
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,12 +1,10 @@
 import { useCallback } from 'react'
 import type { Character, GameEvent, StoryImageData, Scene } from '../types'
 import { useSessionStore } from '../stores/sessionStore'
-import { useSceneStore } from '../stores/sceneStore'
 import { useMessageImageStore } from '../stores/messageImageStore'
-import { useGameStateStore } from '../stores/gameStateStore'
+import { useGameDataStore } from '../stores/gameDataStore'
 import { useNotificationStore } from '../stores/notificationStore'
 import { useTokenStore } from '../stores/tokenStore'
-import { useCodexStore } from '../stores/codexStore'
 import * as api from '../services/api'
 import * as gameStorage from '../services/gameStorage'
 
@@ -65,9 +63,8 @@ export function useWsCallbacks(sessionId: string): WsCallbacks {
     flushPendingBlocksForTurn,
     updateMessageBlocks,
   } = useSessionStore()
-  const { setCurrentScene, setScenes } = useSceneStore()
+  const { setCurrentScene, setScenes, setCharacters, mergeCharacters, setWorldState, addEvent, setEvents, upsertQuest, addCodexEntry } = useGameDataStore()
   const { setMessageImage, setImageLoading } = useMessageImageStore()
-  const { setCharacters, mergeCharacters, setWorldState, addEvent, setEvents } = useGameStateStore()
 
   const onChunk = useCallback((content: string) => {
     setStreamStatus('streaming')
@@ -159,7 +156,7 @@ export function useWsCallbacks(sessionId: string): WsCallbacks {
     }
 
     setCurrentScene(scene)
-    const existing = useSceneStore.getState().scenes
+    const existing = useGameDataStore.getState().scenes
     const updated = existing.map((s) => (s.id === scene.id ? scene : { ...s, is_current: false }))
     const found = existing.find((s) => s.id === scene.id)
     if (found) {
@@ -205,11 +202,11 @@ export function useWsCallbacks(sessionId: string): WsCallbacks {
     if (type === 'quest_update' && data && isRecord(data)) {
       const q = data as { quest_id?: string; title?: string; status?: string; description?: string; objectives?: unknown[]; rewards?: unknown }
       if (q.quest_id && q.title && q.status) {
-        useGameStateStore.getState().upsertQuest(q as import('../types').Quest)
+        upsertQuest(q as import('../types').Quest)
       }
     }
     if (type === 'codex_entry' && data) {
-      useCodexStore.getState().addEntry(data as import('../stores/codexStore').CodexEntry)
+      addCodexEntry(data as import('../stores/gameDataStore').CodexEntry)
     }
     const enrichedData =
       data && typeof data === 'object' && !Array.isArray(data)
@@ -236,7 +233,7 @@ export function useWsCallbacks(sessionId: string): WsCallbacks {
       turnId: turnId || undefined,
       blockId: resolvedBlockId,
     })
-  }, [addEvent, addPendingBlock])
+  }, [addEvent, addPendingBlock, upsertQuest, addCodexEntry])
 
   const onMessageBlocksUpdated = useCallback((messageId: string | null, blocks: unknown) => {
     if (messageId && Array.isArray(blocks)) updateMessageBlocks(messageId, blocks as { type: string; data: unknown; block_id?: string; output?: import('../services/outputContract').OutputEnvelope }[])

@@ -532,11 +532,8 @@ async def test_handle_emit_filters_undeclared_output_types() -> None:
         },
         ctx,
     )
-    assert out["status"] == "ok"
-    assert out["count"] == 1
-    assert out["emitted"] == ["scene_update"]
-    assert len(ctx.blocks) == 1
-    assert ctx.blocks[0]["type"] == "scene_update"
+    assert out["status"] == "error"
+    assert any("undeclared output type: notification" in e for e in out["errors"])
 
 
 @pytest.mark.asyncio
@@ -559,8 +556,8 @@ async def test_handle_emit_ignores_items_when_plugin_declares_no_outputs() -> No
         {"items": [{"type": "notification", "data": {"content": "x"}}]},
         ctx,
     )
-    assert out["status"] == "ok"
-    assert "count" not in out
+    assert out["status"] == "error"
+    assert any("no outputs" in e for e in out["errors"])
     assert ctx.blocks == []
 
 

@@ -4,7 +4,7 @@ import { useProjectStore } from '../stores/projectStore'
 import { useBlockInteractionStore } from '../stores/blockInteractionStore'
 import { useNotificationStore } from '../stores/notificationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import { useGameStateStore } from '../stores/gameStateStore'
+import { useGameDataStore } from '../stores/gameDataStore'
 import { GameWebSocket } from '../services/websocket'
 import { StorageFactory } from '../services/settingsStorage'
 import { useUiStore } from '../stores/uiStore'
@@ -21,7 +21,7 @@ export function useGameWebSocket(currentSession: Session | null) {
   const [initError, setInitError] = useState<string | null>(null)
 
   const { setStreaming, setStreamStatus, clearStreamContent } = useSessionStore()
-  const { setCharacters, setWorldState, setEvents } = useGameStateStore()
+  const { setCharacters, setWorldState, setEvents } = useGameDataStore()
 
   // Hydrate session data (characters, world state, scenes, events, images)
   useSessionHydration(currentSession)

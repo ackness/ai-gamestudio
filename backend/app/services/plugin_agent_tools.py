@@ -15,6 +15,7 @@ from backend.app.core.llm_config import ResolvedLlmConfig
 from backend.app.core.network_safety import ensure_safe_api_base
 from backend.app.core.plugin_engine import BlockDeclaration
 from backend.app.core.script_runner import PythonScriptRunner
+from backend.app.core.storage_port import Scope
 
 __all__ = [
     "_ToolContext",
@@ -51,6 +52,7 @@ class _ToolContext:
     __slots__ = (
         "session_id",
         "game_db",
+        "storage",
         "pe",
         "enabled_plugins",
         "plugins_dir",
@@ -64,16 +66,28 @@ class _ToolContext:
     def __init__(self, **kwargs: Any):
         for k, v in kwargs.items():
             setattr(self, k, v)
+        # Ensure storage/game_db defaults so callers can pass either
+        if not hasattr(self, "storage"):
+            self.storage = None
+        if not hasattr(self, "game_db"):
+            self.game_db = None
 
 
-def _build_call_kwargs(config: ResolvedLlmConfig, messages: list, tools: list) -> dict:
+def _build_call_kwargs(config: ResolvedLlmConfig, messages: list, tools: list, *, reasoning_effort: str | None = "none") -> dict:
     kw: dict[str, Any] = {
         "model": config.model,
         "messages": messages,
         "tools": tools,
         "tool_choice": "auto",
         "stream": False,
+        "drop_params": True,  # auto-drop unsupported params across providers
     }
+    # Reasoning control: default "none" disables thinking for plugin calls
+    enable_thinking = bool(reasoning_effort and reasoning_effort != "none")
+    if enable_thinking:
+        kw["reasoning_effort"] = reasoning_effort
+    # Also pass enable_thinking via extra_body for OpenAI-compatible APIs (Qwen, etc.)
+    kw["extra_body"] = {"enable_thinking": enable_thinking}
     if not config.is_empty_key():
         kw["api_key"] = config.api_key
     if config.api_base:
@@ -271,7 +285,6 @@ def _validate_emit_item_data(
 
 async def _handle_emit(args: dict, ctx: _ToolContext) -> dict:
     """Single unified output tool: optional writes/logs + multiple structured items."""
-    db = ctx.game_db
     writes = args.get("writes", [])
     logs = args.get("logs", [])
 
@@ -289,7 +302,7 @@ async def _handle_emit(args: dict, ctx: _ToolContext) -> dict:
     strict_errors: list[str] = []
     ignored: list[str] = []
     if items and enforce_declared_types and not declared_output_types:
-        ignored.append("plugin declares no outputs; all emitted items were ignored")
+        strict_errors.append("plugin declares no outputs; do NOT call emit with items")
     for idx, item in enumerate(items):
         try:
             output_item = _build_output_item(
@@ -304,7 +317,9 @@ async def _handle_emit(args: dict, ctx: _ToolContext) -> dict:
 
         output_type = str(output_item.get("type") or "")
         if enforce_declared_types and output_type not in declared_output_types:
-            ignored.append(f"undeclared output type: {output_type}")
+            strict_errors.append(
+                f"undeclared output type: {output_type}; allowed types: {sorted(declared_output_types) if declared_output_types else 'none'}"
+            )
             continue
 
         data = output_item.get("data")
@@ -333,17 +348,24 @@ async def _handle_emit(args: dict, ctx: _ToolContext) -> dict:
             "text": text,
         }
 
+    ns = ctx.plugin_name
     written = 0
     for w in writes:
         if not isinstance(w, dict):
             continue
-        await db.kv_set(w["collection"], w["key"], w["value"])
+        if getattr(ctx, "storage", None):
+            await ctx.storage.kv_set(Scope.SESSION, ns, w["collection"], w["key"], w["value"])
+        else:
+            await ctx.game_db.kv_set(w["collection"], w["key"], w["value"])
         written += 1
 
     logged = 0
     for log_entry in logs:
         if isinstance(log_entry, dict):
-            await db.log_append(log_entry["collection"], log_entry["entry"])
+            if getattr(ctx, "storage", None):
+                await ctx.storage.log_append(Scope.SESSION, ns, log_entry["collection"], log_entry["entry"])
+            else:
+                await ctx.game_db.log_append(log_entry["collection"], log_entry["entry"])
             logged += 1
 
     emitted_ids: list[str] = []
@@ -368,10 +390,17 @@ async def _handle_db_read(args: dict, ctx: _ToolContext) -> Any:
     """Unified read: single key or full collection."""
     collection = args["collection"]
     key = args.get("key")
-    if key:
-        val = await ctx.game_db.kv_get(collection, key)
-        return val if val is not None else {"_empty": True}
-    return await ctx.game_db.kv_query(collection)
+    ns = ctx.plugin_name
+    if getattr(ctx, "storage", None):
+        if key:
+            val = await ctx.storage.kv_get(Scope.SESSION, ns, collection, key)
+            return val if val is not None else {"_empty": True}
+        return await ctx.storage.kv_query(Scope.SESSION, ns, collection)
+    else:
+        if key:
+            val = await ctx.game_db.kv_get(collection, key)
+            return val if val is not None else {"_empty": True}
+        return await ctx.game_db.kv_query(collection)
 
 
 async def _handle_execute_script(args: dict, ctx: _ToolContext) -> Any:
@@ -449,12 +478,24 @@ async def _execute_tool(tool_call: Any, ctx: _ToolContext) -> Any:
             case "execute_script":
                 return await _handle_execute_script(args, ctx)
             case "db_log_append":
-                await ctx.game_db.log_append(args["collection"], args["entry"])
+                ns = ctx.plugin_name
+                if getattr(ctx, "storage", None):
+                    await ctx.storage.log_append(Scope.SESSION, ns, args["collection"], args["entry"])
+                else:
+                    await ctx.game_db.log_append(args["collection"], args["entry"])
                 return {"status": "ok"}
             case "db_log_query":
-                return await ctx.game_db.log_query(args["collection"], args.get("limit", 10))
+                ns = ctx.plugin_name
+                if getattr(ctx, "storage", None):
+                    return await ctx.storage.log_query(Scope.SESSION, ns, args["collection"], limit=args.get("limit", 10))
+                else:
+                    return await ctx.game_db.log_query(args["collection"], args.get("limit", 10))
             case "db_graph_add":
-                await ctx.game_db.graph_add(args["from_id"], args["to_id"], args["relation"], args.get("data"))
+                ns = ctx.plugin_name
+                if getattr(ctx, "storage", None):
+                    await ctx.storage.graph_add(Scope.SESSION, ns, args["from_id"], args["to_id"], args["relation"], args.get("data"))
+                else:
+                    await ctx.game_db.graph_add(args["from_id"], args["to_id"], args["relation"], args.get("data"))
                 return {"status": "ok"}
             case _:
                 return _tool_error_response(

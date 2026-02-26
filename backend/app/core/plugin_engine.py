@@ -24,6 +24,7 @@ from loguru import logger
 
 if TYPE_CHECKING:
     from backend.app.core.plugin_group import PluginGroup
+    from backend.app.core.schema_registry import SchemaRegistry
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9-]*[a-z0-9]$|^[a-z]$")
 
@@ -49,7 +50,7 @@ class BlockDeclaration:
 class PluginEngine:
     """Discovers, loads, validates, and renders PLUGIN.md plugins."""
 
-    def __init__(self) -> None:
+    def __init__(self, schema_registry: SchemaRegistry | None = None) -> None:
         self._plugin_cache: dict[str, tuple[tuple[tuple[int, int] | None, tuple[int, int] | None], dict[str, Any]]] = {}
         self._template_cache: dict[str, tuple[tuple[int, int], str]] = {}
         self._discover_cache: dict[
@@ -60,6 +61,15 @@ class PluginEngine:
             ],
         ] = {}
         self._last_block_conflicts: list[dict[str, str]] = []
+        self._schema_registry = schema_registry
+
+    @property
+    def schema_registry(self) -> "SchemaRegistry | None":
+        return self._schema_registry
+
+    @schema_registry.setter
+    def schema_registry(self, registry: "SchemaRegistry | None") -> None:
+        self._schema_registry = registry
 
     @staticmethod
     def _file_signature(path: pathlib.Path) -> tuple[int, int] | None:
@@ -243,6 +253,16 @@ class PluginEngine:
         for field_name in _LLM_ONLY_FIELDS:
             if field_name in post.metadata:
                 metadata[field_name] = post.metadata[field_name]
+
+        # Register storage schema if SchemaRegistry is available
+        if self._schema_registry and manifest.storage:
+            storage_cfg = manifest.storage
+            if "collections" in storage_cfg:
+                self._schema_registry.register(manifest.name, storage_cfg)
+            elif "keys" in storage_cfg:
+                self._schema_registry.register_legacy_keys(
+                    manifest.name, storage_cfg.get("keys", []),
+                )
 
         loaded: dict[str, Any] = {
             "name": manifest.name,
