@@ -29,11 +29,18 @@ async function detectPersistent(): Promise<boolean> {
 }
 
 export class StoragePort {
+  private api: ApiStorageAdapter | null;
+  private idb: IdbStorageAdapter;
+  public readonly persistent: boolean;
   private constructor(
-    private api: ApiStorageAdapter | null,
-    private idb: IdbStorageAdapter,
-    public readonly persistent: boolean,
-  ) {}
+    api: ApiStorageAdapter | null,
+    idb: IdbStorageAdapter,
+    persistent: boolean,
+  ) {
+    this.api = api;
+    this.idb = idb;
+    this.persistent = persistent;
+  }
 
   static async create(sessionId?: string): Promise<StoragePort> {
     const persistent = await detectPersistent();

@@ -25,7 +25,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export class ApiStorageAdapter implements StorageAdapter {
-  constructor(private sessionId?: string) {}
+  private sessionId?: string;
+  constructor(sessionId?: string) { this.sessionId = sessionId; }
 
   async kvGet(
     scope: Scope, ns: string, collection: string, key: string,

@@ -66,7 +66,7 @@ export function CodexRenderer({ data }: BlockRendererProps) {
   return (
     <div className="bg-amber-500/8 border border-amber-500/30 rounded-lg px-3 py-2 max-w-[72%] space-y-0.5">
       {unique.map((d, i) => (
-        <CodexEntryRow key={d.entry_id || i} d={d} t={t} />
+        <CodexEntryRow key={d.entry_id || i} d={d} t={t as (k: string) => string} />
       ))}
       <p className="text-[11px] text-muted-foreground pt-1">{t('codex.viewInPanel')}</p>
     </div>

@@ -61,7 +61,7 @@ export function ItemUpdateRenderer({ data }: BlockRendererProps) {
   return (
     <div className="bg-card border border-border/50 rounded-xl px-4 py-2.5 max-w-[80%] space-y-0.5">
       {valid.map((d, i) => (
-        <ItemRow key={`${d.item_name}-${i}`} d={d} t={t} />
+        <ItemRow key={`${d.item_name}-${i}`} d={d} t={t as (k: string) => string} />
       ))}
     </div>
   )
