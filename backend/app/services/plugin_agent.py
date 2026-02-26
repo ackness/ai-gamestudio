@@ -14,6 +14,7 @@ from backend.app.core.config import settings
 from backend.app.core.game_db import GameDB
 from backend.app.core.llm_config import ResolvedLlmConfig
 from backend.app.core.plugin_engine import PluginEngine
+from backend.app.adapters.sql_storage import SqlStorageAdapter
 from backend.app.core.plugin_hooks import DEFAULT_PLUGIN_HOOK, normalize_plugin_hooks
 from backend.app.core.plugin_trigger import (
     PLUGIN_TRIGGER_INTERVAL,
@@ -352,9 +353,10 @@ async def _run_one_plugin(
 
     # Deferred-commit DB for batched writes
     plugin_db = GameDB(game_db.db, game_db.session_id, autocommit=False)
+    storage = SqlStorageAdapter(game_db.db, session_id=game_db.session_id, autocommit=False)
     output_declarations = _build_output_declarations(metadata, name)
     ctx = _ToolContext(
-        session_id=session_id, game_db=plugin_db, pe=pe,
+        session_id=session_id, game_db=plugin_db, storage=storage, pe=pe,
         enabled_plugins=[name], plugins_dir=plugins_dir, blocks=blocks,
         plugin_name=name, turn_id=turn_id,
         declared_output_types=set(output_declarations.keys()),
@@ -398,7 +400,8 @@ async def _run_one_plugin(
             except Exception:
                 pass
 
-    # Single commit for all writes
+    # Single commit for all writes (storage and plugin_db share the same session)
+    await storage.flush()
     await plugin_db.flush()
 
     for b in blocks:
