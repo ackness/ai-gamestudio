@@ -1,6 +1,17 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { BlockRendererProps } from '../../services/blockRenderers'
 import { useUiStore } from '../../stores/uiStore'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 // ---------------------------------------------------------------------------
 // i18n
@@ -24,6 +35,19 @@ const texts: Record<string, Record<string, string>> = {
     showDetails: '显示详情',
     hideDetails: '隐藏详情',
     close: '关闭',
+    detailsSubtitle: '左侧查看图片，右侧查看生成详情与状态信息。',
+    detailsInfo: '详情信息',
+    statusSummary: '状态概览',
+    statusLabel: '生成状态',
+    imageIdLabel: '图片 ID',
+    modelLabel: '模型',
+    providerNoteLabel: '服务说明',
+    apiBaseLabel: 'API 地址',
+    layoutPreferenceLabel: '布局偏好',
+    referenceImageIdsLabel: '参考图 ID',
+    referenceImagesLabel: '参考图信息',
+    createdAt: '创建时间',
+    imageUnavailable: '暂无可预览图片',
     llmEnhanced: 'LLM 增强',
     originalPrompt: '原始提示词',
     storyBackground: '故事背景',
@@ -56,6 +80,19 @@ const texts: Record<string, Record<string, string>> = {
     showDetails: 'Show details',
     hideDetails: 'Hide details',
     close: 'Close',
+    detailsSubtitle: 'Image preview on the left, generation details and states on the right.',
+    detailsInfo: 'Details',
+    statusSummary: 'Status Summary',
+    statusLabel: 'Status',
+    imageIdLabel: 'Image ID',
+    modelLabel: 'Model',
+    providerNoteLabel: 'Provider Note',
+    apiBaseLabel: 'API Base',
+    layoutPreferenceLabel: 'Layout Preference',
+    referenceImageIdsLabel: 'Reference Image IDs',
+    referenceImagesLabel: 'Reference Images',
+    createdAt: 'Created At',
+    imageUnavailable: 'No image available for preview',
     llmEnhanced: 'LLM Enhanced',
     originalPrompt: 'Original Prompt',
     storyBackground: 'Story Background',
@@ -78,6 +115,7 @@ const texts: Record<string, Record<string, string>> = {
 interface StoryImageData {
   status?: 'ok' | 'error' | 'generating'
   image_id?: string
+  created_at?: string
   title?: string
   story_background?: string
   prompt?: string
@@ -107,194 +145,240 @@ interface StoryImageData {
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
-function DetailRow({ label, value }: { label: string; value?: string | null }) {
-  if (!value) return null
+function resolveStatus(payload: StoryImageData): 'ok' | 'error' | 'generating' {
+  if (payload.status === 'ok' || payload.status === 'error' || payload.status === 'generating') {
+    return payload.status
+  }
+  return payload.image_url ? 'ok' : 'error'
+}
+
+function formatTimestamp(value?: string) {
+  if (!value) return undefined
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return `${parsed.toLocaleDateString()} ${parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+}
+
+function statusText(status: 'ok' | 'error' | 'generating', t: Record<string, string>) {
+  return status === 'ok' ? t.ready : status === 'generating' ? t.generating : t.error
+}
+
+function StatusBadge({
+  status,
+  t,
+}: {
+  status: 'ok' | 'error' | 'generating'
+  t: Record<string, string>
+}) {
   return (
-    <div className="space-y-0.5">
-      <p className="text-muted-foreground font-medium">{label}</p>
-      <pre className="text-foreground/80 whitespace-pre-wrap break-words leading-relaxed">
-        {value}
+    <Badge
+      variant="outline"
+      className={
+        status === 'ok'
+          ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+          : status === 'generating'
+            ? 'border-blue-500/40 bg-blue-500/15 text-blue-300'
+            : 'border-red-500/40 bg-red-500/15 text-red-300'
+      }
+    >
+      {statusText(status, t)}
+    </Badge>
+  )
+}
+
+function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-3 rounded-lg border bg-card p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </p>
+      <ScrollArea className="h-56 rounded-md border bg-muted/15">
+        <div className="space-y-3 p-2">{children}</div>
+      </ScrollArea>
+    </section>
+  )
+}
+
+function DetailField({
+  label,
+  value,
+  fallback,
+}: {
+  label: string
+  value?: string | null
+  fallback?: string
+}) {
+  const content = value && value.trim() ? value : fallback
+  if (!content) return null
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+      <pre className="m-0 whitespace-pre-wrap break-words rounded-md border bg-muted/25 p-2 text-xs leading-relaxed text-foreground/90">
+        {content}
       </pre>
     </div>
   )
 }
 
-function ImageLightbox({
+function StatusLine({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null
+
+  return (
+    <div className="flex items-start justify-between gap-2 rounded-md border bg-muted/20 px-2 py-1.5 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="max-w-[70%] break-all text-right">{value}</span>
+    </div>
+  )
+}
+
+function ImageDetailsDialog({
+  open,
+  onOpenChange,
   payload,
-  onClose,
   t,
 }: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
   payload: StoryImageData
-  onClose: () => void
   t: Record<string, string>
 }) {
-  const [showDetails, setShowDetails] = useState(false)
+  const status = resolveStatus(payload)
+  const statusLabel = statusText(status, t)
   const model = payload.debug?.provider_model || payload.provider_model
   const apiBase = payload.debug?.api_base
   const enhanced = payload.debug?.enhanced_prompt
   const generated = payload.debug?.generated_prompt
+  const hasOriginalPrompt = Boolean(
+    payload.prompt || payload.story_background || payload.continuity_notes || payload.scene_frames?.length,
+  )
+  const hasWorldContext = Boolean(payload.debug?.world_lore_excerpt || payload.debug?.text_world_state)
+  const metadata = JSON.stringify(
+    {
+      image_id: payload.image_id,
+      title: payload.title,
+      status,
+      provider_model: model,
+      api_base: apiBase,
+      provider_note: payload.provider_note,
+      layout_preference: payload.layout_preference,
+      reference_image_ids: payload.reference_image_ids,
+      reference_images: payload.reference_images,
+      settings_applied: payload.settings_applied,
+      runtime_settings: payload.debug?.runtime_settings,
+    },
+    null,
+    2,
+  )
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex flex-col" onClick={onClose}>
-      {/* Top bar */}
-      <div
-        className="flex items-center justify-between px-4 py-2 bg-black/40 shrink-0"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <p className="text-sm font-medium text-white truncate">
-            {payload.title || t.storyImage}
-          </p>
-          {model && (
-            <span className="text-[10px] bg-blue-900/60 text-blue-300 px-2 py-0.5 rounded shrink-0">
-              {model}
-            </span>
-          )}
-          {enhanced && (
-            <span className="text-[10px] bg-amber-900/60 text-amber-300 px-2 py-0.5 rounded shrink-0">
-              {t.llmEnhanced}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => setShowDetails((v) => !v)}
-            className="text-xs px-3 py-1 bg-white/10 hover:bg-white/20 text-white rounded transition-colors"
-          >
-            {showDetails ? t.hideDetails : t.showDetails}
-          </button>
-          <button
-            onClick={onClose}
-            className="text-xs px-3 py-1 bg-white/10 hover:bg-white/20 text-white rounded transition-colors"
-          >
-            {t.close}
-          </button>
-        </div>
-      </div>
-
-      {/* Main content area */}
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-        {/* Image */}
-        {!showDetails && payload.image_url && (
-          <div className="flex-1 flex items-center justify-center p-4" onClick={onClose}>
-            <img
-              src={payload.image_url}
-              alt={payload.prompt || t.storyImage}
-              className="max-w-full max-h-full object-contain rounded-lg"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-        )}
-
-        {/* Details panel */}
-        {showDetails && (
-          <div
-            className="flex-1 overflow-y-auto p-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="max-w-5xl mx-auto space-y-4">
-              {/* Image preview (smaller when details shown) */}
-              {payload.image_url && (
-                <img
-                  src={payload.image_url}
-                  alt={payload.prompt || t.storyImage}
-                  className="w-full max-h-[300px] object-contain rounded-lg border border-white/10"
-                />
-              )}
-
-              {/* Badges */}
-              <div className="flex flex-wrap gap-2 text-xs">
-                {model && (
-                  <span className="bg-blue-900/40 text-blue-300 px-2 py-0.5 rounded">
-                    Model: {model}
-                  </span>
-                )}
-                {apiBase && (
-                  <span className="bg-violet-900/40 text-violet-300 px-2 py-0.5 rounded truncate max-w-[400px]" title={apiBase}>
-                    API: {apiBase}
-                  </span>
-                )}
-                {enhanced && (
-                  <span className="bg-amber-900/40 text-amber-300 px-2 py-0.5 rounded">
-                    {t.llmEnhanced}
-                  </span>
-                )}
-                {payload.image_id && (
-                  <span className="bg-gray-700/40 text-gray-300 px-2 py-0.5 rounded font-mono">
-                    ID: {payload.image_id.slice(0, 8)}
-                  </span>
-                )}
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-[1200px] h-[88vh] p-0 gap-0 overflow-hidden">
+        <div className="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+          <div className="flex min-h-0 flex-col border-b lg:border-b-0 lg:border-r">
+            <DialogHeader className="gap-1 border-b px-4 py-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <DialogTitle className="truncate text-base">{payload.title || t.storyImage}</DialogTitle>
+                <StatusBadge status={status} t={t} />
               </div>
-
-              {/* Detail cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                {/* Original prompt from LLM */}
-                <div className="bg-white/5 border border-white/10 rounded-lg p-3 space-y-2">
-                  <p className="text-white/60 font-semibold uppercase tracking-wider text-[10px]">{t.originalPrompt}</p>
-                  <DetailRow label={t.prompt} value={payload.prompt} />
-                  <DetailRow label={t.storyBackground} value={payload.story_background} />
-                  <DetailRow label={t.continuityNotes} value={payload.continuity_notes} />
-                  {payload.scene_frames && payload.scene_frames.length > 0 && (
-                    <DetailRow label={t.sceneFrames} value={payload.scene_frames.join('\n')} />
-                  )}
-                </div>
-
-                {/* Final prompt sent to image API */}
-                <div className="bg-white/5 border border-white/10 rounded-lg p-3 space-y-2">
-                  <p className="text-white/60 font-semibold uppercase tracking-wider text-[10px]">
-                    {enhanced ? t.enhancedPrompt : t.generatedPrompt}
-                  </p>
-                  <pre className="text-foreground/80 whitespace-pre-wrap break-words leading-relaxed">
-                    {enhanced || generated || t.none}
-                  </pre>
-                  {enhanced && generated && (
-                    <>
-                      <p className="text-white/40 font-semibold uppercase tracking-wider text-[10px] mt-3">
-                        {t.preEnhancement}
-                      </p>
-                      <pre className="text-foreground/60 whitespace-pre-wrap break-words leading-relaxed">
-                        {generated}
-                      </pre>
-                    </>
-                  )}
-                </div>
-
-                {/* World context */}
-                <div className="bg-white/5 border border-white/10 rounded-lg p-3 space-y-2">
-                  <p className="text-white/60 font-semibold uppercase tracking-wider text-[10px]">{t.worldContext}</p>
-                  <DetailRow label={t.worldLore} value={payload.debug?.world_lore_excerpt} />
-                  <DetailRow label={t.textWorldState} value={payload.debug?.text_world_state} />
-                </div>
-
-                {/* Metadata */}
-                <div className="bg-white/5 border border-white/10 rounded-lg p-3 space-y-2">
-                  <p className="text-white/60 font-semibold uppercase tracking-wider text-[10px]">{t.metadata}</p>
-                  <pre className="text-foreground/80 whitespace-pre-wrap break-words leading-relaxed">
-                    {JSON.stringify(
-                      {
-                        image_id: payload.image_id,
-                        title: payload.title,
-                        status: payload.status,
-                        provider_model: model,
-                        api_base: apiBase,
-                        provider_note: payload.provider_note,
-                        layout_preference: payload.layout_preference,
-                        reference_image_ids: payload.reference_image_ids,
-                        reference_images: payload.reference_images,
-                        settings_applied: payload.settings_applied,
-                        runtime_settings: payload.debug?.runtime_settings,
-                      },
-                      null,
-                      2,
-                    )}
-                  </pre>
-                </div>
+              <DialogDescription className="text-xs">
+                {t.detailsSubtitle}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 min-h-0 bg-muted/20 p-4">
+              <div className="flex h-full items-center justify-center rounded-lg border border-dashed bg-background/40 p-2">
+                {payload.image_url ? (
+                  <img
+                    src={payload.image_url}
+                    alt={payload.prompt || t.storyImage}
+                    className="h-full max-h-full w-full rounded-md object-contain"
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">{t.imageUnavailable}</p>
+                )}
               </div>
             </div>
           </div>
-        )}
-      </div>
-    </div>
+
+          <div className="flex min-h-0 flex-col">
+            <div className="border-b px-4 py-3">
+              <p className="text-sm font-medium">{t.detailsInfo}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {model && (
+                  <Badge variant="outline">
+                    {t.modelLabel}: {model}
+                  </Badge>
+                )}
+                {enhanced && <Badge variant="secondary">{t.llmEnhanced}</Badge>}
+                {payload.image_id && (
+                  <Badge variant="outline" className="font-mono">
+                    {t.imageIdLabel}: {payload.image_id.slice(0, 12)}
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            <ScrollArea className="flex-1 min-h-0">
+              <div className="space-y-3 p-4">
+                <DetailSection title={t.statusSummary}>
+                  <StatusLine label={t.statusLabel} value={statusLabel} />
+                  <StatusLine label={t.createdAt} value={formatTimestamp(payload.created_at)} />
+                  <StatusLine label={t.layoutPreferenceLabel} value={payload.layout_preference} />
+                  <DetailField label={t.providerNoteLabel} value={payload.provider_note} />
+                  <DetailField label={t.apiBaseLabel} value={apiBase} />
+                  <DetailField
+                    label={t.referenceImageIdsLabel}
+                    value={payload.reference_image_ids?.join('\n')}
+                  />
+                  <DetailField
+                    label={t.referenceImagesLabel}
+                    value={
+                      payload.reference_images && payload.reference_images.length > 0
+                        ? JSON.stringify(payload.reference_images, null, 2)
+                        : undefined
+                    }
+                  />
+                </DetailSection>
+
+                {hasOriginalPrompt && (
+                  <DetailSection title={t.originalPrompt}>
+                    <DetailField label={t.prompt} value={payload.prompt} />
+                    <DetailField label={t.storyBackground} value={payload.story_background} />
+                    <DetailField label={t.continuityNotes} value={payload.continuity_notes} />
+                    <DetailField label={t.sceneFrames} value={payload.scene_frames?.join('\n')} />
+                  </DetailSection>
+                )}
+
+                <DetailSection title={enhanced ? t.enhancedPrompt : t.generatedPrompt}>
+                  <DetailField
+                    label={enhanced ? t.enhancedPrompt : t.generatedPrompt}
+                    value={enhanced || generated}
+                    fallback={t.none}
+                  />
+                  {enhanced && generated && (
+                    <DetailField
+                      label={t.preEnhancement}
+                      value={generated}
+                    />
+                  )}
+                </DetailSection>
+
+                {hasWorldContext && (
+                  <DetailSection title={t.worldContext}>
+                    <DetailField label={t.worldLore} value={payload.debug?.world_lore_excerpt} />
+                    <DetailField label={t.textWorldState} value={payload.debug?.text_world_state} />
+                  </DetailSection>
+                )}
+
+                <DetailSection title={t.metadata}>
+                  <DetailField label={t.metadata} value={metadata} />
+                </DetailSection>
+              </div>
+            </ScrollArea>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -311,7 +395,7 @@ export function StoryImageRenderer({ data, blockId, onAction, locked }: BlockRen
 
   if (!payload) return null
 
-  const status = payload.status || (payload.image_url ? 'ok' : 'error')
+  const status = resolveStatus(payload)
   const canRegenerate = Boolean(payload.can_regenerate) && !locked && (
     !!payload.image_id || (!!payload.story_background && !!payload.prompt)
   )
@@ -378,54 +462,71 @@ export function StoryImageRenderer({ data, blockId, onAction, locked }: BlockRen
 
       {/* Action buttons row — always visible */}
       <div className="flex items-center gap-2 flex-wrap">
-        <button
+        <Button
+          size="sm"
+          variant="outline"
           onClick={() => setLightboxOpen(true)}
-          className="text-xs px-3 py-1.5 bg-muted hover:bg-muted/80 text-foreground rounded transition-colors"
         >
           {t.viewDetails}
-        </button>
-        <button
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
           onClick={handleRegenerate}
           disabled={!canRegenerate}
-          className="text-xs px-3 py-1.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors"
         >
           {t.regenerate}
-        </button>
+        </Button>
         {(payload.story_background || payload.prompt || payload.continuity_notes) && (
-          <button
+          <Button
+            size="sm"
+            variant="ghost"
             onClick={() => setExpanded((v) => !v)}
-            className="text-xs px-3 py-1.5 text-muted-foreground hover:text-foreground transition-colors"
           >
             {expanded ? t.hideContext : t.context}
-          </button>
+          </Button>
         )}
       </div>
 
       {expanded && (
-        <div className="space-y-2 text-xs text-foreground/80 bg-muted/50 border rounded-lg px-3 py-2">
+        <div className="space-y-2 text-xs text-foreground/80 bg-muted/50 border rounded-lg p-3">
           {payload.story_background && (
-            <p><span className="text-muted-foreground">{t.background}:</span> {payload.story_background}</p>
+            <div className="space-y-1">
+              <p className="text-muted-foreground">{t.background}</p>
+              <pre className="m-0 whitespace-pre-wrap break-words leading-relaxed">{payload.story_background}</pre>
+            </div>
           )}
           {payload.prompt && (
-            <p><span className="text-muted-foreground">{t.prompt}:</span> {payload.prompt}</p>
+            <div className="space-y-1">
+              <p className="text-muted-foreground">{t.prompt}</p>
+              <pre className="m-0 whitespace-pre-wrap break-words leading-relaxed">{payload.prompt}</pre>
+            </div>
           )}
           {payload.continuity_notes && (
-            <p><span className="text-muted-foreground">{t.continuity}:</span> {payload.continuity_notes}</p>
+            <div className="space-y-1">
+              <p className="text-muted-foreground">{t.continuity}</p>
+              <pre className="m-0 whitespace-pre-wrap break-words leading-relaxed">{payload.continuity_notes}</pre>
+            </div>
           )}
         </div>
       )}
 
       {canRegenerate && (
-        <input
+        <Input
           type="text"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder={t.regenNote}
-          className="w-full bg-background border border-input rounded px-2 py-1 text-xs placeholder:text-muted-foreground"
+          className="h-8 text-xs"
         />
       )}
 
-      {lightboxOpen && <ImageLightbox payload={payload} onClose={() => setLightboxOpen(false)} t={t} />}
+      <ImageDetailsDialog
+        open={lightboxOpen}
+        onOpenChange={setLightboxOpen}
+        payload={payload}
+        t={t}
+      />
     </div>
   )
 }
