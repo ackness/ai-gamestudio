@@ -182,11 +182,11 @@
     "listen": []
   },
   "storage": {
-    "keys": [
-      "inventory",
-      "item-catalog",
-      "equipment-slots"
-    ]
+    "collections": {
+      "inventory": { "type": "kv", "scope": "session" },
+      "item-catalog": { "type": "kv", "scope": "project" },
+      "equipment-slots": { "type": "kv", "scope": "session" }
+    }
   },
   "permissions": {
     "network": false,

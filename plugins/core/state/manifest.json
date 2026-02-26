@@ -251,11 +251,11 @@
     "listen": []
   },
   "storage": {
-    "keys": [
-      "characters",
-      "character-templates",
-      "inventories"
-    ]
+    "collections": {
+      "characters": { "type": "kv", "scope": "session" },
+      "character-templates": { "type": "kv", "scope": "project" },
+      "inventories": { "type": "kv", "scope": "session" }
+    }
   },
   "extensions": {
     "agent_prompt": {

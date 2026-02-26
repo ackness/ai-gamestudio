@@ -212,10 +212,10 @@
     "listen": []
   },
   "storage": {
-    "keys": [
-      "active-quests",
-      "completed-quests"
-    ]
+    "collections": {
+      "active-quests": { "type": "kv", "scope": "session" },
+      "completed-quests": { "type": "kv", "scope": "session" }
+    }
   },
   "extensions": {
     "runtime_settings": {
