@@ -5,6 +5,7 @@ export interface BrowserLlmConfig {
   pluginModel?: string
   pluginApiKey?: string
   pluginApiBase?: string
+  pluginReasoningEffort?: string
   imageModel?: string
   imageApiKey?: string
   imageApiBase?: string
@@ -18,6 +19,7 @@ export interface LlmOverridePayload {
   plugin_model?: string
   plugin_api_key?: string
   plugin_api_base?: string
+  plugin_reasoning_effort?: string
 }
 
 export interface ImageOverridePayload {
@@ -53,6 +55,7 @@ function normalizeConfig(raw: Partial<BrowserLlmConfig>): BrowserLlmConfig {
     pluginModel: normalize(raw.pluginModel),
     pluginApiKey: normalize(raw.pluginApiKey),
     pluginApiBase: normalize(raw.pluginApiBase),
+    pluginReasoningEffort: normalize(raw.pluginReasoningEffort),
     imageModel: normalize(raw.imageModel),
     imageApiKey: normalize(raw.imageApiKey),
     imageApiBase: normalize(raw.imageApiBase),
@@ -128,6 +131,7 @@ export function buildBrowserLlmOverrides(projectId?: string | null): LlmOverride
   if (cfg.pluginModel) overrides.plugin_model = cfg.pluginModel
   if (cfg.pluginApiKey) overrides.plugin_api_key = cfg.pluginApiKey
   if (cfg.pluginApiBase) overrides.plugin_api_base = cfg.pluginApiBase
+  if (cfg.pluginReasoningEffort) overrides.plugin_reasoning_effort = cfg.pluginReasoningEffort
   if (!overrides.model && !overrides.api_key && !overrides.api_base && !overrides.plugin_model) {
     return undefined
   }
