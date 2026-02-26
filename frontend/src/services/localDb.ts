@@ -5,24 +5,28 @@
  * (e.g. Vercel + SQLite in /tmp). All game data is stored locally in the
  * browser so the user does not lose their work within a single browser session.
  *
- * Schema
- * ──────
+ * Schema v2
+ * ─────────
  *   projects          keyPath: id
  *   sessions          keyPath: id,  index: project_id
  *   messages          keyPath: id,  index: session_id
- *   characters        keyPath: id,  index: session_id
- *   scenes            keyPath: id,  index: session_id
- *   events            keyPath: id,  index: session_id
- *   plugin_state      keyPath: [project_id, plugin_name]   (enabled flags)
- *   runtime_settings  keyPath: [project_id, scope_key]     (scope_key = "project" | "session:{id}")
+ *   characters        keyPath: id,  index: session_id          (legacy, kept for compat)
+ *   scenes            keyPath: id,  index: session_id          (legacy, kept for compat)
+ *   events            keyPath: id,  index: session_id          (legacy, kept for compat)
+ *   plugin_state      keyPath: [project_id, plugin_name]       (enabled flags)
+ *   runtime_settings  keyPath: [project_id, scope_key]
+ *   storage_kv        keyPath: [scope, ns, collection, key]    (v2)
+ *   storage_log       autoIncrement, index: [scope, ns, collection]  (v2)
+ *   storage_graph     keyPath: [scope, ns, from_id, to_id, relation] (v2)
  */
 
 const DB_NAME = 'ai-gamestudio'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 let _db: IDBDatabase | null = null
 
-function openDb(): Promise<IDBDatabase> {
+/** Shared DB opener — also used by IdbStorageAdapter. */
+export function openDb(): Promise<IDBDatabase> {
   if (_db) return Promise.resolve(_db)
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
@@ -30,6 +34,7 @@ function openDb(): Promise<IDBDatabase> {
     req.onupgradeneeded = (e) => {
       const db = (e.target as IDBOpenDBRequest).result
 
+      // ── v1 stores ──
       if (!db.objectStoreNames.contains('projects')) {
         db.createObjectStore('projects', { keyPath: 'id' })
       }
@@ -54,12 +59,27 @@ function openDb(): Promise<IDBDatabase> {
         s.createIndex('session_id', 'session_id', { unique: false })
       }
       if (!db.objectStoreNames.contains('plugin_state')) {
-        // composite key [project_id, plugin_name]
         db.createObjectStore('plugin_state', { keyPath: ['project_id', 'plugin_name'] })
       }
       if (!db.objectStoreNames.contains('runtime_settings')) {
-        // composite key [project_id, scope_key]
         db.createObjectStore('runtime_settings', { keyPath: ['project_id', 'scope_key'] })
+      }
+
+      // ── v2: unified storage stores ──
+      if (!db.objectStoreNames.contains('storage_kv')) {
+        const kv = db.createObjectStore('storage_kv', {
+          keyPath: ['scope', 'ns', 'collection', 'key'],
+        })
+        kv.createIndex('by_collection', ['scope', 'ns', 'collection'], { unique: false })
+      }
+      if (!db.objectStoreNames.contains('storage_log')) {
+        const log = db.createObjectStore('storage_log', { autoIncrement: true })
+        log.createIndex('by_collection', ['scope', 'ns', 'collection'], { unique: false })
+      }
+      if (!db.objectStoreNames.contains('storage_graph')) {
+        db.createObjectStore('storage_graph', {
+          keyPath: ['scope', 'ns', 'from_id', 'to_id', 'relation'],
+        })
       }
     }
 
