@@ -1,14 +1,14 @@
 # AI GameStudio（中文说明）
 
-> 用 Markdown 构建世界，用聊天推进剧情，用插件稳定承载 RPG 机制。
+> 用 Markdown 构建世界观，用对话推进剧情，用插件驱动 RPG 机制。
 
-## 核心特性
+## 核心特点
 
-- 双层架构：主 LLM 负责叙事，Plugin Agent 负责机制执行。
-- 插件规范 v1：`manifest.json + PLUGIN.md`，`schema_version=1.0`。
-- 统一工具契约：6 个内置工具（`emit`, `db_read`, `db_log_append`, `db_log_query`, `db_graph_add`, `execute_script`），无历史版本分支。
-- 持久状态：角色/场景/事件/插件存储统一落库。
-- 长会话支持：记忆、归档、自动压缩。
+- 双模型架构：主 LLM 负责叙事，Plugin Agent 负责机制执行
+- 插件规范 v1：`manifest.json + PLUGIN.md`，`schema_version=1.0`
+- 统一工具契约：6 个内置工具（`emit`, `db_read`, `db_log_append`, `db_log_query`, `db_graph_add`, `execute_script`）
+- 状态持久化：角色、场景、事件、插件存储全部落库
+- 长会话支持：记忆、归档、自动压缩
 
 ## 内置插件
 
