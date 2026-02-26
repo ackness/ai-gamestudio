@@ -40,6 +40,7 @@ class BaseScriptRunner:
         timeout_ms: int = _DEFAULT_TIMEOUT_MS,
         plugin_name: str = "",
         capability_id: str = "",
+        session_id: str = "",
     ) -> ScriptResult:
         raise NotImplementedError
 
@@ -58,6 +59,7 @@ class PythonScriptRunner(BaseScriptRunner):
         timeout_ms: int = _DEFAULT_TIMEOUT_MS,
         plugin_name: str = "",
         capability_id: str = "",
+        session_id: str = "",
     ) -> ScriptResult:
         """Run a Python script, return structured result.
 
@@ -112,7 +114,7 @@ class PythonScriptRunner(BaseScriptRunner):
                     stderr=f"Script timed out after {timeout_ms}ms",
                     duration_ms=elapsed,
                 )
-                self._log_audit(invocation_id, plugin_name, capability_id, str(script_path), args, result)
+                await self._log_audit(invocation_id, plugin_name, capability_id, str(script_path), args, result, session_id)
                 return result
 
         except Exception as exc:
@@ -122,7 +124,7 @@ class PythonScriptRunner(BaseScriptRunner):
                 stderr=f"Failed to execute script: {exc}",
                 duration_ms=elapsed,
             )
-            self._log_audit(invocation_id, plugin_name, capability_id, str(script_path), args, result)
+            await self._log_audit(invocation_id, plugin_name, capability_id, str(script_path), args, result, session_id)
             return result
 
         elapsed = int((asyncio.get_event_loop().time() - start) * 1000)
@@ -144,10 +146,10 @@ class PythonScriptRunner(BaseScriptRunner):
             parsed_output=parsed_output,
         )
 
-        self._log_audit(invocation_id, plugin_name, capability_id, str(script_path), args, result)
+        await self._log_audit(invocation_id, plugin_name, capability_id, str(script_path), args, result, session_id)
         return result
 
-    def _log_audit(
+    async def _log_audit(
         self,
         invocation_id: str,
         plugin_name: str,
@@ -155,8 +157,9 @@ class PythonScriptRunner(BaseScriptRunner):
         script: str,
         args: dict[str, Any],
         result: ScriptResult,
+        session_id: str,
     ) -> None:
-        if not self._audit:
+        if not self._audit or not session_id:
             return
         entry = AuditEntry(
             invocation_id=invocation_id,
@@ -166,10 +169,10 @@ class PythonScriptRunner(BaseScriptRunner):
             args=args,
             exit_code=result.exit_code,
             duration_ms=result.duration_ms,
-            stdout=result.stdout[:2000],  # Truncate for log safety
+            stdout=result.stdout[:2000],
             stderr=result.stderr[:2000],
         )
-        self._audit.log(entry)
+        await self._audit.log(entry, session_id=session_id)
 
 
 class ScriptRunnerFactory:

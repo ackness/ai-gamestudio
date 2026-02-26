@@ -8,6 +8,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from backend.app.db.engine import get_session
+from backend.app.models.audit_log import AuditLog
 from backend.app.models.character import Character
 from backend.app.models.game_event import GameEvent
 from backend.app.models.game_graph import StorageGraph as GameGraph
@@ -96,6 +97,12 @@ async def get_session_tables(
         select(GameGraph).where(GameGraph.session_id == session_id)
     )).all()
 
+    audit_logs = (await db.exec(
+        select(AuditLog)
+        .where(AuditLog.session_id == session_id)
+        .order_by(AuditLog.created_at.desc())
+    )).all()
+
     return {
         "session": _row_to_dict(session),
         "tables": {
@@ -108,5 +115,6 @@ async def get_session_tables(
             "game_logs": [_row_to_dict(r) for r in game_logs],
             "game_kvs": [_row_to_dict(r) for r in game_kvs],
             "game_graphs": [_row_to_dict(r) for r in game_graphs],
+            "audit_logs": [_row_to_dict(r) for r in audit_logs],
         },
     }

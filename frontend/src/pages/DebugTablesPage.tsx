@@ -26,6 +26,7 @@ const tableLabels: Record<string, string> = {
   game_logs: '游戏日志 Game Logs',
   game_kvs: '键值存储 Game KV',
   game_graphs: '关系图 Game Graph',
+  audit_logs: '审计日志 Audit Logs',
 }
 
 function JsonCell({ value, maxLen = 80 }: { value: unknown; maxLen?: number }) {
@@ -198,8 +199,34 @@ function MessageMetadataPanel({ row }: { row: TableData }) {
   )
 }
 
+/** Detail panel for a selected audit log entry. */
+function AuditLogDetailPanel({ row }: { row: TableData }) {
+  let args: unknown = row.args_json
+  if (typeof args === 'string') {
+    try { args = JSON.parse(args) } catch { /* keep raw string */ }
+  }
+
+  return (
+    <div className="space-y-2 py-3">
+      <div className="text-xs text-muted-foreground mb-1">
+        调用 ID: <span className="font-mono">{String(row.invocation_id || '').slice(0, 12)}</span>
+        {' · '}插件: {String(row.plugin_name)}
+        {' · '}能力: {String(row.capability)}
+        {' · '}脚本: {String(row.script_path)}
+        {' · '}耗时: {String(row.duration_ms)}ms
+        {' · '}退出码: <span className={row.exit_code === 0 ? 'text-emerald-400' : 'text-red-400'}>
+          {String(row.exit_code)}
+        </span>
+      </div>
+      <MetadataSection title="参数 Args" data={args} />
+      {row.stdout && <MetadataSection title="标准输出 stdout" data={row.stdout} defaultOpen />}
+      {row.stderr && <MetadataSection title="标准错误 stderr" data={row.stderr} />}
+    </div>
+  )
+}
+
 /** Tables that support namespace/collection filtering. */
-const FILTERABLE_TABLES = new Set(['game_kvs', 'game_logs', 'game_graphs', 'plugin_storage'])
+const FILTERABLE_TABLES = new Set(['game_kvs', 'game_logs', 'game_graphs', 'plugin_storage', 'audit_logs'])
 
 /** Extract unique values for a field from rows. */
 function uniqueValues(rows: TableData[], field: string): string[] {
@@ -213,7 +240,7 @@ function uniqueValues(rows: TableData[], field: string): string[] {
 
 /** The field used as "namespace" for each filterable table. */
 function nsField(table: string): string {
-  if (table === 'plugin_storage') return 'plugin_name'
+  if (table === 'plugin_storage' || table === 'audit_logs') return 'plugin_name'
   return 'namespace'
 }
 
@@ -296,6 +323,8 @@ export function DebugTablesPage() {
   const [keyFilter, setKeyFilter] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedMsgIdx, setSelectedMsgIdx] = useState<number | null>(null)
+  const [selectedAuditIdx, setSelectedAuditIdx] = useState<number | null>(null)
+  const [exitCodeFilter, setExitCodeFilter] = useState('')
 
   useEffect(() => {
     if (!sessionId) return
@@ -337,6 +366,14 @@ export function DebugTablesPage() {
         })
       }
     }
+    // Apply exit_code filter for audit_logs
+    if (activeTable === 'audit_logs' && exitCodeFilter) {
+      if (exitCodeFilter === '0') {
+        rows = rows.filter((r) => r.exit_code === 0)
+      } else if (exitCodeFilter === 'non-zero') {
+        rows = rows.filter((r) => r.exit_code !== 0)
+      }
+    }
     // Apply global text search
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
@@ -349,7 +386,7 @@ export function DebugTablesPage() {
       )
     }
     return rows
-  }, [currentRows, activeTable, nsFilter, colFilter, keyFilter, searchQuery])
+  }, [currentRows, activeTable, nsFilter, colFilter, keyFilter, searchQuery, exitCodeFilter])
 
   if (loading) {
     return (
@@ -403,7 +440,7 @@ export function DebugTablesPage() {
             return (
               <button
                 key={name}
-                onClick={() => { setActiveTable(name); setNsFilter(''); setColFilter(''); setKeyFilter(''); setSearchQuery(''); setSelectedMsgIdx(null) }}
+                onClick={() => { setActiveTable(name); setNsFilter(''); setColFilter(''); setKeyFilter(''); setSearchQuery(''); setSelectedMsgIdx(null); setSelectedAuditIdx(null); setExitCodeFilter('') }}
                 className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center justify-between ${
                   activeTable === name
                     ? 'bg-primary/10 text-primary'
@@ -448,12 +485,31 @@ export function DebugTablesPage() {
                   setKeyFilter={setKeyFilter}
                 />
               )}
+              {activeTable === 'audit_logs' && (
+                <select
+                  value={exitCodeFilter}
+                  onChange={(e) => setExitCodeFilter(e.target.value)}
+                  className="bg-muted border rounded px-2 py-1 text-xs"
+                >
+                  <option value="">全部状态</option>
+                  <option value="0">成功 (exit_code=0)</option>
+                  <option value="non-zero">失败 (exit_code≠0)</option>
+                </select>
+              )}
             </div>
           </div>
           <DataTable
             rows={filteredRows}
-            onRowClick={activeTable === 'messages' ? (i) => setSelectedMsgIdx(selectedMsgIdx === i ? null : i) : undefined}
-            selectedIndex={activeTable === 'messages' ? (selectedMsgIdx ?? undefined) : undefined}
+            onRowClick={
+              activeTable === 'messages' ? (i) => setSelectedMsgIdx(selectedMsgIdx === i ? null : i) :
+              activeTable === 'audit_logs' ? (i) => setSelectedAuditIdx(selectedAuditIdx === i ? null : i) :
+              undefined
+            }
+            selectedIndex={
+              activeTable === 'messages' ? (selectedMsgIdx ?? undefined) :
+              activeTable === 'audit_logs' ? (selectedAuditIdx ?? undefined) :
+              undefined
+            }
           />
           {activeTable === 'messages' && selectedMsgIdx !== null && filteredRows[selectedMsgIdx] && (
             <div className="mt-3 border rounded-lg p-4 bg-card">
@@ -462,6 +518,15 @@ export function DebugTablesPage() {
                 <button onClick={() => setSelectedMsgIdx(null)} className="text-xs text-muted-foreground hover:text-foreground">关闭</button>
               </div>
               <MessageMetadataPanel row={filteredRows[selectedMsgIdx]} />
+            </div>
+          )}
+          {activeTable === 'audit_logs' && selectedAuditIdx !== null && filteredRows[selectedAuditIdx] && (
+            <div className="mt-3 border rounded-lg p-4 bg-card">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium">审计日志详情</span>
+                <button onClick={() => setSelectedAuditIdx(null)} className="text-xs text-muted-foreground hover:text-foreground">关闭</button>
+              </div>
+              <AuditLogDetailPanel row={filteredRows[selectedAuditIdx]} />
             </div>
           )}
         </div>

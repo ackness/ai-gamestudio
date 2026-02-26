@@ -1,3 +1,4 @@
+from backend.app.models.audit_log import AuditLog
 from backend.app.models.character import Character
 from backend.app.models.game_event import GameEvent
 from backend.app.models.game_graph import StorageGraph
@@ -17,6 +18,7 @@ GameLog = StorageLog
 GameGraph = StorageGraph
 
 __all__ = [
+    "AuditLog",
     "Character",
     "GameEvent",
     "GameGraph",

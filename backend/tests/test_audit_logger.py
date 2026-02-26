@@ -1,14 +1,17 @@
-"""Tests for AuditLogger."""
+"""Tests for AuditLogger (database-backed)."""
 from __future__ import annotations
 
-from pathlib import Path
+import pytest
+import pytest_asyncio
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from backend.app.core.audit_logger import AuditEntry, AuditLogger
 
 
 class TestAuditLogger:
-    def test_log_and_query(self, tmp_path: Path):
-        audit = AuditLogger(str(tmp_path))
+    @pytest.mark.asyncio
+    async def test_log_and_query(self, db_session: AsyncSession, sample_session):
+        audit = AuditLogger(db_session)
         entry = AuditEntry(
             invocation_id="abc123",
             plugin="dice-roll",
@@ -20,58 +23,85 @@ class TestAuditLogger:
             stdout='{"dice": "2d6+3", "result": 11}',
             stderr="",
         )
-        audit.log(entry)
+        await audit.log(entry, session_id=sample_session.id)
 
-        results = audit.query()
+        results = await audit.query(session_id=sample_session.id)
         assert len(results) == 1
-        assert results[0]["plugin"] == "dice-roll"
-        assert results[0]["capability"] == "dice.roll"
-        assert results[0]["exit_code"] == 0
+        assert results[0].plugin_name == "dice-roll"
+        assert results[0].capability == "dice.roll"
+        assert results[0].exit_code == 0
 
-    def test_query_filter_by_plugin(self, tmp_path: Path):
-        audit = AuditLogger(str(tmp_path))
-        for plugin in ["dice-roll", "other-plugin", "dice-roll"]:
-            audit.log(
+    @pytest.mark.asyncio
+    async def test_query_filter_by_plugin(self, db_session: AsyncSession, sample_session):
+        audit = AuditLogger(db_session)
+        for i, plugin in enumerate(["dice-roll", "other-plugin", "dice-roll"]):
+            await audit.log(
                 AuditEntry(
-                    invocation_id="x",
+                    invocation_id=f"x{i}",
                     plugin=plugin,
                     capability="test",
                     script="test.py",
-                )
+                ),
+                session_id=sample_session.id,
             )
 
-        dice_entries = audit.query(plugin="dice-roll")
+        dice_entries = await audit.query(plugin="dice-roll")
         assert len(dice_entries) == 2
-        assert all(e["plugin"] == "dice-roll" for e in dice_entries)
+        assert all(e.plugin_name == "dice-roll" for e in dice_entries)
 
-    def test_query_respects_limit(self, tmp_path: Path):
-        audit = AuditLogger(str(tmp_path))
+    @pytest.mark.asyncio
+    async def test_query_respects_limit(self, db_session: AsyncSession, sample_session):
+        audit = AuditLogger(db_session)
         for i in range(10):
-            audit.log(
+            await audit.log(
                 AuditEntry(
-                    invocation_id=str(i),
+                    invocation_id=f"lim{i}",
                     plugin="test",
                     capability="test",
                     script="test.py",
-                )
+                ),
+                session_id=sample_session.id,
             )
 
-        results = audit.query(limit=3)
+        results = await audit.query(session_id=sample_session.id, limit=3)
         assert len(results) == 3
 
-    def test_query_empty_dir(self, tmp_path: Path):
-        audit = AuditLogger(str(tmp_path / "nonexistent"))
-        assert audit.query() == []
+    @pytest.mark.asyncio
+    async def test_query_empty(self, db_session: AsyncSession, sample_session):
+        audit = AuditLogger(db_session)
+        results = await audit.query(session_id=sample_session.id)
+        assert results == []
 
-    def test_entry_has_timestamp(self, tmp_path: Path):
-        audit = AuditLogger(str(tmp_path))
+    @pytest.mark.asyncio
+    async def test_entry_has_timestamp(self, db_session: AsyncSession, sample_session):
+        audit = AuditLogger(db_session)
         entry = AuditEntry(
             invocation_id="t1",
             plugin="test",
             capability="test",
             script="test.py",
         )
-        audit.log(entry)
-        results = audit.query()
+        await audit.log(entry, session_id=sample_session.id)
+        results = await audit.query(session_id=sample_session.id)
         assert len(results) == 1
-        assert results[0]["timestamp"]  # Auto-generated
+        assert results[0].created_at is not None
+
+    @pytest.mark.asyncio
+    async def test_query_filter_by_exit_code(self, db_session: AsyncSession, sample_session):
+        audit = AuditLogger(db_session)
+        await audit.log(
+            AuditEntry(invocation_id="ok1", plugin="test", capability="t", script="t.py", exit_code=0),
+            session_id=sample_session.id,
+        )
+        await audit.log(
+            AuditEntry(invocation_id="fail1", plugin="test", capability="t", script="t.py", exit_code=1),
+            session_id=sample_session.id,
+        )
+
+        ok = await audit.query(session_id=sample_session.id, exit_code=0)
+        assert len(ok) == 1
+        assert ok[0].exit_code == 0
+
+        failed = await audit.query(session_id=sample_session.id, exit_code=1)
+        assert len(failed) == 1
+        assert failed[0].exit_code == 1

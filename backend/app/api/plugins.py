@@ -297,13 +297,25 @@ async def get_codex_entries(
 async def get_plugin_audit(
     plugin_name: str,
     limit: int = Query(default=50, ge=1, le=500),
+    db: AsyncSession = Depends(get_session),
 ):
     """Return recent audit entries for a plugin's capability invocations."""
     from backend.app.core.audit_logger import AuditLogger
 
-    audit = AuditLogger()
-    entries = audit.query(plugin=plugin_name, limit=limit)
-    return entries
+    audit = AuditLogger(db)
+    logs = await audit.query(plugin=plugin_name, limit=limit)
+    return [
+        {
+            "invocation_id": log.invocation_id,
+            "plugin": log.plugin_name,
+            "capability": log.capability,
+            "script": log.script_path,
+            "exit_code": log.exit_code,
+            "duration_ms": log.duration_ms,
+            "created_at": log.created_at.isoformat(),
+        }
+        for log in logs
+    ]
 
 
 @router.get("/{plugin_name}/detail")

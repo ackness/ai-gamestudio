@@ -14,15 +14,8 @@ from backend.app.core.script_runner import (
 
 
 @pytest.fixture
-def audit_dir(tmp_path: pathlib.Path) -> str:
-    d = tmp_path / "audit"
-    d.mkdir()
-    return str(d)
-
-
-@pytest.fixture
-def runner(audit_dir: str) -> PythonScriptRunner:
-    return PythonScriptRunner(AuditLogger(audit_dir))
+def runner() -> PythonScriptRunner:
+    return PythonScriptRunner()
 
 
 @pytest.mark.asyncio
@@ -76,20 +69,35 @@ async def test_run_script_invalid_json_output(
 
 
 @pytest.mark.asyncio
-async def test_audit_logging(tmp_path: pathlib.Path):
-    audit_dir = tmp_path / "audit"
-    audit_dir.mkdir()
-    audit = AuditLogger(str(audit_dir))
+async def test_audit_logging(db_session, sample_session, tmp_path: pathlib.Path):
+    audit = AuditLogger(db_session)
+    runner = PythonScriptRunner(audit)
+
+    script = tmp_path / "echo.py"
+    script.write_text("import json, sys; print(json.dumps({'ok': True}))\n")
+    await runner.run(
+        script, {}, plugin_name="test", capability_id="echo",
+        session_id=sample_session.id,
+    )
+
+    entries = await audit.query(plugin="test")
+    assert len(entries) == 1
+    assert entries[0].capability == "echo"
+    assert entries[0].exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_no_audit_without_session_id(db_session, sample_session, tmp_path: pathlib.Path):
+    """Without session_id, audit logging is skipped."""
+    audit = AuditLogger(db_session)
     runner = PythonScriptRunner(audit)
 
     script = tmp_path / "echo.py"
     script.write_text("import json, sys; print(json.dumps({'ok': True}))\n")
     await runner.run(script, {}, plugin_name="test", capability_id="echo")
 
-    entries = audit.query(plugin="test")
-    assert len(entries) == 1
-    assert entries[0]["capability"] == "echo"
-    assert entries[0]["exit_code"] == 0
+    entries = await audit.query(plugin="test")
+    assert len(entries) == 0
 
 
 @pytest.mark.asyncio
