@@ -216,6 +216,46 @@ def validate_manifest(data: dict[str, Any], plugin_dir_name: str) -> list[str]:
                             f"extensions.agent_prompt.{key}.{name} must be a non-empty string"
                         )
 
+    # Validate storage config (collections / shared_reads)
+    storage = data.get("storage")
+    if isinstance(storage, dict):
+        collections = storage.get("collections")
+        if collections is not None:
+            if not isinstance(collections, dict):
+                errors.append("storage.collections must be an object")
+            else:
+                _VALID_COL_TYPES = {"kv", "log", "graph"}
+                _VALID_COL_SCOPES = {"session", "project"}
+                for col_name, col_def in collections.items():
+                    prefix = f"storage.collections.{col_name}"
+                    if not isinstance(col_def, dict):
+                        errors.append(f"{prefix} must be an object")
+                        continue
+                    col_type = col_def.get("type", "kv")
+                    if col_type not in _VALID_COL_TYPES:
+                        errors.append(
+                            f"{prefix}.type must be one of {sorted(_VALID_COL_TYPES)}, got '{col_type}'"
+                        )
+                    col_scope = col_def.get("scope", "session")
+                    if col_scope not in _VALID_COL_SCOPES:
+                        errors.append(
+                            f"{prefix}.scope must be one of {sorted(_VALID_COL_SCOPES)}, got '{col_scope}'"
+                        )
+                    col_schema = col_def.get("schema")
+                    if col_schema is not None and not isinstance(col_schema, dict):
+                        errors.append(f"{prefix}.schema must be an object")
+
+        shared_reads = storage.get("shared_reads")
+        if shared_reads is not None:
+            if not isinstance(shared_reads, list):
+                errors.append("storage.shared_reads must be an array")
+            else:
+                for i, sr in enumerate(shared_reads):
+                    if not isinstance(sr, str) or ":" not in sr:
+                        errors.append(
+                            f"storage.shared_reads[{i}] must be a 'ns:collection' string"
+                        )
+
     return errors
 
 
