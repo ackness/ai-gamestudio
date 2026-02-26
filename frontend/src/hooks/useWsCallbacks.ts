@@ -88,7 +88,7 @@ export function useWsCallbacks(sessionId: string): WsCallbacks {
         id: messageId || crypto.randomUUID(),
         session_id: sessionId,
         role: 'assistant',
-        content: fullContent || '（结构化响应）',
+        content: fullContent || '',
         raw_content: rawContent || undefined,
         turn_id: turnId || undefined,
         message_type: 'narration',
