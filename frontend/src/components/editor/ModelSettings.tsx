@@ -164,12 +164,12 @@ export function ModelSettings({ onLlmInfoChange }: Props) {
         setLlmInfo(info)
         onLlmInfoChange?.(info)
       })
-      .catch(() => {})
+      .catch((err) => console.warn('[modelSettings] getLlmInfo', err))
   }, [currentProject?.id, onLlmInfoChange])
 
   useEffect(() => {
     loadLlmInfo()
-    api.getPresetModels().then(setPresets).catch(() => {})
+    api.getPresetModels().then(setPresets).catch((err) => console.warn('[modelSettings] getPresets', err))
   }, [loadLlmInfo])
 
   useEffect(() => {

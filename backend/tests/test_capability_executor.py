@@ -66,7 +66,6 @@ def _create_script_plugin(tmp_path: pathlib.Path) -> str:
 
 @pytest.fixture
 def engine():
-    PluginEngine.clear_cache()
     return PluginEngine()
 
 

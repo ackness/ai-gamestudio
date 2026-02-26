@@ -131,6 +131,7 @@ async def run_plugin_agent(
     turn_id: str | None = None,
     on_progress: ProgressCallback | None = None,
     trigger_counts: dict[str, int] | None = None,
+    session_language: str | None = None,
 ) -> tuple[list[dict], dict[str, Any]]:
     """Run enabled plugins in parallel after narrative completes."""
     plugins_dir = plugins_dir or settings.PLUGINS_DIR
@@ -192,6 +193,7 @@ async def run_plugin_agent(
                 "session_phase": str(session_phase or "").strip() or None,
                 "turn_id": str(turn_id or "").strip() or None,
                 "runtime_settings": runtime_values,
+                "session_language": str(session_language or "").strip().lower() or None,
             }
         )
 
@@ -307,9 +309,17 @@ async def _run_one_plugin(
     session_phase = str(plugin_info.get("session_phase") or "").strip().lower() or None
     turn_id = str(plugin_info.get("turn_id") or "").strip() or None
     runtime_settings = plugin_info.get("runtime_settings") or {}
+    session_language = str(plugin_info.get("session_language") or "").strip().lower()
 
     tools = get_all_tools()
-    base_prompt = _sanitize_plugin_prompt(_resolve_base_prompt(plugin_root, metadata, content))
+    base_prompt = _sanitize_plugin_prompt(
+        _resolve_base_prompt(
+            plugin_root,
+            metadata,
+            content,
+            session_language=session_language,
+        )
+    )
     block_instructions = _build_block_instructions(
         metadata,
         plugin_name=name,
@@ -320,11 +330,13 @@ async def _run_one_plugin(
         has_player_character=has_player_character,
         session_phase=session_phase,
         runtime_settings=runtime_settings,
+        session_language=session_language,
     )
     tool_instructions = _build_tool_instructions(
         plugin_root=plugin_root,
         metadata=metadata,
         tools=tools,
+        session_language=session_language,
     )
     system_parts = [SINGLE_PLUGIN_SYSTEM_PROMPT, f"## 插件指令 ({name})\n{base_prompt}"]
     if block_instructions:
@@ -413,6 +425,8 @@ async def invoke_single_plugin(
     pe: PluginEngine,
     config: ResolvedLlmConfig,
     plugins_dir: str | None = None,
+    runtime_settings: dict[str, Any] | None = None,
+    session_language: str | None = None,
 ) -> list[dict]:
     """Invoke a single plugin directly (e.g. guide from quick-action bar)."""
     plugins_dir = plugins_dir or settings.PLUGINS_DIR
@@ -430,8 +444,14 @@ async def invoke_single_plugin(
         except Exception:
             plugin_root = None
     metadata = plugin.get("metadata", {}) if isinstance(plugin.get("metadata"), dict) else {}
+    normalized_language = str(session_language or "").strip().lower() or None
     plugin_prompt = _sanitize_plugin_prompt(
-        _resolve_base_prompt(plugin_root, metadata, str(plugin.get("content", "")))
+        _resolve_base_prompt(
+            plugin_root,
+            metadata,
+            str(plugin.get("content", "")),
+            session_language=normalized_language,
+        )
     )
     ctx_json = json.dumps(context, ensure_ascii=False, default=str)
 
@@ -440,11 +460,14 @@ async def invoke_single_plugin(
         metadata,
         plugin_name=plugin_name,
         plugin_root=plugin_root,
+        runtime_settings=runtime_settings if isinstance(runtime_settings, dict) else {},
+        session_language=normalized_language,
     )
     tool_instructions = _build_tool_instructions(
         plugin_root=plugin_root,
         metadata=metadata,
         tools=tools,
+        session_language=normalized_language,
     )
     system_parts = [SINGLE_PLUGIN_SYSTEM_PROMPT, f"## 插件指令 ({plugin_name})\n{plugin_prompt}"]
     if block_instructions:

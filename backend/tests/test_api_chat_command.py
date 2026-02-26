@@ -115,7 +115,8 @@ async def test_chat_command_forwards_llm_overrides(client: AsyncClient, monkeypa
 
     captured: dict[str, object] = {}
 
-    async def fake_process_message(
+    async def fake_stream(
+        sink,
         sid: str,
         user_content: str,
         *,
@@ -130,9 +131,9 @@ async def test_chat_command_forwards_llm_overrides(client: AsyncClient, monkeypa
         captured["save_assistant_msg"] = save_assistant_msg
         captured["llm_overrides"] = llm_overrides
         captured["image_overrides"] = image_overrides
-        yield {"type": "chunk", "content": "ok", "turn_id": "turn-1"}
+        await sink.send_json({"type": "chunk", "content": "ok", "turn_id": "turn-1"})
 
-    monkeypatch.setattr(chat_api_mod, "process_message", fake_process_message)
+    monkeypatch.setattr(chat_api_mod, "stream_process_message", fake_stream)
 
     resp = await client.post(
         f"/api/chat/{session_id}/command",
@@ -180,7 +181,8 @@ async def test_chat_command_message_contract_keeps_done_and_turn_end(
     create_session = await client.post(f"/api/projects/{project_id}/sessions")
     session_id = create_session.json()["id"]
 
-    async def fake_process_message(
+    async def fake_stream(
+        sink,
         sid: str,
         user_content: str,
         *,
@@ -191,11 +193,11 @@ async def test_chat_command_message_contract_keeps_done_and_turn_end(
     ):
         assert sid == session_id
         assert user_content == "go"
-        yield {"type": "chunk", "content": "ok", "turn_id": "turn-1"}
-        yield {"type": "done", "content": "ok", "turn_id": "turn-1"}
-        yield {"type": "turn_end", "turn_id": "turn-1"}
+        await sink.send_json({"type": "chunk", "content": "ok", "turn_id": "turn-1"})
+        await sink.send_json({"type": "done", "content": "ok", "turn_id": "turn-1"})
+        await sink.send_json({"type": "turn_end", "turn_id": "turn-1"})
 
-    monkeypatch.setattr(chat_api_mod, "process_message", fake_process_message)
+    monkeypatch.setattr(chat_api_mod, "stream_process_message", fake_stream)
 
     resp = await client.post(
         f"/api/chat/{session_id}/command",
@@ -219,7 +221,8 @@ async def test_chat_command_message_contract_error_is_terminal(
     create_session = await client.post(f"/api/projects/{project_id}/sessions")
     session_id = create_session.json()["id"]
 
-    async def fake_process_message(
+    async def fake_stream(
+        sink,
         sid: str,
         user_content: str,
         *,
@@ -230,9 +233,9 @@ async def test_chat_command_message_contract_error_is_terminal(
     ):
         assert sid == session_id
         assert user_content == "go"
-        yield {"type": "error", "content": "boom", "turn_id": "turn-1"}
+        await sink.send_json({"type": "error", "content": "boom", "turn_id": "turn-1"})
 
-    monkeypatch.setattr(chat_api_mod, "process_message", fake_process_message)
+    monkeypatch.setattr(chat_api_mod, "stream_process_message", fake_stream)
 
     resp = await client.post(
         f"/api/chat/{session_id}/command",

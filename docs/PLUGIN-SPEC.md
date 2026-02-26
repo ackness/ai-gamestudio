@@ -59,7 +59,7 @@ plugins/
 | `outputs` | 可输出类型声明（核心字段） |
 | `capabilities` | 能力声明（可映射脚本） |
 | `extensions.runtime_settings` | 运行时参数声明 |
-| `hooks` | 插件挂载阶段（默认 `post_narrative`） |
+| `hooks` | 插件挂载阶段（默认 `post_model_output`） |
 | `trigger` | 插件触发策略（`always/interval/manual`） |
 | `max_triggers` | 每会话执行上限 |
 | `storage` | 插件持久化键声明 |
@@ -71,15 +71,22 @@ plugins/
 
 当前支持：
 
-- `pre_narrative`
-- `post_narrative`（默认）
+- `pre_model_input`
+- `post_model_output`（默认）
+- `frontend_action`
 - `post_dispatch`
+
+兼容别名（历史写法）：
+
+- `pre_narrative` -> `pre_model_input`
+- `post_narrative` -> `post_model_output`
+- `ui_action` -> `frontend_action`
 
 ### 4.2 Trigger（插件触发策略）
 
 - `always`：每次进入 Hook 都执行
 - `interval`：每 N 回合执行一次
-- `manual`：仅手动触发，不参与自动调度
+- `manual`：仅手动触发，不参与自动调度（默认主回合链路不会自动运行）
 
 示例：
 

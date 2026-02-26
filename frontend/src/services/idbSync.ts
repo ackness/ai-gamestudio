@@ -35,5 +35,5 @@ export async function syncToIdb<T>(type: IdbSyncType, record: T): Promise<void> 
 }
 
 export function syncToIdbFireAndForget<T>(type: IdbSyncType, record: T): void {
-  syncToIdb(type, record).catch(() => {})
+  syncToIdb(type, record).catch((err) => console.warn('[idbSync]', type, err))
 }

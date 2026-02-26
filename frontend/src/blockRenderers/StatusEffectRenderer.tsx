@@ -1,4 +1,5 @@
 import type { BlockRendererProps } from '../services/blockRenderers'
+import { useBlockI18n } from './i18n'
 
 interface StatusEffectData {
   action: 'apply' | 'remove' | 'tick'
@@ -19,13 +20,14 @@ const typeConfig: Record<string, { icon: string; color: string; border: string; 
   hot: { icon: '\uD83D\uDC9A', color: 'text-green-400', border: 'border-green-600/50', bg: 'bg-green-900/30' },
 }
 
-const actionLabels: Record<string, string> = {
-  apply: '施加',
-  remove: '移除',
-  tick: '触发',
-}
+const actionKeys = {
+  apply: 'effect.apply',
+  remove: 'effect.remove',
+  tick: 'effect.tick',
+} as const
 
 export function StatusEffectRenderer({ data }: BlockRendererProps) {
+  const { t } = useBlockI18n()
   const d = data as StatusEffectData
   const cfg = typeConfig[d.effect_type] || typeConfig.buff
 
@@ -34,9 +36,9 @@ export function StatusEffectRenderer({ data }: BlockRendererProps) {
       <div className="flex items-center gap-2">
         <span className="text-lg">{cfg.icon}</span>
         <span className={`${cfg.color} font-medium text-sm`}>{d.effect_name}</span>
-        <span className="text-muted-foreground text-xs">({actionLabels[d.action] || d.action})</span>
+        <span className="text-muted-foreground text-xs">({t(actionKeys[d.action] || actionKeys.apply)})</span>
         {d.duration != null && d.duration > 0 && (
-          <span className="ml-auto text-xs text-muted-foreground">{d.duration} 回合</span>
+          <span className="ml-auto text-xs text-muted-foreground">{d.duration} {t('effect.rounds')}</span>
         )}
       </div>
       <p className="text-foreground/80 text-xs">{d.description}</p>
@@ -53,10 +55,10 @@ export function StatusEffectRenderer({ data }: BlockRendererProps) {
         </div>
       )}
       {d.damage_per_turn != null && d.damage_per_turn > 0 && (
-        <span className="text-xs text-purple-300">每回合 {d.damage_per_turn} 伤害</span>
+        <span className="text-xs text-purple-300">{t('effect.dmgPerTurn', d.damage_per_turn)}</span>
       )}
       {d.heal_per_turn != null && d.heal_per_turn > 0 && (
-        <span className="text-xs text-green-300">每回合 {d.heal_per_turn} 治疗</span>
+        <span className="text-xs text-green-300">{t('effect.healPerTurn', d.heal_per_turn)}</span>
       )}
     </div>
   )

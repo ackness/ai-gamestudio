@@ -8,6 +8,7 @@ import {
   idbPutProject,
   idbDeleteProject,
 } from '../services/localDb'
+import { validateIdbRows, validateIdbRecord, toIdbRecord } from '../utils/idbValidation'
 
 interface ProjectStore {
   projects: Project[]
@@ -35,7 +36,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       const persistent = await StorageFactory.isStoragePersistent()
       if (!persistent) {
         const rows = await idbGetProjects()
-        set({ projects: rows as unknown as Project[], loading: false })
+        set({ projects: validateIdbRows<Project>(rows, ['id', 'name']), loading: false })
       } else {
         const projects = await api.getProjects()
         set({ projects, loading: false })
@@ -49,7 +50,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const persistent = await StorageFactory.isStoragePersistent()
     const project = await api.createProject(data)
     if (!persistent) {
-      await idbPutProject(project as unknown as Record<string, unknown>)
+      await idbPutProject(toIdbRecord(project))
     }
     set((state) => ({ projects: [...state.projects, project] }))
     return project
@@ -62,7 +63,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       if (!persistent) {
         const row = await idbGetProject(id)
         if (row) {
-          set({ currentProject: row as unknown as Project, loading: false })
+          const validated = validateIdbRecord<Project>(row, ['id', 'name'])
+          if (validated) {
+            set({ currentProject: validated, loading: false })
+            return
+          }
           return
         }
       }
@@ -83,10 +88,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (!persistent) {
       // Local-first: merge into current state and persist to IndexedDB immediately
       const base = (currentProject?.id === targetProjectId ? currentProject : null)
-        ?? (await idbGetProject(targetProjectId) as unknown as Project | undefined)
+        ?? validateIdbRecord<Project>(await idbGetProject(targetProjectId), ['id', 'name'])
       if (!base) return
       const updated: Project = { ...base, world_doc: worldDoc, updated_at: new Date().toISOString() }
-      await idbPutProject(updated as unknown as Record<string, unknown>)
+      await idbPutProject(toIdbRecord(updated))
       set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))
       // Best-effort backend sync
       try { await get().syncProjectToBackend(updated) } catch (err) { console.warn('updateWorldDoc: backend sync failed:', err) }
@@ -106,10 +111,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (!persistent) {
       // Local-first: merge update into IndexedDB
       const base = (currentProject?.id === targetProjectId ? currentProject : null)
-        ?? (await idbGetProject(targetProjectId) as unknown as Project | undefined)
+        ?? validateIdbRecord<Project>(await idbGetProject(targetProjectId), ['id', 'name'])
       if (!base) return
       const updated: Project = { ...base, ...data, updated_at: new Date().toISOString() }
-      await idbPutProject(updated as unknown as Record<string, unknown>)
+      await idbPutProject(toIdbRecord(updated))
       set((state) => (state.currentProject?.id === targetProjectId ? { currentProject: updated } : {}))
       // Best-effort backend sync
       try { await get().syncProjectToBackend(updated) } catch (err) { console.warn('updateProject: backend sync failed:', err) }
@@ -124,7 +129,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (!persistent) {
       await idbDeleteProject(id)
     }
-    await api.deleteProject(id).catch(() => {})
+    await api.deleteProject(id).catch((err) => console.warn('[projectStore] deleteProject', err))
     set((state) => ({
       projects: state.projects.filter((p) => p.id !== id),
       currentProject: state.currentProject?.id === id ? null : state.currentProject,

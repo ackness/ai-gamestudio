@@ -62,7 +62,7 @@ class PromptBuilder:
                 if ":" in text:
                     role, _, content = text.partition(":")
                     role = role.strip().lower()
-                    if role in ("user", "assistant", "system"):
+                    if role in ("user", "assistant"):
                         messages.append({"role": role, "content": content.strip()})
                     else:
                         messages.append({"role": "user", "content": text})

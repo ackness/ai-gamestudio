@@ -124,6 +124,16 @@
     "keys": []
   },
   "extensions": {
+    "agent_prompt": {
+      "base_file": "prompts/agent/base.md",
+      "output_files": {
+        "guide": "prompts/agent/outputs/guide.md",
+        "choices": "prompts/agent/outputs/choices.md"
+      },
+      "tool_files": {
+        "emit": "prompts/agent/tools/emit.md"
+      }
+    },
     "runtime_settings": {
       "fields": {
         "guide_mode": {

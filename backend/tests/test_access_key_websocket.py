@@ -30,8 +30,10 @@ def client(tmp_path):
 
     original_engine = engine_mod.engine
     original_access_key = settings.ACCESS_KEY
+    original_debug = settings.DEBUG_ENDPOINTS_ENABLED
     engine_mod.engine = test_engine
     settings.ACCESS_KEY = _ACCESS_KEY
+    settings.DEBUG_ENDPOINTS_ENABLED = True
 
     async def override_get_session():
         async with AsyncSession(test_engine) as session:
@@ -40,6 +42,13 @@ def client(tmp_path):
     from backend.app.main import app
     from backend.app.db.engine import get_session
 
+    # Ensure debug-log WebSocket route is registered for this test
+    from backend.app.api.debug_log import router as debug_log_router
+    _saved_routes = list(app.routes)
+    _has_debug = any(getattr(r, "path", "") == "/ws/debug-log/{session_id}" for r in app.routes)
+    if not _has_debug:
+        app.include_router(debug_log_router)
+
     app.dependency_overrides[get_session] = override_get_session
 
     with TestClient(app) as tc:
@@ -47,7 +56,11 @@ def client(tmp_path):
 
     app.dependency_overrides.clear()
     settings.ACCESS_KEY = original_access_key
+    settings.DEBUG_ENDPOINTS_ENABLED = original_debug
     engine_mod.engine = original_engine
+    # Restore original routes if we added debug router
+    if not _has_debug:
+        app.routes[:] = _saved_routes
 
     async def _teardown() -> None:
         async with test_engine.begin() as conn:

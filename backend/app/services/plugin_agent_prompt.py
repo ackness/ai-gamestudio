@@ -47,6 +47,68 @@ def _agent_prompt_config(metadata: dict[str, Any]) -> dict[str, Any]:
     return cfg if isinstance(cfg, dict) else {}
 
 
+def _normalize_prompt_language(session_language: str | None) -> str | None:
+    normalized = str(session_language or "").strip().lower()
+    if normalized.startswith("zh"):
+        return "zh"
+    if normalized.startswith("en"):
+        return "en"
+    return None
+
+
+def _localized_prompt_rel_paths(rel_path: str | None, session_language: str | None) -> list[str]:
+    rel = str(rel_path or "").strip()
+    if not rel:
+        return []
+    lang = _normalize_prompt_language(session_language)
+    if not lang:
+        return [rel]
+
+    rel_path_obj = pathlib.PurePosixPath(rel)
+    filename = rel_path_obj.name
+    if not filename:
+        return [rel]
+
+    if "." in filename:
+        stem, suffix = filename.rsplit(".", 1)
+        localized_name = f"{stem}.{lang}.{suffix}"
+        fallback_en_name = f"{stem}.en.{suffix}"
+    else:
+        localized_name = f"{filename}.{lang}"
+        fallback_en_name = f"{filename}.en"
+
+    parent = rel_path_obj.parent.as_posix()
+
+    def _join_parent(name: str) -> str:
+        if parent in {"", "."}:
+            return name
+        return f"{parent}/{name}"
+
+    candidates = [_join_parent(localized_name)]
+    if lang != "en":
+        candidates.append(_join_parent(fallback_en_name))
+    candidates.append(rel)
+
+    deduped: list[str] = []
+    for candidate in candidates:
+        if candidate not in deduped:
+            deduped.append(candidate)
+    return deduped
+
+
+def _resolve_localized_prompt_file(
+    plugin_root: pathlib.Path | None,
+    rel_path: str | None,
+    *,
+    session_language: str | None = None,
+) -> pathlib.Path | None:
+    for candidate_rel in _localized_prompt_rel_paths(rel_path, session_language):
+        path = _resolve_prompt_file(plugin_root, candidate_rel)
+        if path is not None:
+            return path
+    return None
+
+
 def _resolve_prompt_file(plugin_root: pathlib.Path | None, rel_path: str | None) -> pathlib.Path | None:
     if plugin_root is None:
         return None
@@ -77,11 +139,21 @@ def _resolve_base_prompt(
     plugin_root: pathlib.Path | None,
     metadata: dict[str, Any],
     fallback_content: str,
+    *,
+    session_language: str | None = None,
 ) -> str:
     cfg = _agent_prompt_config(metadata)
-    base_path = _resolve_prompt_file(plugin_root, cfg.get("base_file"))
+    base_path = _resolve_localized_prompt_file(
+        plugin_root,
+        cfg.get("base_file"),
+        session_language=session_language,
+    )
     if base_path is None:
-        base_path = _resolve_prompt_file(plugin_root, "prompts/agent/base.md")
+        base_path = _resolve_localized_prompt_file(
+            plugin_root,
+            "prompts/agent/base.md",
+            session_language=session_language,
+        )
     text = _read_prompt_file(base_path)
     return text or fallback_content
 
@@ -108,6 +180,7 @@ def _resolve_output_instruction(
     metadata: dict[str, Any],
     output_type: str,
     output_cfg: dict[str, Any],
+    session_language: str | None = None,
 ) -> str:
     cfg = _agent_prompt_config(metadata)
     output_files = cfg.get("output_files") if isinstance(cfg.get("output_files"), dict) else {}
@@ -119,7 +192,13 @@ def _resolve_output_instruction(
     if not candidate_rel:
         candidate_rel = f"prompts/agent/outputs/{output_type}.md"
 
-    text = _read_prompt_file(_resolve_prompt_file(plugin_root, candidate_rel))
+    text = _read_prompt_file(
+        _resolve_localized_prompt_file(
+            plugin_root,
+            candidate_rel,
+            session_language=session_language,
+        )
+    )
     if text:
         return _sanitize_plugin_prompt(text)
 
@@ -131,6 +210,7 @@ def _build_tool_instructions(
     plugin_root: pathlib.Path | None,
     metadata: dict[str, Any],
     tools: list[dict[str, Any]],
+    session_language: str | None = None,
 ) -> str:
     cfg = _agent_prompt_config(metadata)
     tool_files = cfg.get("tool_files") if isinstance(cfg.get("tool_files"), dict) else {}
@@ -149,7 +229,13 @@ def _build_tool_instructions(
                 rel = str(mapped or "").strip()
         if not rel:
             rel = f"prompts/agent/tools/{tool_name}.md"
-        text = _read_prompt_file(_resolve_prompt_file(plugin_root, rel))
+        text = _read_prompt_file(
+            _resolve_localized_prompt_file(
+                plugin_root,
+                rel,
+                session_language=session_language,
+            )
+        )
         if text:
             sanitized = _sanitize_plugin_prompt(text)
             if sanitized:
@@ -324,6 +410,7 @@ def _build_block_instructions(
     has_player_character: bool = False,
     session_phase: str | None = None,
     runtime_settings: dict[str, Any] | None = None,
+    session_language: str | None = None,
 ) -> str:
     """Extract output instruction snippets from manifest metadata for the LLM."""
     outputs = metadata.get("outputs")
@@ -355,6 +442,7 @@ def _build_block_instructions(
             metadata=metadata,
             output_type=output_type,
             output_cfg=decl,
+            session_language=session_language,
         )
         schema_summary = _build_output_schema_summary(decl)
         emit_example = _build_emit_example(output_type, decl)

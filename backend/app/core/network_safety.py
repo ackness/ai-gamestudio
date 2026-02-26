@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ipaddress
+import socket
 from typing import Union
 from urllib.parse import urlsplit
 
@@ -113,5 +114,19 @@ def ensure_safe_api_base(raw_base: str | None, *, purpose: str) -> str | None:
         raise ApiBaseValidationError(
             f"Private/local {purpose} api_base destination is not allowed"
         )
+
+    # DNS resolution check: verify the hostname doesn't resolve to a private IP
+    # (prevents DNS rebinding / TOCTOU bypass of the above checks)
+    try:
+        addrinfos = socket.getaddrinfo(host_l, None, proto=socket.IPPROTO_TCP)
+        for family, _type, _proto, _canonname, sockaddr in addrinfos:
+            ip = ipaddress.ip_address(sockaddr[0])
+            if _is_private_or_local_ip(ip):
+                raise ApiBaseValidationError(
+                    f"Private/local {purpose} api_base destination is not allowed "
+                    f"(DNS resolved to {ip})"
+                )
+    except socket.gaierror:
+        pass  # DNS resolution failed — allow (may be offline or restricted env)
 
     return base

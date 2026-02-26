@@ -1,4 +1,5 @@
 import type { BlockRendererProps } from '../services/blockRenderers'
+import { useBlockI18n } from './i18n'
 
 interface LootItem {
   name: string
@@ -22,13 +23,13 @@ const rarityColors: Record<string, { text: string; bg: string; border: string }>
   legendary: { text: 'text-orange-400', bg: 'bg-orange-900/20', border: 'border-orange-700/50' },
 }
 
-const rarityLabels: Record<string, string> = {
-  common: '\u666E\u901A',
-  uncommon: '\u4F18\u79C0',
-  rare: '\u7A00\u6709',
-  epic: '\u53F2\u8BD7',
-  legendary: '\u4F20\u8BF4',
-}
+const rarityKeys = {
+  common: 'rarity.common',
+  uncommon: 'rarity.uncommon',
+  rare: 'rarity.rare',
+  epic: 'rarity.epic',
+  legendary: 'rarity.legendary',
+} as const
 
 const typeIcons: Record<string, string> = {
   weapon: '\u2694\uFE0F',
@@ -39,6 +40,7 @@ const typeIcons: Record<string, string> = {
 }
 
 export function LootRenderer({ data }: BlockRendererProps) {
+  const { t } = useBlockI18n()
   const d = data as LootData
   if (!d || !d.items) return null
 
@@ -52,6 +54,7 @@ export function LootRenderer({ data }: BlockRendererProps) {
       <div className="space-y-1.5">
         {d.items.map((item, i) => {
           const rarity = rarityColors[item.rarity] || rarityColors.common
+          const rKey = rarityKeys[item.rarity as keyof typeof rarityKeys]
           return (
             <div
               key={i}
@@ -65,7 +68,7 @@ export function LootRenderer({ data }: BlockRendererProps) {
                 )}
               </div>
               <span className={`text-xs ${rarity.text} shrink-0 ml-2`}>
-                {rarityLabels[item.rarity] || item.rarity}
+                {rKey ? t(rKey) : item.rarity}
               </span>
             </div>
           )
@@ -75,7 +78,7 @@ export function LootRenderer({ data }: BlockRendererProps) {
       {d.gold != null && d.gold > 0 && (
         <div className="text-yellow-400 text-sm flex items-center gap-1.5">
           <span>{'\uD83E\uDE99'}</span>
-          <span>{d.gold} Gold</span>
+          <span>{d.gold} {t('loot.gold')}</span>
         </div>
       )}
     </div>

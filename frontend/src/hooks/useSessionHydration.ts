@@ -21,7 +21,7 @@ export function useSessionHydration(currentSession: Session | null) {
   useEffect(() => {
     if (!currentSession) return
 
-    gameStorage.fetchCharacters(currentSession.id).then(setCharacters).catch(() => {})
+    gameStorage.fetchCharacters(currentSession.id).then(setCharacters).catch((err) => console.warn('[hydration] fetchCharacters', err))
 
     api.getSessionState(currentSession.id).then((state) => {
       setWorldState(state.world || {})
@@ -40,7 +40,7 @@ export function useSessionHydration(currentSession: Session | null) {
           model: '',
         })
       }
-    }).catch(() => {})
+    }).catch((err) => console.warn('[hydration] getSessionState', err))
 
     hydrateMessageImages(currentSession.id)
 
@@ -49,8 +49,8 @@ export function useSessionHydration(currentSession: Session | null) {
         setScenes(loaded)
         const current = loaded.find((s) => s.is_current)
         if (current) setCurrentScene(current)
-      }).catch(() => {})
-      gameStorage.fetchEvents(currentSession.id).then(setEvents).catch(() => {})
+      }).catch((err) => console.warn('[hydration] fetchScenes', err))
+      gameStorage.fetchEvents(currentSession.id).then(setEvents).catch((err) => console.warn('[hydration] fetchEvents', err))
     }
 
     if (currentSession.phase) setPhase(currentSession.phase)

@@ -54,7 +54,7 @@ AI GameStudio 是一个以 LLM 驱动的可扩展文字 RPG 平台：
 
 - 支持 WebSocket 流式输出。
 - 支持 HTTP fallback。
-- 支持阶段事件（narrative/plugins/complete）。
+- 支持阶段事件（`phase_change: plugins/complete`）与会话阶段切换（`init/character_creation/playing`）。
 
 验收标准：
 
@@ -75,9 +75,8 @@ AI GameStudio 是一个以 LLM 驱动的可扩展文字 RPG 平台：
 ## 5.4 Plugin Agent
 
 - 独立模型调用，按插件并行执行。
-- 工具固定为 7 个：
-  - `update_and_emit`
-  - `emit_block`
+- 工具固定为 6 个：
+  - `emit`
   - `db_read`
   - `db_log_append`
   - `db_log_query`

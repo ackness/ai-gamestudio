@@ -373,12 +373,12 @@ export class GameWebSocket {
     }
   }
 
-  sendMessage(content: string) {
-    this.send({ type: 'message', content })
+  sendMessage(content: string, lang?: string) {
+    this.send({ type: 'message', content, ...(lang ? { lang } : {}) })
   }
 
-  sendInitGame(preset?: string) {
-    this.send({ type: 'init_game', ...(preset ? { preset } : {}) })
+  sendInitGame(preset?: string, lang?: string) {
+    this.send({ type: 'init_game', ...(preset ? { preset } : {}), ...(lang ? { lang } : {}) })
   }
 
   sendFormSubmit(formId: string, values: Record<string, unknown>) {
@@ -401,8 +401,8 @@ export class GameWebSocket {
     this.send({ type: 'block_response', block_type: blockType, block_id: blockId, data })
   }
 
-  sendForceTrigger(blockType: string) {
-    this.send({ type: 'force_trigger', block_type: blockType })
+  sendForceTrigger(blockType: string, extra?: Record<string, unknown>) {
+    this.send({ type: 'force_trigger', block_type: blockType, ...(extra || {}) })
   }
 
   sendGenerateMessageImage(messageId: string) {

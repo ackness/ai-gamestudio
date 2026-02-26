@@ -28,7 +28,7 @@ export function useArchive(currentSession: Session | null) {
       setArchiveVersions([])
       return
     }
-    api.getArchiveVersions(currentSession.id).then(setArchiveVersions).catch(() => setArchiveVersions([]))
+    api.getArchiveVersions(currentSession.id).then(setArchiveVersions).catch((err) => { console.warn('[useArchive] failed to fetch versions:', err); setArchiveVersions([]) })
   }, [currentSession])
 
   useEffect(() => {

@@ -106,7 +106,7 @@ export function DebugLogPanel({ sessionId, onClose }: Props) {
       })
       .then((r) => r.json())
       .then((data: LogEntry[]) => setLogs(data))
-      .catch(() => {})
+      .catch((err) => console.warn('[debugLog] fetch', err))
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const query = accessKey ? `?access_key=${encodeURIComponent(accessKey)}` : ''

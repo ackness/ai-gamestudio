@@ -27,7 +27,7 @@ export function useGameWebSocket(currentSession: Session | null) {
   useSessionHydration(currentSession)
 
   // Build stable WS callback handlers
-  const cbs = useWsCallbacks(currentSession?.id ?? '', setInitError)
+  const cbs = useWsCallbacks(currentSession?.id ?? '')
 
   useEffect(() => {
     if (!currentSession) return
@@ -55,7 +55,7 @@ export function useGameWebSocket(currentSession: Session | null) {
       setWsStatus('connected')
       StorageFactory.redetectIfNeeded().then((persistent) => {
         if (persistent) useUiStore.getState().checkStoragePersistence()
-      }).catch(() => {})
+      }).catch((err) => console.warn('[ws] redetect storage', err))
     }
     ws.onReconnecting = () => setWsStatus('reconnecting')
     ws.onDisconnected = () => {

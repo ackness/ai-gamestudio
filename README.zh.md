@@ -6,7 +6,7 @@
 
 - 双层架构：主 LLM 负责叙事，Plugin Agent 负责机制执行。
 - 插件规范 v1：`manifest.json + PLUGIN.md`，`schema_version=1.0`。
-- 统一工具契约：7 个内置工具，无历史版本分支。
+- 统一工具契约：6 个内置工具（`emit`, `db_read`, `db_log_append`, `db_log_query`, `db_graph_add`, `execute_script`），无历史版本分支。
 - 持久状态：角色/场景/事件/插件存储统一落库。
 - 长会话支持：记忆、归档、自动压缩。
 

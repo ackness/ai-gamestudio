@@ -29,6 +29,7 @@ test('addEntry appends a new entry and marks it as _isNew', () => {
   assert.equal(entries.length, 1)
   assert.equal(entries[0].entry_id, 'goblin')
   assert.equal(entries[0]._isNew, true)
+  assert.equal(typeof entries[0]._newAt, 'number')
 })
 
 test('addEntry updates an existing entry when entry_id matches', () => {
@@ -88,6 +89,7 @@ test('clearNewFlags sets _isNew to false on all entries', () => {
   store.clearNewFlags()
   const { entries } = useCodexStore.getState()
   assert.equal(entries.every((e) => e._isNew === false), true)
+  assert.equal(entries.every((e) => e._newAt === undefined), true)
 })
 
 test('clearNewFlags leaves entries list unchanged in length', () => {
@@ -96,6 +98,20 @@ test('clearNewFlags leaves entries list unchanged in length', () => {
   store.addEntry({ action: 'unlock', category: 'location', entry_id: 'town', title: 'Town', content: 'A small town.' })
   store.clearNewFlags()
   assert.equal(useCodexStore.getState().entries.length, 1)
+})
+
+test('markEntrySeen clears only the target entry new flag', () => {
+  resetStore()
+  const store = useCodexStore.getState()
+  store.addEntry({ action: 'unlock', category: 'item', entry_id: 'sword', title: 'Sword', content: 'Sharp.' })
+  store.addEntry({ action: 'unlock', category: 'item', entry_id: 'shield', title: 'Shield', content: 'Sturdy.' })
+  store.markEntrySeen('sword')
+  const entries = useCodexStore.getState().entries
+  const sword = entries.find((e) => e.entry_id === 'sword')
+  const shield = entries.find((e) => e.entry_id === 'shield')
+  assert.equal(sword?._isNew, false)
+  assert.equal(sword?._newAt, undefined)
+  assert.equal(shield?._isNew, true)
 })
 
 // --- fetchEntries ---
@@ -120,6 +136,27 @@ test('fetchEntries sets entries to empty array when response has no entries fiel
   await useCodexStore.getState().fetchEntries('proj-1')
   const { entries } = useCodexStore.getState()
   assert.equal(entries.length, 0)
+})
+
+test('fetchEntries preserves local new flags for existing entry_id', async () => {
+  resetStore()
+  const store = useCodexStore.getState()
+  store.addEntry({
+    action: 'unlock',
+    category: 'character',
+    entry_id: 'hero',
+    title: 'Hero',
+    content: 'The protagonist.',
+  })
+  globalThis.fetch = makeFetch(true, {
+    entries: [
+      { action: 'update', category: 'character', entry_id: 'hero', title: 'Hero', content: 'Updated profile.' },
+    ],
+  })
+  await store.fetchEntries('proj-1')
+  const hero = useCodexStore.getState().entries.find((entry) => entry.entry_id === 'hero')
+  assert.equal(hero?._isNew, true)
+  assert.equal(typeof hero?._newAt, 'number')
 })
 
 test('fetchEntries clears loading flag when response is not ok', async () => {

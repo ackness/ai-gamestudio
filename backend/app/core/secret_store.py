@@ -43,7 +43,7 @@ class SecretStore:
         try:
             os.chmod(path, 0o600)
         except Exception:
-            logger.debug("Failed to chmod secret file {}", path)
+            logger.warning("Failed to chmod secret file {}", path)
         return f"file:{token}"
 
     def get_secret(self, secret_ref: str | None) -> str | None:

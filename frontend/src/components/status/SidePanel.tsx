@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Users, AlertCircle, Globe, Puzzle, Settings, Clock, BookOpen } from 'lucide-react'
+import { Users, AlertCircle, Globe, Puzzle, Settings, Clock, BookOpen, Scroll } from 'lucide-react'
 import { CharacterPanel } from './CharacterPanel'
+import { QuestPanel } from './QuestPanel'
 import { PluginPanel } from '../plugins/PluginPanel'
 import { EventPanel } from './EventPanel'
 import { WorldStatePanel } from './WorldStatePanel'
@@ -12,13 +13,14 @@ import { useSessionStore } from '../../stores/sessionStore'
 import { useUiStore } from '../../stores/uiStore'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-type Tab = 'characters' | 'events' | 'alerts' | 'world' | 'codex' | 'plugins' | 'settings'
+type Tab = 'characters' | 'quests' | 'events' | 'alerts' | 'world' | 'codex' | 'plugins' | 'settings'
 
 interface TabDef { label: string; hint: string; icon: React.ElementType }
 
 const tabDefs: Record<string, TabDef[]> = {
   zh: [
     { label: '角色', hint: '角色状态', icon: Users },
+    { label: '任务', hint: '任务追踪', icon: Scroll },
     { label: '事件', hint: '事件时间线', icon: Clock },
     { label: '通知', hint: '通知与告警', icon: AlertCircle },
     { label: '世界', hint: '世界状态', icon: Globe },
@@ -28,6 +30,7 @@ const tabDefs: Record<string, TabDef[]> = {
   ],
   en: [
     { label: 'Characters', hint: 'Character status', icon: Users },
+    { label: 'Quests', hint: 'Quest tracker', icon: Scroll },
     { label: 'Events', hint: 'Event timeline', icon: Clock },
     { label: 'Alerts', hint: 'Notifications', icon: AlertCircle },
     { label: 'World', hint: 'World state', icon: Globe },
@@ -37,7 +40,7 @@ const tabDefs: Record<string, TabDef[]> = {
   ],
 }
 
-const tabKeys: Tab[] = ['characters', 'events', 'alerts', 'world', 'codex', 'plugins', 'settings']
+const tabKeys: Tab[] = ['characters', 'quests', 'events', 'alerts', 'world', 'codex', 'plugins', 'settings']
 
 export function SidePanel() {
   const [activeTab, setActiveTab] = useState<Tab>('characters')
@@ -59,8 +62,8 @@ export function SidePanel() {
     }
   }
 
-  const gameTabs = tabs.slice(0, 5)
-  const configTabs = tabs.slice(5)
+  const gameTabs = tabs.slice(0, 6)
+  const configTabs = tabs.slice(6)
 
   return (
     <Tabs value={activeTab} onValueChange={handleTabChange} className="h-full flex overflow-hidden bg-background" orientation="vertical">
@@ -112,6 +115,7 @@ export function SidePanel() {
       {/* Content area */}
       <div className="flex-1 min-w-0 relative overflow-hidden">
         <TabsContent value="characters" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><CharacterPanel /></TabsContent>
+        <TabsContent value="quests" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><QuestPanel /></TabsContent>
         <TabsContent value="events" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><EventPanel /></TabsContent>
         <TabsContent value="alerts" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><NotificationPanel /></TabsContent>
         <TabsContent value="world" className="absolute inset-0 m-0 border-0 data-[state=inactive]:hidden overflow-y-auto p-3"><WorldStatePanel /></TabsContent>

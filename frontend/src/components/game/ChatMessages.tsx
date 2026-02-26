@@ -306,7 +306,7 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage, onRetriggerPl
   }, [messages, streamingContent, pendingBlocks])
 
   const handleCopy = useCallback((content: string) => {
-    navigator.clipboard.writeText(content).catch(() => {})
+    navigator.clipboard.writeText(content).catch((err) => console.warn('[chat] clipboard', err))
   }, [])
 
   const handleDelete = useCallback((msgId: string) => {
@@ -426,31 +426,34 @@ export function ChatMessages({ onAction, onRetry, onGenerateImage, onRetriggerPl
           }
 
           // assistant
+          const hasAssistantText = Boolean((msg.content || '').trim())
           return (
             <div key={msg.id} className="space-y-3 group">
-              <div className="flex justify-start">
-                <div className="flex items-end gap-2">
-                  <div
-                    className="px-5 py-3 rounded-2xl rounded-tl-sm max-w-[85%] text-sm markdown-content cursor-pointer transition-all bg-muted/50 border text-foreground shadow-sm hover:bg-muted/70"
-                    onClick={() => setInspectMsg(msg)}
-                    title={t.clickViewRaw}
-                  >
-                    <Markdown>{msg.content}</Markdown>
+              {hasAssistantText && (
+                <div className="flex justify-start">
+                  <div className="flex items-end gap-2">
+                    <div
+                      className="px-5 py-3 rounded-2xl rounded-tl-sm max-w-[85%] text-sm markdown-content cursor-pointer transition-all bg-muted/50 border text-foreground shadow-sm hover:bg-muted/70"
+                      onClick={() => setInspectMsg(msg)}
+                      title={t.clickViewRaw}
+                    >
+                      <Markdown>{msg.content}</Markdown>
+                    </div>
+                    <MessageActions
+                      msg={msg}
+                      isLast={isLast}
+                      onCopy={() => handleCopy(msg.content)}
+                      onDelete={() => handleDelete(msg.id)}
+                      onRegenerate={isLast && !isStreaming ? onRetry : undefined}
+                      onGenerateImage={onGenerateImage ? () => onGenerateImage(msg.id) : undefined}
+                      onRetriggerPlugins={onRetriggerPlugins && !isStreaming && !pluginProcessing ? () => onRetriggerPlugins(msg.id) : undefined}
+                      imageLoading={imageLoadingMessages.has(msg.id)}
+                      hasImage={!!messageImages[msg.id]?.length}
+                      t={t}
+                    />
                   </div>
-                  <MessageActions
-                    msg={msg}
-                    isLast={isLast}
-                    onCopy={() => handleCopy(msg.content)}
-                    onDelete={() => handleDelete(msg.id)}
-                    onRegenerate={isLast && !isStreaming ? onRetry : undefined}
-                    onGenerateImage={onGenerateImage ? () => onGenerateImage(msg.id) : undefined}
-                    onRetriggerPlugins={onRetriggerPlugins && !isStreaming && !pluginProcessing ? () => onRetriggerPlugins(msg.id) : undefined}
-                    imageLoading={imageLoadingMessages.has(msg.id)}
-                    hasImage={!!messageImages[msg.id]?.length}
-                    t={t}
-                  />
                 </div>
-              </div>
+              )}
               
               {messageImages[msg.id]?.length > 0 && (
                 <BlockList

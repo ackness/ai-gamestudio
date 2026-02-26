@@ -8,6 +8,11 @@ from typing import Any
 
 from loguru import logger
 
+from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
+
+from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
+
 from backend.app.core.game_state import GameStateManager
 from backend.app.core.json_utils import safe_json_loads
 from backend.app.db.engine import engine
@@ -20,6 +25,30 @@ from typing import Protocol
 class EventSink(Protocol):
     async def send_json(self, data: dict) -> None: ...
 
+
+# ---------------------------------------------------------------------------
+# Shared helpers — reduce repeated session-lookup boilerplate
+# ---------------------------------------------------------------------------
+
+@asynccontextmanager
+async def _with_session() -> AsyncIterator[SQLModelAsyncSession]:
+    """Open a short-lived DB session (replaces repeated ``async with SQLModelAsyncSession(engine, ...)`` blocks)."""
+    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+        yield db
+
+
+async def _get_session_or_error(
+    sink: EventSink,
+    session_id: str,
+    db: SQLModelAsyncSession,
+) -> GameSession | None:
+    """Fetch a GameSession by id, sending an error event and returning None if missing."""
+    game_session = await db.get(GameSession, session_id)
+    if not game_session:
+        await sink.send_json({"type": "error", "content": "Session not found"})
+        return None
+    return game_session
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -29,10 +58,6 @@ DEFAULT_INIT_PROMPT = (
 )
 
 _FORCE_TRIGGER_PROMPTS: dict[str, str] = {
-    "guide": (
-        "请简短描述当前场景和角色面临的局势，"
-        "并列出玩家可以采取的几种行动方向。"
-    ),
     "state_update": (
         "请根据最近发生的事件，简要总结角色状态的变化，"
         "包括属性、物品、位置等方面的更新。"
@@ -48,6 +73,228 @@ _FORCE_TRIGGER_PROMPTS: dict[str, str] = {
 }
 
 
+def _normalize_lang(raw: Any) -> str:
+    text = str(raw or "").strip().lower()
+    if text.startswith("zh"):
+        return "zh"
+    return "en"
+
+
+def _i18n_text(lang: str, zh: str, en: str) -> str:
+    return zh if lang == "zh" else en
+
+
+async def _emit_with_log(
+    sink: EventSink,
+    session_id: str,
+    event: dict[str, Any],
+) -> None:
+    _add_log(session_id, "send", event)
+    await sink.send_json(event)
+
+
+async def _handle_force_trigger_guide_plugin(
+    sink: EventSink,
+    session_id: str,
+    data: dict,
+    llm_overrides: dict[str, str] | None = None,
+) -> None:
+    """Handle guide trigger by invoking guide plugin directly (plugin LLM path)."""
+    from backend.app.core.game_db import GameDB
+    from backend.app.core.llm_config import resolve_llm_config, resolve_plugin_llm_config
+    from backend.app.core.plugin_engine import PluginEngine
+    from backend.app.services.plugin_agent import invoke_single_plugin
+    from backend.app.services.turn_context import build_turn_context
+
+    lang = _normalize_lang(data.get("lang"))
+    turn_id = str(uuid.uuid4())
+
+    await _emit_with_log(sink, session_id, {"type": "phase_change", "data": {"phase": "plugins"}})
+
+    async with _with_session() as db:
+        state_mgr = GameStateManager(db)
+        ctx = await build_turn_context(db, session_id, state_mgr)
+        if ctx is None:
+            await _emit_with_log(
+                sink,
+                session_id,
+                {
+                    "type": "error",
+                    "content": _i18n_text(lang, "会话不存在", "Session not found"),
+                    "turn_id": turn_id,
+                },
+            )
+            await _emit_with_log(sink, session_id, {"type": "phase_change", "data": {"phase": "complete"}})
+            await _emit_with_log(sink, session_id, {"type": "turn_end", "turn_id": turn_id})
+            return
+
+        if "guide" not in ctx.enabled_names:
+            await _emit_with_log(
+                sink,
+                session_id,
+                {
+                    "type": "notification",
+                    "data": {
+                        "level": "warning",
+                        "content": _i18n_text(
+                            lang,
+                            "行动引导插件未启用，无法手动生成建议。",
+                            "Guide plugin is disabled, so manual suggestions are unavailable.",
+                        ),
+                    },
+                    "turn_id": turn_id,
+                    "block_id": f"{turn_id}:0",
+                },
+            )
+            await _emit_with_log(
+                sink,
+                session_id,
+                {"type": "plugin_summary", "data": {"rounds": 0, "tool_calls": [], "blocks_emitted": []}},
+            )
+            await _emit_with_log(sink, session_id, {"type": "phase_change", "data": {"phase": "complete"}})
+            await _emit_with_log(sink, session_id, {"type": "done", "content": "", "turn_id": turn_id, "has_blocks": True})
+            await _emit_with_log(sink, session_id, {"type": "turn_end", "turn_id": turn_id})
+            return
+
+        guide_runtime_settings = (
+            ctx.runtime_settings_by_plugin.get("guide", {})
+            if isinstance(ctx.runtime_settings_by_plugin, dict)
+            else {}
+        )
+        if not isinstance(guide_runtime_settings, dict):
+            guide_runtime_settings = {}
+
+        latest_narrative = ""
+        for msg in reversed(ctx.recent_messages):
+            if getattr(msg, "role", "") == "assistant":
+                content = str(getattr(msg, "content", "") or "").strip()
+                if content:
+                    latest_narrative = content
+                    break
+
+        context_payload = {
+            "manual_trigger": True,
+            "trigger_source": str(data.get("source") or "quick_actions"),
+            "requested_output": "guide",
+            "language": lang,
+            "latest_narrative": latest_narrative,
+            "session_phase": str(ctx.session.phase or ""),
+            "current_scene": {
+                "id": getattr(ctx.current_scene, "id", None),
+                "name": getattr(ctx.current_scene, "name", ""),
+                "description": getattr(ctx.current_scene, "description", ""),
+                "npcs": ctx.scene_npcs,
+            },
+            "characters": [
+                {"id": c.id, "name": c.name, "role": c.role}
+                for c in ctx.characters
+            ],
+            "active_events": [
+                {
+                    "id": e.id,
+                    "name": e.name,
+                    "event_type": e.event_type,
+                    "status": e.status,
+                }
+                for e in ctx.active_events
+            ],
+            "world_state": ctx.world_state,
+            "runtime_settings": guide_runtime_settings,
+        }
+
+        main_config = resolve_llm_config(project=ctx.project, overrides=llm_overrides)
+        plugin_config = resolve_plugin_llm_config(main_config, overrides=llm_overrides)
+        blocks = await invoke_single_plugin(
+            plugin_name="guide",
+            context=context_payload,
+            session_id=session_id,
+            game_db=GameDB(db, session_id),
+            pe=ctx.pe or PluginEngine(),
+            config=plugin_config,
+            runtime_settings=guide_runtime_settings,
+            session_language=lang,
+        )
+
+    emitted_types: list[str] = []
+    allowed_types = {"guide", "choices", "notification"}
+    event_index = 0
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        block_type = str(block.get("type") or "").strip()
+        if not block_type or block_type not in allowed_types:
+            continue
+        block_id = str(block.get("id") or f"{turn_id}:{event_index}")
+        block_data = block.get("data")
+        output = {
+            "id": block_id,
+            "version": str(block.get("version") or "1.0"),
+            "type": block_type,
+            "data": block_data,
+            "meta": block.get("meta") if isinstance(block.get("meta"), dict) else {"plugin": "guide"},
+            "status": str(block.get("status") or "done"),
+        }
+        await _emit_with_log(
+            sink,
+            session_id,
+            {
+                "type": block_type,
+                "data": block_data,
+                "turn_id": turn_id,
+                "block_id": block_id,
+                "output": output,
+            },
+        )
+        emitted_types.append(block_type)
+        event_index += 1
+
+    if not emitted_types:
+        await _emit_with_log(
+            sink,
+            session_id,
+            {
+                "type": "notification",
+                "data": {
+                    "level": "info",
+                    "content": _i18n_text(
+                        lang,
+                        "当前暂无可执行的行动建议。",
+                        "No actionable suggestions are available right now.",
+                    ),
+                },
+                "turn_id": turn_id,
+                "block_id": f"{turn_id}:0",
+            },
+        )
+
+    await _emit_with_log(
+        sink,
+        session_id,
+        {
+            "type": "plugin_summary",
+            "data": {
+                "rounds": 1,
+                "tool_calls": [],
+                "blocks_emitted": emitted_types,
+            },
+        },
+    )
+    await _emit_with_log(sink, session_id, {"type": "phase_change", "data": {"phase": "complete"}})
+    await _emit_with_log(
+        sink,
+        session_id,
+        {
+            "type": "done",
+            "content": "",
+            "turn_id": turn_id,
+            "has_blocks": bool(emitted_types),
+            "message_id": "",
+            "raw_content": "",
+        },
+    )
+    await _emit_with_log(sink, session_id, {"type": "turn_end", "turn_id": turn_id})
+
+
 async def _handle_force_trigger(
     sink: EventSink,
     session_id: str,
@@ -55,8 +302,17 @@ async def _handle_force_trigger(
     llm_overrides: dict[str, str] | None = None,
     image_overrides: dict[str, str] | None = None,
 ) -> None:
-    """Handle force trigger — send hidden prompt to force specific block output."""
+    """Handle force trigger events from quick-action UI."""
     block_type = data.get("block_type", "")
+    if block_type == "guide":
+        await _handle_force_trigger_guide_plugin(
+            sink,
+            session_id,
+            data,
+            llm_overrides=llm_overrides,
+        )
+        return
+
     prompt = _FORCE_TRIGGER_PROMPTS.get(block_type)
     if not prompt:
         await sink.send_json(
@@ -86,7 +342,6 @@ async def _handle_generate_message_image(
 ) -> None:
     """Handle per-message image generation — no LLM round-trip."""
     from sqlmodel import select
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
     from backend.app.models.message import Message
     from backend.app.services.image_service import generate_message_image
@@ -98,7 +353,7 @@ async def _handle_generate_message_image(
         )
         return
 
-    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+    async with _with_session() as db:
         msg = await db.get(Message, message_id)
         if not msg or msg.session_id != session_id or msg.role != "assistant":
             await sink.send_json(
@@ -114,11 +369,8 @@ async def _handle_generate_message_image(
             )
             return
 
-        game_session = await db.get(GameSession, session_id)
+        game_session = await _get_session_or_error(sink, session_id, db)
         if not game_session:
-            await sink.send_json(
-                {"type": "error", "content": "Session not found"}
-            )
             return
 
         # Send loading event
@@ -188,13 +440,11 @@ async def _handle_init_game(
     image_overrides: dict[str, str] | None = None,
 ) -> None:
     """Handle game initialization — transition to character_creation or playing."""
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
     from backend.app.models.project import Project
 
-    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
-        game_session = await db.get(GameSession, session_id)
+    async with _with_session() as db:
+        game_session = await _get_session_or_error(sink, session_id, db)
         if not game_session:
-            await sink.send_json({"type": "error", "content": "Session not found"})
             return
 
         project = await db.get(Project, game_session.project_id)
@@ -227,17 +477,14 @@ async def _handle_form_submit(
     image_overrides: dict[str, str] | None = None,
 ) -> None:
     """Handle form submission — may trigger character creation or other actions."""
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-
     form_id = data.get("form_id", "")
     values = data.get("values", {})
 
     if form_id == "character_creation":
-        async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+        async with _with_session() as db:
             state_mgr = GameStateManager(db)
-            game_session = await db.get(GameSession, session_id)
+            game_session = await _get_session_or_error(sink, session_id, db)
             if not game_session:
-                await sink.send_json({"type": "error", "content": "Session not found"})
                 return
 
             char = await state_mgr.upsert_character(
@@ -264,7 +511,7 @@ async def _handle_form_submit(
         formatted = ", ".join(f"{k}={v}" for k, v in values.items())
         content = (
             f"【角色创建完成】{formatted}。请开始冒险叙事。\n"
-            "（这是开场叙事，不要输出 json:guide，让玩家自由开始冒险。）"
+            "（这是开场叙事，直接自然结束；行动指引由插件阶段自动生成。）"
         )
         await _stream_process_message(
             sink, session_id, content,
@@ -287,8 +534,6 @@ async def _handle_character_edit(
     image_overrides: dict[str, str] | None = None,
 ) -> None:
     """Handle character edits — no LLM call, direct DB update."""
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-
     character_id = data.get("character_id")
     changes = data.get("changes", {})
 
@@ -303,7 +548,7 @@ async def _handle_character_edit(
             {"type": "character_confirmed", "data": {"character_id": character_id}}
         )
 
-        async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+        async with _with_session() as db:
             game_session = await db.get(GameSession, session_id)
             if game_session and game_session.phase == "character_creation":
                 game_session.phase = "playing"
@@ -329,11 +574,10 @@ async def _handle_character_edit(
 
     transitioned_from_creation = False
 
-    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+    async with _with_session() as db:
         state_mgr = GameStateManager(db)
-        game_session = await db.get(GameSession, session_id)
+        game_session = await _get_session_or_error(sink, session_id, db)
         if not game_session:
-            await sink.send_json({"type": "error", "content": "Session not found"})
             return
 
         char_data = {"character_id": character_id, **changes}
@@ -399,8 +643,6 @@ async def _handle_scene_switch(
     image_overrides: dict[str, str] | None = None,
 ) -> None:
     """Handle scene switching — update current scene and trigger DM narration."""
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-
     scene_id = data.get("scene_id")
     if not scene_id:
         await sink.send_json(
@@ -408,7 +650,7 @@ async def _handle_scene_switch(
         )
         return
 
-    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+    async with _with_session() as db:
         from backend.app.models.scene import Scene
 
         scene = await db.get(Scene, scene_id)
@@ -456,16 +698,13 @@ async def _handle_block_response(
     transport_mode: str = "websocket",
 ) -> None:
     """Handle a user's response to an interactive block (requires_response=true)."""
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-
     block_type = data.get("block_type", "unknown")
     block_id = data.get("block_id", "")
     response_data = data.get("data", {})
 
-    async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
-        game_session = await db.get(GameSession, session_id)
+    async with _with_session() as db:
+        game_session = await _get_session_or_error(sink, session_id, db)
         if not game_session:
-            await sink.send_json({"type": "error", "content": "Session not found"})
             return
 
         if (
@@ -579,15 +818,13 @@ async def _background_regen_image(
     llm_overrides: dict[str, str] | None = None,
 ) -> None:
     """Run story image regeneration in the background."""
-    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
-
     from backend.app.services.image_service import (
         generate_story_image,
         regenerate_story_image,
     )
 
     try:
-        async with SQLModelAsyncSession(engine, expire_on_commit=False) as db:
+        async with _with_session() as db:
             if image_id:
                 regenerated = await regenerate_story_image(
                     db,

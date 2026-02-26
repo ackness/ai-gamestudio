@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { ProjectListPage } from './pages/ProjectListPage'
 import { ProjectEditorPage } from './pages/ProjectEditorPage'
+import { DebugTablesPage } from './pages/DebugTablesPage'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 interface ErrorBoundaryState {
@@ -49,6 +50,7 @@ function App() {
             <Routes>
               <Route path="/" element={<ProjectListPage />} />
               <Route path="/projects/:id" element={<ProjectEditorPage />} />
+              <Route path="/debug/session/:sessionId" element={<DebugTablesPage />} />
             </Routes>
           </Layout>
         </BrowserRouter>

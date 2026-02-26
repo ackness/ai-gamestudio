@@ -3,6 +3,12 @@ from __future__ import annotations
 from backend.app.core.prompt_builder import PromptBuilder
 from backend.app.services.turn_context import TurnContext
 
+_LANG_DISPLAY = {
+    "zh": "中文", "en": "English", "ja": "日本語",
+    "ko": "한국어", "es": "Español", "fr": "Français",
+    "de": "Deutsch", "pt": "Português", "ru": "Русский",
+}
+
 
 def _inject_world_doc(builder: PromptBuilder, ctx: TurnContext) -> None:
     """Inject world doc into system position (shared by both prompt modes)."""
@@ -21,11 +27,6 @@ def _inject_world_doc(builder: PromptBuilder, ctx: TurnContext) -> None:
             f"## World Document\n\n{clean_world_doc}",
         )
         if world_language:
-            _LANG_DISPLAY = {
-                "zh": "中文", "en": "English", "ja": "日本語",
-                "ko": "한국어", "es": "Español", "fr": "Français",
-                "de": "Deutsch", "pt": "Português", "ru": "Русский",
-            }
             lang_display = _LANG_DISPLAY.get(world_language, world_language)
             builder.inject(
                 "system", 1,

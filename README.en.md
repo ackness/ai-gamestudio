@@ -6,7 +6,7 @@
 
 - Dual-LLM architecture: narrative model + plugin agent.
 - Plugin Spec v1 only: `manifest.json + PLUGIN.md`, `schema_version=1.0`.
-- Fixed tool contract (7 tools), no legacy version branches.
+- Fixed tool contract (6 tools: `emit`, `db_read`, `db_log_append`, `db_log_query`, `db_graph_add`, `execute_script`), no legacy version branches.
 - Persistent game state: characters, scenes, events, plugin storage.
 - Long-session support: memory, archive, auto-compression.
 

@@ -252,7 +252,7 @@ export function MarkdownEditor() {
   useEffect(() => {
     const local = getBrowserLlmConfig(currentProject?.id)
     if (local.apiKey) { setHasKey(true); return }
-    getLlmInfo(currentProject?.id).then((info) => setHasKey(info.has_key)).catch(() => {})
+    getLlmInfo(currentProject?.id).then((info) => setHasKey(info.has_key)).catch((err) => console.warn('[editor] getLlmInfo', err))
   }, [currentProject?.id])
 
   const saveNow = useCallback(

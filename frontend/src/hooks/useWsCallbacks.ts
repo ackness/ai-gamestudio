@@ -50,7 +50,7 @@ export interface WsCallbacks {
  * Builds stable WebSocket callback handlers using store actions.
  * All callbacks are wrapped in useCallback for referential stability.
  */
-export function useWsCallbacks(sessionId: string, _setInitError: (e: string | null) => void): WsCallbacks {
+export function useWsCallbacks(sessionId: string): WsCallbacks {
   const {
     addMessage,
     setStreaming,
@@ -88,7 +88,7 @@ export function useWsCallbacks(sessionId: string, _setInitError: (e: string | nu
         id: messageId || crypto.randomUUID(),
         session_id: sessionId,
         role: 'assistant',
-        content: fullContent || '（结构化响应）',
+        content: fullContent || '',
         raw_content: rawContent || undefined,
         turn_id: turnId || undefined,
         message_type: 'narration',
@@ -127,10 +127,10 @@ export function useWsCallbacks(sessionId: string, _setInitError: (e: string | nu
 
     setPhase(newPhase)
     if ((newPhase === 'playing' || newPhase === 'character_creation') && sessionId) {
-      gameStorage.fetchScenes(sessionId).then(setScenes).catch(() => {})
-      gameStorage.fetchEvents(sessionId).then(setEvents).catch(() => {})
-      gameStorage.fetchCharacters(sessionId).then(setCharacters).catch(() => {})
-      api.getSessionState(sessionId).then((state) => setWorldState(state.world || {})).catch(() => {})
+      gameStorage.fetchScenes(sessionId).then(setScenes).catch((err) => console.warn('[ws] fetchScenes', err))
+      gameStorage.fetchEvents(sessionId).then(setEvents).catch((err) => console.warn('[ws] fetchEvents', err))
+      gameStorage.fetchCharacters(sessionId).then(setCharacters).catch((err) => console.warn('[ws] fetchCharacters', err))
+      api.getSessionState(sessionId).then((state) => setWorldState(state.world || {})).catch((err) => console.warn('[ws] getSessionState', err))
     } else if (newPhase === 'init') {
       setScenes([])
       setCurrentScene(null)
@@ -167,7 +167,9 @@ export function useWsCallbacks(sessionId: string, _setInitError: (e: string | nu
     } else {
       setScenes([...updated.map((s) => ({ ...s, is_current: false })), scene])
     }
-  }, [setCurrentScene, setScenes])
+    gameStorage.fetchCharacters(sid).then(setCharacters).catch((err) => console.warn('[ws] fetchCharacters', err))
+    api.getSessionState(sid).then((state) => setWorldState(state.world || {})).catch((err) => console.warn('[ws] getSessionState', err))
+  }, [setCurrentScene, setScenes, setCharacters, setWorldState])
 
   const onNotification = useCallback((
     data: Record<string, unknown>,
@@ -199,6 +201,12 @@ export function useWsCallbacks(sessionId: string, _setInitError: (e: string | nu
     if (type === 'event') {
       if (isGameEvent(data)) addEvent(data)
       return
+    }
+    if (type === 'quest_update' && data && isRecord(data)) {
+      const q = data as { quest_id?: string; title?: string; status?: string; description?: string; objectives?: unknown[]; rewards?: unknown }
+      if (q.quest_id && q.title && q.status) {
+        useGameStateStore.getState().upsertQuest(q as import('../types').Quest)
+      }
     }
     if (type === 'codex_entry' && data) {
       useCodexStore.getState().addEntry(data as import('../stores/codexStore').CodexEntry)

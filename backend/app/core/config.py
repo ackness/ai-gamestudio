@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     TEMPLATES_DIR: str = "templates/worlds"
     SECRET_STORE_DIR: str | None = None
     PLUGIN_BLOCK_STRICT_CONFLICTS: bool = False
+    DEBUG_ENDPOINTS_ENABLED: bool = False
     MAX_LOG_SESSIONS: int = 200
     LOG_TTL_MINUTES: int = 30
 

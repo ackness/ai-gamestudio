@@ -49,17 +49,16 @@ class BlockDeclaration:
 class PluginEngine:
     """Discovers, loads, validates, and renders PLUGIN.md plugins."""
 
-    _plugin_cache: dict[str, tuple[tuple[tuple[int, int] | None, tuple[int, int] | None], dict[str, Any]]] = {}
-    _template_cache: dict[str, tuple[tuple[int, int], str]] = {}
-    _discover_cache: dict[
-        str,
-        tuple[
-            tuple[tuple[str, tuple[int, int] | None, tuple[int, int] | None], ...],
-            list[dict[str, Any]],
-        ],
-    ] = {}
-
     def __init__(self) -> None:
+        self._plugin_cache: dict[str, tuple[tuple[tuple[int, int] | None, tuple[int, int] | None], dict[str, Any]]] = {}
+        self._template_cache: dict[str, tuple[tuple[int, int], str]] = {}
+        self._discover_cache: dict[
+            str,
+            tuple[
+                tuple[tuple[str, tuple[int, int] | None, tuple[int, int] | None], ...],
+                list[dict[str, Any]],
+            ],
+        ] = {}
         self._last_block_conflicts: list[dict[str, str]] = []
 
     @staticmethod
@@ -70,12 +69,11 @@ class PluginEngine:
         stat = path.stat()
         return (int(stat.st_mtime_ns), int(stat.st_size))
 
-    @classmethod
-    def clear_cache(cls) -> None:
+    def clear_cache(self) -> None:
         """Clear plugin and template caches (mainly for tests/dev tooling)."""
-        cls._plugin_cache.clear()
-        cls._template_cache.clear()
-        cls._discover_cache.clear()
+        self._plugin_cache.clear()
+        self._template_cache.clear()
+        self._discover_cache.clear()
 
     def _resolve_plugin_dir(self, plugin_name: str, plugins_dir: str) -> pathlib.Path | None:
         """Resolve a plugin name to its directory, checking flat then nested layouts."""

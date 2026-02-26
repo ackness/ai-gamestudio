@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
-import { useParams } from 'react-router-dom'
-import { FileText, MessageSquare, Settings, BookOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Terminal } from 'lucide-react'
+import { useParams, Link } from 'react-router-dom'
+import { FileText, MessageSquare, Settings, BookOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Terminal, Database } from 'lucide-react'
 import { useProjectStore } from '../stores/projectStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { useUiStore } from '../stores/uiStore'
@@ -116,7 +116,7 @@ export function ProjectEditorPage() {
   // Fetch llmInfo directly so it's available even before ModelSettings tab is opened
   useEffect(() => {
     if (!currentProject?.id) return
-    api.getLlmInfo(currentProject.id).then(setLlmInfo).catch(() => {})
+    api.getLlmInfo(currentProject.id).then(setLlmInfo).catch((err) => console.warn('[editor] getLlmInfo', err))
   }, [currentProject?.id])
 
   const handleLlmInfoChange = useCallback((info: LlmInfo | null) => setLlmInfo(info), [])
@@ -162,10 +162,17 @@ export function ProjectEditorPage() {
           </h2>
         </div>
         
-        <div className="flex items-center">
-          <Button 
-            variant="ghost" 
-            size="icon" 
+        <div className="flex items-center gap-1">
+          {currentSession && (
+            <Link to={`/debug/session/${currentSession.id}`} target="_blank">
+              <Button variant="ghost" size="icon" className="h-8 w-8" title="数据库浏览器">
+                <Database className="h-4 w-4" />
+              </Button>
+            </Link>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
             className="h-8 w-8"
             onClick={() => {
               if (rightCollapsed) {
