@@ -148,6 +148,30 @@ async def _dispatch_blocks_stage(
             block_trigger_counts[block_type] = int(block_trigger_counts.get(block_type, 0) or 0) + 1
 
         if block_type in _INFRA_BLOCK_TYPES:
+            if not emit_front_events:
+                continue
+
+            result_block = result if isinstance(result, dict) else block
+            infra_data = block_data
+            if isinstance(result_block, dict):
+                infra_data = result_block.get("data", block_data)
+
+            events.append(
+                {
+                    "type": block_type,
+                    "data": infra_data,
+                    "turn_id": turn_id,
+                    "block_id": block_id,
+                    "output": {
+                        "id": block_id,
+                        "version": block_version,
+                        "type": block_type,
+                        "data": infra_data,
+                        "meta": block_meta,
+                        "status": block_status,
+                    },
+                }
+            )
             continue
 
         persisted_blocks.append(
@@ -444,6 +468,7 @@ async def process_message(
     *,
     save_user_msg: bool = True,
     save_assistant_msg: bool = True,
+    session_language: str | None = None,
     llm_overrides: dict[str, str] | None = None,
     image_overrides: dict[str, str] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
@@ -606,6 +631,7 @@ async def process_message(
                 turn_id=turn_id,
                 on_progress=progress_queue.put_nowait,
                 trigger_counts=trigger_counts,
+                session_language=session_language,
             )
 
         agent_task = asyncio.create_task(_run_agent())
@@ -841,6 +867,7 @@ async def stream_process_message(
     *,
     save_user_msg: bool = True,
     save_assistant_msg: bool = True,
+    session_language: str | None = None,
     llm_overrides: dict[str, str] | None = None,
     image_overrides: dict[str, str] | None = None,
 ) -> None:
@@ -849,6 +876,7 @@ async def stream_process_message(
         session_id, content,
         save_user_msg=save_user_msg,
         save_assistant_msg=save_assistant_msg,
+        session_language=session_language,
         llm_overrides=llm_overrides,
         image_overrides=image_overrides,
     ):

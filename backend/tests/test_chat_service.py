@@ -208,9 +208,11 @@ async def test_process_message_handles_state_updates():
 
     svc_mod.engine = original_engine
 
-    # state_update is an internal infra block and is not forwarded to frontend events.
+    # state_update should be forwarded to frontend for real-time status sync.
     state_events = [e for e in events if e["type"] == "state_update"]
-    assert state_events == []
+    assert len(state_events) == 1
+    assert state_events[0]["data"]["world"]["hp"] == 90
+    assert state_events[0]["output"]["type"] == "state_update"
 
     async with AsyncSession(test_engine) as session:
         from backend.app.core.game_state import GameStateManager
@@ -320,8 +322,7 @@ async def test_process_message_emits_output_envelope_for_plugin_blocks():
 
     typed_events = [e for e in events if e.get("type") in {"notification", "choice", "story_image", "event", "state_update"}]
     emitted_types = [e.get("type") for e in typed_events]
-    assert "state_update" not in emitted_types  # infra block should not be forwarded.
-    assert {"notification", "choice", "story_image", "event"}.issubset(set(emitted_types))
+    assert {"notification", "choice", "story_image", "event", "state_update"}.issubset(set(emitted_types))
 
     for e in typed_events:
         output = e.get("output")

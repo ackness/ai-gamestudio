@@ -101,9 +101,8 @@ async def test_dispatch_blocks_stage_keeps_output_contract_for_ui_and_status_typ
         log_prefix="contract-test",
     )
 
-    # state_update is internal; other outputs should be forwarded with full envelope.
+    # state_update should be forwarded for frontend state synchronization.
     emitted_types = [evt["type"] for evt in events]
-    assert "state_update" not in emitted_types
     assert set(emitted_types) == {
         "story_image",
         "choice",
@@ -112,6 +111,7 @@ async def test_dispatch_blocks_stage_keeps_output_contract_for_ui_and_status_typ
         "event",
         "character_sheet",
         "scene_update",
+        "state_update",
         "audio_clip",
         "video_clip",
     }
@@ -126,7 +126,7 @@ async def test_dispatch_blocks_stage_keeps_output_contract_for_ui_and_status_typ
 
     persisted_types = [item["type"] for item in persisted]
     assert "state_update" not in persisted_types
-    assert set(persisted_types) == set(emitted_types)
+    assert set(persisted_types) == set(emitted_types) - {"state_update"}
 
     # Ensure status-related blocks still pass through the dispatch stage.
     assert "notification" in called

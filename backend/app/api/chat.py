@@ -183,12 +183,19 @@ async def _handle_message(ctx: CommandContext) -> None:
     if not content:
         await _send_error(ctx.sink, "Empty message")
         return
+    raw_lang = str(ctx.data.get("lang") or "").strip().lower()
+    session_language = "zh" if raw_lang.startswith("zh") else ("en" if raw_lang.startswith("en") else None)
+    call_kwargs: dict[str, Any] = {
+        "llm_overrides": ctx.llm_overrides,
+        "image_overrides": ctx.image_overrides,
+    }
+    if session_language:
+        call_kwargs["session_language"] = session_language
     await stream_process_message(
         ctx.sink,
         ctx.session_id,
         content,
-        llm_overrides=ctx.llm_overrides,
-        image_overrides=ctx.image_overrides,
+        **call_kwargs,
     )
     await _ensure_http_terminal_event(ctx)
 

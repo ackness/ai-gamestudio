@@ -167,7 +167,9 @@ export function useWsCallbacks(sessionId: string): WsCallbacks {
     } else {
       setScenes([...updated.map((s) => ({ ...s, is_current: false })), scene])
     }
-  }, [setCurrentScene, setScenes])
+    gameStorage.fetchCharacters(sid).then(setCharacters).catch((err) => console.warn('[ws] fetchCharacters', err))
+    api.getSessionState(sid).then((state) => setWorldState(state.world || {})).catch((err) => console.warn('[ws] getSessionState', err))
+  }, [setCurrentScene, setScenes, setCharacters, setWorldState])
 
   const onNotification = useCallback((
     data: Record<string, unknown>,

@@ -373,12 +373,12 @@ export class GameWebSocket {
     }
   }
 
-  sendMessage(content: string) {
-    this.send({ type: 'message', content })
+  sendMessage(content: string, lang?: string) {
+    this.send({ type: 'message', content, ...(lang ? { lang } : {}) })
   }
 
-  sendInitGame(preset?: string) {
-    this.send({ type: 'init_game', ...(preset ? { preset } : {}) })
+  sendInitGame(preset?: string, lang?: string) {
+    this.send({ type: 'init_game', ...(preset ? { preset } : {}), ...(lang ? { lang } : {}) })
   }
 
   sendFormSubmit(formId: string, values: Record<string, unknown>) {

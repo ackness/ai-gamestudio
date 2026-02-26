@@ -46,6 +46,9 @@ No player character exists yet.
 - `items` 中加入 `type=state_update`
 - `data` 只包含本回合增量
 - `data` 至少包含 `characters` 或 `world` 之一
+- 玩家状态更新写入 `characters[].attributes`（不要在 `state_update` 根节点新增自定义字段）
+- 角色更新优先使用上下文里的真实角色 ID（`[id: ...]`），不要使用 `player`、`npc_xxx` 这类别名
+- 当出现首个稳定场景或世界锚点时，同步输出 `world.current_scene`（至少包含 `name`，可带 `description`、`npcs`）
 
 ### notification
 用于重要提醒、警告、奖励反馈。
@@ -77,6 +80,7 @@ No player character exists yet.
 ### NPC 管理
 - 新建 NPC：在 `state_update.data.characters` 中追加 NPC 数据
 - 更新 NPC：带上已有 `character_id`，只提交变化字段
+- 若没有 NPC 的 `character_id`，至少提供 `name` 与 `role`，避免产生匿名/未知角色
 
 {% set core_cfg = runtime_settings.get('state', {}) if runtime_settings else {} %}
 {% if core_cfg %}

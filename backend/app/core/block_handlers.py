@@ -209,7 +209,21 @@ class StateUpdateHandler:
         if "characters" in data:
             enriched = []
             for char_data in data["characters"]:
-                char = await mgr.upsert_character(context.session_id, char_data)
+                if not isinstance(char_data, dict):
+                    logger.warning(
+                        "Skip invalid state_update character delta (non-object): {}",
+                        char_data,
+                    )
+                    continue
+                try:
+                    char = await mgr.upsert_character(context.session_id, char_data)
+                except ValueError as exc:
+                    logger.warning(
+                        "Skip state_update character delta on session {}: {}",
+                        context.session_id,
+                        exc,
+                    )
+                    continue
                 enriched.append(
                     {
                         "id": char.id,
@@ -229,7 +243,10 @@ class StateUpdateHandler:
                         ),
                     }
                 )
-            data["characters"] = enriched
+            if enriched:
+                data["characters"] = enriched
+            else:
+                data.pop("characters", None)
         # Update world state
         if "world" in data:
             await mgr.update_world_state(context.session_id, data["world"])
@@ -272,6 +289,43 @@ class SceneUpdateHandler:
             return char.id
         return char_id
 
+    async def _sync_world_scene(
+        self,
+        mgr: GameStateManager,
+        session_id: str,
+        scene: object,
+        npcs_raw: list[object] | None,
+    ) -> None:
+        scene_payload: dict[str, object] = {
+            "scene_id": getattr(scene, "id", ""),
+            "name": getattr(scene, "name", "") or "未知地点",
+        }
+        description = getattr(scene, "description", None)
+        if isinstance(description, str) and description.strip():
+            scene_payload["description"] = description
+
+        normalized_npcs: list[dict[str, str]] = []
+        if isinstance(npcs_raw, list):
+            for npc in npcs_raw:
+                if not isinstance(npc, dict):
+                    continue
+                item: dict[str, str] = {}
+                name = npc.get("name") or npc.get("character_name")
+                if isinstance(name, str) and name.strip():
+                    item["name"] = name.strip()
+                role_in_scene = npc.get("role_in_scene")
+                if isinstance(role_in_scene, str) and role_in_scene.strip():
+                    item["role"] = role_in_scene.strip()
+                npc_desc = npc.get("description")
+                if isinstance(npc_desc, str) and npc_desc.strip():
+                    item["description"] = npc_desc.strip()
+                if item:
+                    normalized_npcs.append(item)
+        if normalized_npcs:
+            scene_payload["npcs"] = normalized_npcs
+
+        await mgr.update_world_state(session_id, {"current_scene": scene_payload})
+
     async def process(self, data: dict, context: BlockContext) -> dict | None:
         mgr = context.state_mgr
         action = data.get("action", "move")
@@ -291,6 +345,7 @@ class SceneUpdateHandler:
                         scene.id, char_id, npc.get("role_in_scene")
                     )
             data["scene_id"] = scene.id
+            await self._sync_world_scene(mgr, context.session_id, scene, data.get("npcs"))
 
         elif action == "update":
             scene = await mgr.get_current_scene(context.session_id)
@@ -313,6 +368,7 @@ class SceneUpdateHandler:
                             scene.id, char_id, npc.get("role_in_scene")
                         )
                 data["scene_id"] = scene.id
+                await self._sync_world_scene(mgr, context.session_id, scene, data.get("npcs"))
 
         return data
 

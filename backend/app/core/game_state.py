@@ -264,8 +264,30 @@ class GameStateManager:
 
     # ---- Character upsert ----
 
+    async def _resolve_character_alias(
+        self,
+        session_id: str,
+        character_id: str,
+    ) -> Character | None:
+        alias = character_id.strip().lower()
+        if alias in {"player", "pc", "protagonist", "玩家", "主角"}:
+            stmt = (
+                select(Character)
+                .where(
+                    Character.session_id == session_id,
+                    Character.role == "player",
+                )
+                .order_by(Character.created_at.asc())  # type: ignore[arg-type]
+            )
+            players = list((await self.session.exec(stmt)).all())
+            if len(players) == 1:
+                return players[0]
+        return None
+
     async def upsert_character(self, session_id: str, data: dict) -> Character:
         character_id = data.get("character_id") or data.get("id")
+        if isinstance(character_id, str) and character_id.strip().lower() == "new":
+            character_id = None
         if character_id:
             existing = await self.session.get(Character, character_id)
             if existing:
@@ -273,6 +295,14 @@ class GameStateManager:
                 self.session.add(existing)
                 await self._finalize_write(existing, refresh=True)
                 return existing
+            alias_target = await self._resolve_character_alias(
+                session_id, str(character_id)
+            )
+            if alias_target:
+                self._apply_character_updates(alias_target, data)
+                self.session.add(alias_target)
+                await self._finalize_write(alias_target, refresh=True)
+                return alias_target
         # Fallback: match by name within the same session to avoid duplicates
         name = data.get("name")
         if name:
@@ -287,6 +317,11 @@ class GameStateManager:
                 self.session.add(existing)
                 await self._finalize_write(existing, refresh=True)
                 return existing
+        if character_id:
+            raise ValueError(
+                f"character_id '{character_id}' not found in session '{session_id}' "
+                "and no name provided for fallback match"
+            )
         # Create new character
         char = Character(
             session_id=session_id,

@@ -177,11 +177,6 @@ async def _handle_force_trigger_guide_plugin(
             "trigger_source": str(data.get("source") or "quick_actions"),
             "requested_output": "guide",
             "language": lang,
-            "language_instruction": _i18n_text(
-                lang,
-                "请使用中文输出 guide/choices。",
-                "Please output guide/choices in English.",
-            ),
             "latest_narrative": latest_narrative,
             "session_phase": str(ctx.session.phase or ""),
             "current_scene": {
@@ -217,6 +212,7 @@ async def _handle_force_trigger_guide_plugin(
             pe=ctx.pe or PluginEngine(),
             config=plugin_config,
             runtime_settings=guide_runtime_settings,
+            session_language=lang,
         )
 
     emitted_types: list[str] = []

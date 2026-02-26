@@ -101,7 +101,7 @@ export function useBlockI18n() {
 
   function t(key: TextKey, ...args: (string | number)[]): string {
     const entry = texts[key]
-    let result = entry?.[lang] ?? entry?.en ?? key
+    let result: string = entry?.[lang] ?? entry?.en ?? key
     for (let i = 0; i < args.length; i++) {
       result = result.replace(`{${i}}`, String(args[i]))
     }

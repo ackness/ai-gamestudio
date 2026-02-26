@@ -58,9 +58,9 @@ export function useGameActions(
       setStreaming(true)
       setStreamStatus('waiting')
       clearStreamContent()
-      wsRef.current.sendMessage(message)
+      wsRef.current.sendMessage(message, language)
     },
-    [currentSession, wsRef, addMessage, setStreaming, setStreamStatus, clearStreamContent, clearPendingBlocks],
+    [currentSession, wsRef, addMessage, setStreaming, setStreamStatus, clearStreamContent, clearPendingBlocks, language],
   )
 
   const handleInitGame = useCallback(() => {
@@ -70,8 +70,8 @@ export function useGameActions(
     setStreaming(true)
     setStreamStatus('waiting')
     clearStreamContent()
-    wsRef.current.sendInitGame()
-  }, [wsRef, setStreaming, setStreamStatus, clearStreamContent, clearInitError])
+    wsRef.current.sendInitGame(undefined, language)
+  }, [wsRef, setStreaming, setStreamStatus, clearStreamContent, clearInitError, language])
 
   const handleRetry = useCallback(() => {
     const last = lastActionRef.current
@@ -86,14 +86,14 @@ export function useGameActions(
       setStreaming(true)
       setStreamStatus('waiting')
       clearStreamContent()
-      wsRef.current.sendMessage(last.content)
+      wsRef.current.sendMessage(last.content, language)
     } else if (last.type === 'structured' && last.data) {
       setStreaming(true)
       setStreamStatus('waiting')
       clearStreamContent()
       wsRef.current.send(last.data as StructuredMessage)
     }
-  }, [wsRef, handleInitGame, setStreaming, setStreamStatus, clearStreamContent])
+  }, [wsRef, handleInitGame, setStreaming, setStreamStatus, clearStreamContent, language])
 
   const handleForceTrigger = useCallback(
     (blockType: string) => {
