@@ -14,6 +14,7 @@ from backend.app.core.config import settings
 from backend.app.core.game_db import GameDB
 from backend.app.core.llm_config import ResolvedLlmConfig
 from backend.app.core.plugin_engine import PluginEngine
+from backend.app.adapters.sql_storage import SqlStorageAdapter
 from backend.app.core.plugin_hooks import DEFAULT_PLUGIN_HOOK, normalize_plugin_hooks
 from backend.app.core.plugin_trigger import (
     PLUGIN_TRIGGER_INTERVAL,
@@ -132,6 +133,7 @@ async def run_plugin_agent(
     on_progress: ProgressCallback | None = None,
     trigger_counts: dict[str, int] | None = None,
     session_language: str | None = None,
+    reasoning_effort: str | None = "none",
 ) -> tuple[list[dict], dict[str, Any]]:
     """Run enabled plugins in parallel after narrative completes."""
     plugins_dir = plugins_dir or settings.PLUGINS_DIR
@@ -224,7 +226,7 @@ async def run_plugin_agent(
         _run_one_plugin(
             plugin_info=pi, context_text=context_text, session_id=session_id,
             game_db=game_db, pe=pe, config=config, plugins_dir=plugins_dir,
-            on_progress=on_progress,
+            on_progress=on_progress, reasoning_effort=reasoning_effort,
         )
         for pi in plugins_to_run
     ]
@@ -286,6 +288,7 @@ async def _run_one_plugin(
     config: ResolvedLlmConfig,
     plugins_dir: str,
     on_progress: ProgressCallback | None = None,
+    reasoning_effort: str | None = "none",
 ) -> tuple[list[dict], int, list[str], dict[str, Any]]:
     """Run a single plugin's LLM call.
 
@@ -352,9 +355,10 @@ async def _run_one_plugin(
 
     # Deferred-commit DB for batched writes
     plugin_db = GameDB(game_db.db, game_db.session_id, autocommit=False)
+    storage = SqlStorageAdapter(game_db.db, session_id=game_db.session_id, autocommit=False)
     output_declarations = _build_output_declarations(metadata, name)
     ctx = _ToolContext(
-        session_id=session_id, game_db=plugin_db, pe=pe,
+        session_id=session_id, game_db=plugin_db, storage=storage, pe=pe,
         enabled_plugins=[name], plugins_dir=plugins_dir, blocks=blocks,
         plugin_name=name, turn_id=turn_id,
         declared_output_types=set(output_declarations.keys()),
@@ -366,7 +370,7 @@ async def _run_one_plugin(
 
     for round_idx in range(MAX_TOOL_ROUNDS):
         total_rounds = round_idx + 1
-        call_kwargs = _build_call_kwargs(config, messages, tools)
+        call_kwargs = _build_call_kwargs(config, messages, tools, reasoning_effort=reasoning_effort)
         try:
             response = await litellm.acompletion(**call_kwargs)
         except Exception:
@@ -398,7 +402,8 @@ async def _run_one_plugin(
             except Exception:
                 pass
 
-    # Single commit for all writes
+    # Single commit for all writes (storage and plugin_db share the same session)
+    await storage.flush()
     await plugin_db.flush()
 
     for b in blocks:

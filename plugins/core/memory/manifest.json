@@ -30,16 +30,16 @@
     "listen": []
   },
   "storage": {
-    "keys": [
-      "short-term-memory",
-      "long-term-memory",
-      "memory-index",
-      "config",
-      "session-meta",
-      "session-versions",
-      "compression-summary",
-      "compression-state"
-    ]
+    "collections": {
+      "short-term-memory": { "type": "kv", "scope": "session" },
+      "long-term-memory": { "type": "kv", "scope": "session" },
+      "memory-index": { "type": "kv", "scope": "session" },
+      "config": { "type": "kv", "scope": "project" },
+      "session-meta": { "type": "kv", "scope": "session" },
+      "session-versions": { "type": "kv", "scope": "session" },
+      "compression-summary": { "type": "kv", "scope": "session" },
+      "compression-state": { "type": "kv", "scope": "session" }
+    }
   },
   "extensions": {
     "runtime_settings": {

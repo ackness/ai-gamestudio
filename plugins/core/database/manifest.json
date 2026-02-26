@@ -14,7 +14,12 @@
   "capabilities": {},
   "outputs": {},
   "events": { "emit": [], "listen": [] },
-  "storage": { "keys": ["world-state", "event-log"] },
+  "storage": {
+    "collections": {
+      "world-state": { "type": "kv", "scope": "session" },
+      "event-log": { "type": "log", "scope": "session" }
+    }
+  },
   "i18n": {
     "en": { "name": "Database", "description": "Provides persistent state context for prompts and is required for all game sessions." },
     "zh": { "name": "数据库", "description": "为提示词提供持久化状态上下文，所有游戏会话必须依赖此插件。" }

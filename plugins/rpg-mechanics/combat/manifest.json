@@ -537,13 +537,13 @@
     "listen": []
   },
   "storage": {
-    "keys": [
-      "last-roll",
-      "last-check",
-      "active-combat",
-      "combat-log",
-      "active-effects"
-    ]
+    "collections": {
+      "last-roll": { "type": "kv", "scope": "session" },
+      "last-check": { "type": "kv", "scope": "session" },
+      "active-combat": { "type": "kv", "scope": "session" },
+      "combat-log": { "type": "log", "scope": "session" },
+      "active-effects": { "type": "kv", "scope": "session" }
+    }
   },
   "permissions": {
     "network": false,

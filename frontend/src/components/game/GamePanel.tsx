@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react'
 import { Save, Bug, Plus, RefreshCcw, XCircle, MonitorPlay, History } from 'lucide-react'
 import type { Session } from '../../types'
 import { useSessionStore } from '../../stores/sessionStore'
-import { useSceneStore } from '../../stores/sceneStore'
-import { useGameStateStore } from '../../stores/gameStateStore'
+import { useGameDataStore } from '../../stores/gameDataStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { useBlockSchemaStore } from '../../stores/blockSchemaStore'
 import { useNotificationStore } from '../../stores/notificationStore'
@@ -73,8 +72,8 @@ export function GamePanel({ currentSession, onNewSession, llmInfo }: Props) {
     switchSession,
     deleteSession,
   } = useSessionStore()
-  const { currentScene, scenes, setScenes, setCurrentScene } = useSceneStore()
-  const { setCharacters, setWorldState, setEvents } = useGameStateStore()
+  const { currentScene, scenes, setScenes, setCurrentScene } = useGameDataStore()
+  const { setCharacters, setWorldState, setEvents } = useGameDataStore()
 
   // Fetch block schemas when project changes
   const { fetchSchemas, clear: clearSchemas } = useBlockSchemaStore()

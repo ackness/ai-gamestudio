@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { Search, Skull, Gem, MapPin, BookOpen, User } from 'lucide-react'
-import { useCodexStore, type CodexEntry } from '../../stores/codexStore'
+import { useGameDataStore, type CodexEntry } from '../../stores/gameDataStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { useUiStore } from '../../stores/uiStore'
 import { Input } from '@/components/ui/input'
@@ -101,15 +101,15 @@ export function CodexPanel() {
   const projectId = useProjectStore((s) => s.currentProject?.id)
   const language = useUiStore((s) => s.language)
   const {
-    entries,
-    loading,
-    searchQuery,
-    setSearchQuery,
-    fetchEntries,
+    codexEntries: entries,
+    codexLoading: loading,
+    codexSearchQuery: searchQuery,
+    setCodexSearchQuery: setSearchQuery,
+    fetchCodexEntries: fetchEntries,
     markEntrySeen,
     markEntriesSeen,
     clearNewFlags,
-  } = useCodexStore()
+  } = useGameDataStore()
   const t = panelText[language] ?? panelText.en
 
   useEffect(() => {

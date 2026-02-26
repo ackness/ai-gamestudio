@@ -41,9 +41,9 @@ from backend.app.core.game_db import GameDB
 from backend.app.core.block_validation import validate_block_data
 from backend.app.core.plugin_engine import BlockDeclaration, PluginEngine
 from backend.app.core.plugin_tools import get_all_tools
-from backend.app.models.game_kv import GameKV  # noqa: F401 — table registration
-from backend.app.models.game_graph import GameGraph  # noqa: F401
-from backend.app.models.game_log import GameLog  # noqa: F401
+from backend.app.models.game_kv import StorageKV as GameKV  # noqa: F401 — table registration
+from backend.app.models.game_graph import StorageGraph as GameGraph  # noqa: F401
+from backend.app.models.game_log import StorageLog as GameLog  # noqa: F401
 
 
 # ---------------------------------------------------------------------------

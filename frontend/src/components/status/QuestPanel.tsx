@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useGameStateStore } from '../../stores/gameStateStore'
+import { useGameDataStore } from '../../stores/gameDataStore'
 import { useUiStore } from '../../stores/uiStore'
 import type { Quest } from '../../types'
 import { Badge } from '@/components/ui/badge'
@@ -99,7 +99,7 @@ function QuestCard({ quest, language }: { quest: Quest; language: string }) {
 }
 
 export function QuestPanel() {
-  const quests = useGameStateStore((s) => s.quests)
+  const quests = useGameDataStore((s) => s.quests)
   const language = useUiStore((s) => s.language)
   const t = questText[language] ?? questText.en
 

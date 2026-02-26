@@ -14,8 +14,8 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class GameKV(SQLModel, table=True):
-    __tablename__ = "game_kv"
+class StorageKV(SQLModel, table=True):
+    __tablename__ = "game_kv"  # keep table name for DB compat
     __table_args__ = (UniqueConstraint("session_id", "collection", "key"),)
 
     id: str = Field(default_factory=_new_id, primary_key=True)

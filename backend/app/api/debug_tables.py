@@ -10,9 +10,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from backend.app.db.engine import get_session
 from backend.app.models.character import Character
 from backend.app.models.game_event import GameEvent
-from backend.app.models.game_graph import GameGraph
-from backend.app.models.game_kv import GameKV
-from backend.app.models.game_log import GameLog
+from backend.app.models.game_graph import StorageGraph as GameGraph
+from backend.app.models.game_kv import StorageKV as GameKV
+from backend.app.models.game_log import StorageLog as GameLog
 from backend.app.models.message import Message
 from backend.app.models.plugin_storage import PluginStorage
 from backend.app.models.scene import Scene

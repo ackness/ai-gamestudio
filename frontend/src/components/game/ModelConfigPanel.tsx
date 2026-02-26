@@ -38,6 +38,11 @@ const modelPanelText: Record<string, Record<string, string>> = {
     pluginApiBasePlaceholder: '例：http://localhost:11434/v1',
     pluginSameAsMain: '与主模型相同',
     pluginCustom: '自定义模型',
+    pluginReasoning: '插件推理',
+    reasoningNone: '关闭',
+    reasoningLow: '低',
+    reasoningMedium: '中',
+    reasoningHigh: '高',
     imageGeneration: '图片生成',
     imageModel: '图片模型',
     imageApiKey: '图片 API Key',
@@ -83,6 +88,11 @@ const modelPanelText: Record<string, Record<string, string>> = {
     pluginApiBasePlaceholder: 'e.g. http://localhost:11434/v1',
     pluginSameAsMain: 'Same as main model',
     pluginCustom: 'Custom model',
+    pluginReasoning: 'Plugin Reasoning',
+    reasoningNone: 'Off',
+    reasoningLow: 'Low',
+    reasoningMedium: 'Medium',
+    reasoningHigh: 'High',
     imageGeneration: 'Image Generation',
     imageModel: 'Image Model',
     imageApiKey: 'Image API Key',
@@ -126,6 +136,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
   const [pluginApiKey, setPluginApiKey] = useState('')
   const [pluginApiBase, setPluginApiBase] = useState('')
   const [pluginUseSameModel, setPluginUseSameModel] = useState(true)
+  const [pluginReasoningEffort, setPluginReasoningEffort] = useState('none')
   const [imageModel, setImageModel] = useState('')
   const [imageApiKey, setImageApiKey] = useState('')
   const [imageApiBase, setImageApiBase] = useState('')
@@ -198,7 +209,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
       }
     }).catch((err) => console.warn('[modelConfig] getLlmProfiles', err))
     api.getPresetModels().then(setPresetModels).catch((err) => console.warn('[modelConfig] getPresets', err))
-  }, [currentProject])
+  }, [currentProject?.id])
 
   // Initialize fields from current project
   useEffect(() => {
@@ -211,12 +222,13 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
       setPluginApiKey(local.pluginApiKey || '')
       setPluginApiBase(local.pluginApiBase || '')
       setPluginUseSameModel(!local.pluginModel)
+      setPluginReasoningEffort(local.pluginReasoningEffort || 'none')
       setImageModel(local.imageModel || currentProject.image_model || '')
       setImageApiKey(local.imageApiKey || '')
       setImageApiBase(local.imageApiBase || currentProject.image_api_base || '')
       setImageApiBaseAutoSuffix(local.imageApiBaseAutoSuffix !== false)
     }
-  }, [currentProject])
+  }, [currentProject?.id])
 
   // Close on click outside
   useEffect(() => {
@@ -331,6 +343,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
         pluginModel: pluginUseSameModel ? undefined : (pluginModel || undefined),
         pluginApiKey: pluginUseSameModel ? undefined : (pluginApiKey || undefined),
         pluginApiBase: pluginUseSameModel ? undefined : (pluginApiBase || undefined),
+        pluginReasoningEffort: pluginReasoningEffort === 'none' ? undefined : pluginReasoningEffort,
         imageModel,
         imageApiKey,
         imageApiBase,
@@ -406,6 +419,7 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
       setPluginApiKey('')
       setPluginApiBase('')
       setPluginUseSameModel(true)
+      setPluginReasoningEffort('none')
       setImageModel('')
       setImageApiKey('')
       setImageApiBase('')
@@ -671,6 +685,21 @@ export function ModelConfigPanel({ llmInfo, onClose, onSaved }: Props) {
                 </span>
               )}
             </div>
+          </div>
+
+          {/* Plugin reasoning effort */}
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">{t.pluginReasoning}</label>
+            <select
+              value={pluginReasoningEffort}
+              onChange={(e) => setPluginReasoningEffort(e.target.value)}
+              className="w-full bg-background border border-input rounded px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              <option value="none">{t.reasoningNone}</option>
+              <option value="low">{t.reasoningLow}</option>
+              <option value="medium">{t.reasoningMedium}</option>
+              <option value="high">{t.reasoningHigh}</option>
+            </select>
           </div>
         </div>
 

@@ -14,8 +14,8 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class GameGraph(SQLModel, table=True):
-    __tablename__ = "game_graph"
+class StorageGraph(SQLModel, table=True):
+    __tablename__ = "game_graph"  # keep table name for DB compat
     __table_args__ = (UniqueConstraint("session_id", "from_id", "to_id", "relation"),)
 
     id: str = Field(default_factory=_new_id, primary_key=True)

@@ -8,9 +8,9 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from backend.app.core.json_utils import safe_json_loads
-from backend.app.models.game_graph import GameGraph
-from backend.app.models.game_kv import GameKV
-from backend.app.models.game_log import GameLog
+from backend.app.models.game_graph import StorageGraph as GameGraph
+from backend.app.models.game_kv import StorageKV as GameKV
+from backend.app.models.game_log import StorageLog as GameLog
 
 
 class GameDB:

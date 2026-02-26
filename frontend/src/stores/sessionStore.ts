@@ -8,7 +8,7 @@ import { validateIdbRows } from '../utils/idbValidation'
 import { attachPendingBlocksForTurn, type TurnPendingBlock } from './sessionTurnUtils'
 import { useProjectStore } from './projectStore'
 import { useTokenStore } from './tokenStore'
-import { useSceneStore } from './sceneStore'
+import { useGameDataStore } from './gameDataStore'
 import { useMessageImageStore } from './messageImageStore'
 import * as gameStorage from '../services/gameStorage'
 
@@ -118,7 +118,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
         streamStatus: 'idle' as StreamStatus,
         isStreaming: false,
       }))
-      useSceneStore.getState().resetScenes()
+      useGameDataStore.getState().reset()
       useMessageImageStore.getState().resetMessageImages()
       useTokenStore.getState().reset()
       return session
@@ -140,7 +140,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       streamStatus: 'idle' as StreamStatus,
       isStreaming: false,
     })
-    useSceneStore.getState().resetScenes()
+    useGameDataStore.getState().reset()
     useMessageImageStore.getState().resetMessageImages()
     useTokenStore.getState().reset()
     try {
@@ -162,7 +162,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
         const sessions = state.sessions.filter((s) => s.id !== sessionId)
         const isCurrent = state.currentSession?.id === sessionId
         if (isCurrent) {
-          useSceneStore.getState().resetScenes()
+          useGameDataStore.getState().reset()
           useMessageImageStore.getState().resetMessageImages()
           return {
             sessions,

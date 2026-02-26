@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { MapPin, Users, ChevronDown, ChevronRight } from 'lucide-react'
-import { useGameStateStore } from '../../stores/gameStateStore'
+import { useGameDataStore } from '../../stores/gameDataStore'
 import { useUiStore } from '../../stores/uiStore'
 import { Badge } from '@/components/ui/badge'
 
@@ -160,7 +160,7 @@ function GenericEntry({ label, value }: { label: string; value: unknown }) {
 }
 
 export function WorldStatePanel() {
-  const { worldState } = useGameStateStore()
+  const { worldState } = useGameDataStore()
   const language = useUiStore((s) => s.language)
   const t = worldStateText[language] ?? worldStateText.en
 

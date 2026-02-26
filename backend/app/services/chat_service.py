@@ -32,6 +32,7 @@ from backend.app.services.turn_context import build_turn_context
 from backend.app.core.game_db import GameDB
 from backend.app.services.plugin_agent import run_plugin_agent
 from backend.app.services.debug_log_service import add_debug_log as _add_log
+from backend.app.models.game_log import StorageLog
 
 
 def _plugins_to_count(plugin_summary: dict[str, Any]) -> list[str]:
@@ -599,7 +600,8 @@ async def process_message(
         yield {"type": "phase_change", "phase": "plugins", "turn_id": turn_id}
 
         plugin_config = resolve_plugin_llm_config(config, overrides=llm_overrides)
-        logger.info("Plugin Agent: model={}, source={}", plugin_config.model, plugin_config.source)
+        plugin_reasoning = str((llm_overrides or {}).get("plugin_reasoning_effort") or "none").strip() or "none"
+        logger.info("Plugin Agent: model={}, source={}, reasoning={}", plugin_config.model, plugin_config.source, plugin_reasoning)
 
         game_db = GameDB(db, session_id)
         state_snapshot = await game_db.build_state_snapshot()
@@ -632,6 +634,7 @@ async def process_message(
                 on_progress=progress_queue.put_nowait,
                 trigger_counts=trigger_counts,
                 session_language=session_language,
+                reasoning_effort=plugin_reasoning,
             )
 
         agent_task = asyncio.create_task(_run_agent())
@@ -677,19 +680,23 @@ async def process_message(
         if plugin_summary:
             yield {"type": "plugin_summary", "data": plugin_summary, "turn_id": turn_id}
 
-        # Collect plugin LLM call data
+        # Collect plugin LLM call data → separate game_log entries
         if plugin_summary:
-            plugin_calls: dict[str, Any] = {}
             for pm in plugin_summary.get("plugin_metrics", []):
                 pname = pm.get("plugin", "")
                 if pname and "messages" in pm:
-                    plugin_calls[pname] = {
-                        "messages": pm.get("messages"),
-                        "rounds": pm.get("rounds", 0),
-                        "model": plugin_config.model,
-                    }
-            if plugin_calls:
-                llm_calls["plugins"] = plugin_calls
+                    log_entry = StorageLog(
+                        session_id=session_id,
+                        collection=f"plugin.{pname}",
+                        entry_json=json.dumps({
+                            "type": "llm_call",
+                            "message_id": saved_message_id,
+                            "messages": pm.get("messages"),
+                            "rounds": pm.get("rounds", 0),
+                            "model": plugin_config.model,
+                        }, ensure_ascii=False, default=str),
+                    )
+                    db.add(log_entry)
 
         # 7. Dispatch blocks + persist metadata (shared helper)
         stage_events = await _dispatch_and_persist_blocks(

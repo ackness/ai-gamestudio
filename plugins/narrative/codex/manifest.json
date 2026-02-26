@@ -91,9 +91,9 @@
     "listen": []
   },
   "storage": {
-    "keys": [
-      "codex-entries"
-    ]
+    "collections": {
+      "codex-entries": { "type": "kv", "scope": "session" }
+    }
   },
   "extensions": {
     "runtime_settings": {
