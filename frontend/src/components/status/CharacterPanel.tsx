@@ -5,6 +5,7 @@ import { useUiStore } from '../../stores/uiStore'
 import * as api from '../../services/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { normalizeInventoryItemLabel } from '../../utils/inventory'
 
 const characterText: Record<string, Record<string, string>> = {
   zh: {
@@ -29,10 +30,6 @@ const characterText: Record<string, Record<string, string>> = {
     attributes: 'Attributes:',
     inventory: 'Inventory:',
   },
-}
-
-function normalizeInventoryItem(item: string | { name: string; [key: string]: unknown }): string {
-  return typeof item === 'string' ? item : item.name || String(item)
 }
 
 export function CharacterPanel() {
@@ -146,7 +143,7 @@ export function CharacterPanel() {
                   <div className="flex flex-wrap gap-1 ml-2">
                     {inv.map((item, i) => (
                       <span key={i} className="text-xs bg-muted text-foreground px-2 py-0.5 rounded">
-                        {normalizeInventoryItem(item)}
+                        {normalizeInventoryItemLabel(item)}
                       </span>
                     ))}
                   </div>

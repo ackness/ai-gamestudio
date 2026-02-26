@@ -4,7 +4,9 @@ import {
   EMPTY_BLOCK_INTERACTION,
   useBlockInteractionStore,
 } from '../../stores/blockInteractionStore'
+import { useUiStore } from '../../stores/uiStore'
 import { buildCharacterSheetInteractionState } from './blockInteractionState'
+import { normalizeInventoryItemLabel } from '../../utils/inventory'
 
 interface CharacterSheetData {
   character_id: string
@@ -17,14 +19,26 @@ interface CharacterSheetData {
   background?: string
 }
 
+const ROLE_TEXT: Record<string, Record<string, string>> = {
+  zh: {
+    player: '玩家',
+    npc: 'NPC',
+  },
+  en: {
+    player: 'Player',
+    npc: 'NPC',
+  },
+}
+
 function normalizeInventory(items: CharacterSheetData['inventory']): string[] {
-  return items.map((item) =>
-    typeof item === 'string' ? item : item.name || String(item)
-  )
+  return items
+    .map((item) => normalizeInventoryItemLabel(item))
+    .filter((item) => item.trim().length > 0)
 }
 
 export function CharacterSheetRenderer({ data, blockId, onAction, locked }: BlockRendererProps) {
   const payload = data && typeof data === 'object' ? (data as CharacterSheetData) : null
+  const language = useUiStore((s) => s.language)
 
   const {
     character_id,
@@ -47,6 +61,10 @@ export function CharacterSheetRenderer({ data, blockId, onAction, locked }: Bloc
   }
 
   const inventory = normalizeInventory(rawInventory)
+  const roleLabel =
+    typeof role === 'string'
+      ? ROLE_TEXT[language]?.[role.toLowerCase()] || ROLE_TEXT.en[role.toLowerCase()] || role
+      : ''
   const interaction = useBlockInteractionStore(
     (s) => s.interactions[blockId] ?? EMPTY_BLOCK_INTERACTION,
   )
@@ -127,7 +145,7 @@ export function CharacterSheetRenderer({ data, blockId, onAction, locked }: Bloc
           ) : (
             <h3 className="text-sm font-medium">{confirmed ? editedName : name}</h3>
           )}
-          {role && <span className="text-xs text-muted-foreground ml-2">{role}</span>}
+          {role && <span className="text-xs text-muted-foreground ml-2">{roleLabel}</span>}
         </div>
         {character_id === 'new' && !confirmed && (
           <span className="text-xs text-cyan-400 bg-cyan-900/30 px-2 py-0.5 rounded">新角色</span>
