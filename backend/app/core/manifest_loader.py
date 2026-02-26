@@ -94,7 +94,7 @@ def load_manifest(plugin_dir: pathlib.Path) -> PluginManifest | None:
         dependencies=data.get("dependencies", []),
         prompt=data.get("prompt"),
         capabilities=data.get("capabilities") or {},
-        outputs=data.get("outputs") or data.get("blocks") or {},
+        outputs=data.get("outputs") or {},
         events=data.get("events") or {},
         storage=data.get("storage") or {},
         permissions=data.get("permissions") or {},
