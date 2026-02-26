@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useGameStateStore } from '../../stores/gameStateStore'
+import { useGameDataStore } from '../../stores/gameDataStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useUiStore } from '../../stores/uiStore'
 import * as api from '../../services/api'
@@ -36,7 +36,7 @@ function normalizeInventoryItem(item: string | { name: string; [key: string]: un
 }
 
 export function CharacterPanel() {
-  const { characters } = useGameStateStore()
+  const { characters } = useGameDataStore()
   const currentSession = useSessionStore((s) => s.currentSession)
   const language = useUiStore((s) => s.language)
   const t = characterText[language] ?? characterText.en
@@ -60,7 +60,7 @@ export function CharacterPanel() {
     setSyncing(true)
     try {
       const chars = await api.getCharacters(currentSession.id)
-      useGameStateStore.getState().setCharacters(chars)
+      useGameDataStore.getState().setCharacters(chars)
     } finally {
       setSyncing(false)
     }

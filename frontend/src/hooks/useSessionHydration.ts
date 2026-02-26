@@ -1,9 +1,8 @@
 import { useEffect } from 'react'
 import type { Session } from '../types'
 import { useSessionStore } from '../stores/sessionStore'
-import { useSceneStore } from '../stores/sceneStore'
 import { useMessageImageStore } from '../stores/messageImageStore'
-import { useGameStateStore } from '../stores/gameStateStore'
+import { useGameDataStore } from '../stores/gameDataStore'
 import { useTokenStore } from '../stores/tokenStore'
 import * as api from '../services/api'
 import * as gameStorage from '../services/gameStorage'
@@ -14,9 +13,8 @@ import * as gameStorage from '../services/gameStorage'
  */
 export function useSessionHydration(currentSession: Session | null) {
   const { setPhase } = useSessionStore()
-  const { setScenes, setCurrentScene } = useSceneStore()
   const { hydrateMessageImages } = useMessageImageStore()
-  const { setCharacters, setWorldState, setEvents } = useGameStateStore()
+  const { setCharacters, setWorldState, setEvents, setScenes, setCurrentScene } = useGameDataStore()
 
   useEffect(() => {
     if (!currentSession) return
