@@ -94,6 +94,37 @@ function FallbackBlock({ type, data, label }: { type: string; data: unknown; lab
   )
 }
 
+/** Block types that should be grouped when consecutive. */
+const GROUPABLE_BLOCK_TYPES = new Set(['codex_entry', 'item_update'])
+
+interface GroupedBlock {
+  type: string
+  items: { data: unknown; blockId: string; output?: unknown }[]
+}
+
+function groupConsecutiveBlocks(blocks: BlockLike[], idPrefix: string): (GroupedBlock | { single: true; block: BlockLike; idx: number })[] {
+  const result: (GroupedBlock | { single: true; block: BlockLike; idx: number })[] = []
+  let i = 0
+  while (i < blocks.length) {
+    const normalized = normalizeBlockLike(blocks[i], `${idPrefix}:${i}`)
+    if (!normalized) { i++; continue }
+    if (GROUPABLE_BLOCK_TYPES.has(normalized.type)) {
+      const group: GroupedBlock = { type: normalized.type, items: [] }
+      while (i < blocks.length) {
+        const n = normalizeBlockLike(blocks[i], `${idPrefix}:${i}`)
+        if (!n || n.type !== group.type) break
+        group.items.push({ data: n.data, blockId: n.block_id || `${idPrefix}:${i}:${n.type}`, output: n.output })
+        i++
+      }
+      result.push(group)
+    } else {
+      result.push({ single: true, block: blocks[i], idx: i })
+      i++
+    }
+  }
+  return result
+}
+
 /** Render a list of blocks (attached to a message or pending). */
 function BlockList({
   blocks,
@@ -108,26 +139,33 @@ function BlockList({
   idPrefix: string
   t: Record<string, string>
 }) {
+  const grouped = groupConsecutiveBlocks(blocks, idPrefix)
   return (
     <>
-      {blocks.map((block, i) => {
-        const normalized = normalizeBlockLike(block, `${idPrefix}:${i}`)
-        if (!normalized) return null
-
-        const Renderer = getBlockRenderer(normalized.type)
-        const blockId = normalized.block_id || `${idPrefix}:${i}:${normalized.type}`
+      {grouped.map((entry, gi) => {
+        if ('single' in entry) {
+          const normalized = normalizeBlockLike(entry.block, `${idPrefix}:${entry.idx}`)
+          if (!normalized) return null
+          const Renderer = getBlockRenderer(normalized.type)
+          const blockId = normalized.block_id || `${idPrefix}:${entry.idx}:${normalized.type}`
+          return (
+            <div key={blockId} className="flex justify-start">
+              {Renderer ? (
+                <Renderer data={normalized.data} blockId={blockId} onAction={onAction} locked={locked} />
+              ) : (
+                <FallbackBlock type={normalized.type} data={normalized.data} label={t.block} />
+              )}
+            </div>
+          )
+        }
+        // Grouped block
+        const Renderer = getBlockRenderer(entry.type)
+        if (!Renderer) return null
+        const groupKey = entry.items.map((it) => it.blockId).join(',')
+        const groupedData = entry.items.map((it) => it.data)
         return (
-          <div key={blockId} className="flex justify-start">
-            {Renderer ? (
-              <Renderer
-                data={normalized.data}
-                blockId={blockId}
-                onAction={onAction}
-                locked={locked}
-              />
-            ) : (
-              <FallbackBlock type={normalized.type} data={normalized.data} label={t.block} />
-            )}
+          <div key={`group-${gi}-${groupKey}`} className="flex justify-start">
+            <Renderer data={groupedData} blockId={entry.items[0].blockId} onAction={onAction} locked={locked} />
           </div>
         )
       })}
