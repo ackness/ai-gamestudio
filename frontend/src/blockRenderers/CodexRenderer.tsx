@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { BlockRendererProps } from '../services/blockRenderers'
+import { useBlockI18n } from './i18n'
 
 interface CodexEntryData {
   action: 'unlock' | 'update'
@@ -11,20 +12,30 @@ interface CodexEntryData {
   image_hint?: string
 }
 
-const categoryConfig: Record<string, { icon: string; label: string }> = {
-  monster:   { icon: '\u{1F480}', label: 'Monster' },
-  item:      { icon: '\u{1F48E}', label: 'Item' },
-  location:  { icon: '\u{1F5FA}\uFE0F',  label: 'Location' },
-  lore:      { icon: '\u{1F4D6}', label: 'Lore' },
-  character: { icon: '\u{1F464}', label: 'Character' },
+const categoryKeys = {
+  monster: 'codex.monster',
+  item: 'codex.item',
+  location: 'codex.location',
+  lore: 'codex.lore',
+  character: 'codex.character',
+} as const
+
+const categoryIcons: Record<string, string> = {
+  monster: '\u{1F480}',
+  item: '\u{1F48E}',
+  location: '\u{1F5FA}\uFE0F',
+  lore: '\u{1F4D6}',
+  character: '\u{1F464}',
 }
 
 const TRUNCATE_LENGTH = 120
 
 export function CodexRenderer({ data }: BlockRendererProps) {
+  const { t } = useBlockI18n()
   const d = data as CodexEntryData
   const [expanded, setExpanded] = useState(false)
-  const cat = categoryConfig[d.category] || categoryConfig.lore
+  const catKey = categoryKeys[d.category as keyof typeof categoryKeys]
+  const catIcon = categoryIcons[d.category] || categoryIcons.lore
   const isUnlock = d.action === 'unlock'
   const needsTruncate = d.content.length > TRUNCATE_LENGTH
 
@@ -32,10 +43,10 @@ export function CodexRenderer({ data }: BlockRendererProps) {
     <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl px-4 py-3 max-w-[80%] space-y-2">
       <div className="flex items-center gap-2">
         <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${isUnlock ? 'bg-amber-500/30 text-amber-300' : 'bg-muted text-muted-foreground'}`}>
-          {isUnlock ? '\u2728 New Discovery!' : '\u{1F504} Updated'}
+          {isUnlock ? `\u2728 ${t('codex.newDiscovery')}` : `\u{1F504} ${t('codex.updated')}`}
         </span>
         <span className="text-muted-foreground text-xs flex items-center gap-1">
-          {cat.icon} {cat.label}
+          {catIcon} {catKey ? t(catKey) : d.category}
         </span>
       </div>
       <p className="text-amber-200 font-medium">{d.title}</p>
@@ -46,7 +57,7 @@ export function CodexRenderer({ data }: BlockRendererProps) {
             onClick={() => setExpanded(!expanded)}
             className="ml-1 text-amber-400 hover:text-amber-300 text-xs underline"
           >
-            {expanded ? 'Collapse' : 'Expand'}
+            {expanded ? t('codex.collapse') : t('codex.expand')}
           </button>
         )}
       </p>

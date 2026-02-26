@@ -1,4 +1,5 @@
 import type { BlockRendererProps } from '../services/blockRenderers'
+import { useBlockI18n } from './i18n'
 
 interface ItemUpdateData {
   action: 'gain' | 'lose' | 'use' | 'equip' | 'unequip'
@@ -9,38 +10,39 @@ interface ItemUpdateData {
   stats?: Record<string, unknown>
 }
 
-const actionStyles: Record<string, { icon: string; label: string; color: string }> = {
-  gain: { icon: '📦', label: '获得', color: 'text-emerald-400' },
-  lose: { icon: '💨', label: '失去', color: 'text-red-400' },
-  use: { icon: '✨', label: '使用', color: 'text-cyan-400' },
-  equip: { icon: '🛡️', label: '装备', color: 'text-amber-400' },
-  unequip: { icon: '📤', label: '卸下', color: 'text-muted-foreground' },
+const actionStyles: Record<string, { icon: string; labelKey: 'action.gain' | 'action.lose' | 'action.use' | 'action.equip' | 'action.unequip'; color: string }> = {
+  gain: { icon: '📦', labelKey: 'action.gain', color: 'text-emerald-400' },
+  lose: { icon: '💨', labelKey: 'action.lose', color: 'text-red-400' },
+  use: { icon: '✨', labelKey: 'action.use', color: 'text-cyan-400' },
+  equip: { icon: '🛡️', labelKey: 'action.equip', color: 'text-amber-400' },
+  unequip: { icon: '📤', labelKey: 'action.unequip', color: 'text-muted-foreground' },
 }
 
-const typeLabels: Record<string, string> = {
-  weapon: '武器',
-  armor: '护甲',
-  consumable: '消耗品',
-  quest: '任务物品',
-  misc: '杂物',
-  currency: '货币',
-  material: '材料',
-  key: '钥匙',
+const typeKeys: Record<string, 'itemType.weapon' | 'itemType.armor' | 'itemType.consumable' | 'itemType.quest' | 'itemType.misc' | 'itemType.currency' | 'itemType.material' | 'itemType.key'> = {
+  weapon: 'itemType.weapon',
+  armor: 'itemType.armor',
+  consumable: 'itemType.consumable',
+  quest: 'itemType.quest',
+  misc: 'itemType.misc',
+  currency: 'itemType.currency',
+  material: 'itemType.material',
+  key: 'itemType.key',
 }
 
 export function ItemUpdateRenderer({ data }: BlockRendererProps) {
+  const { t } = useBlockI18n()
   const d = data as ItemUpdateData
   if (!d || !d.item_name) return null
 
   const style = actionStyles[d.action] || actionStyles.gain
-  const typeLabel = d.item_type ? typeLabels[d.item_type] || d.item_type : undefined
+  const typeLabel = d.item_type ? (typeKeys[d.item_type] ? t(typeKeys[d.item_type]) : d.item_type) : undefined
 
   return (
     <div className="bg-card border border-border/50 rounded-xl px-4 py-3 max-w-[80%] space-y-1">
       <div className="flex items-center gap-2">
         <span className="text-sm">{style.icon}</span>
         <span className={`text-sm font-medium ${style.color}`}>
-          {style.label}
+          {t(style.labelKey)}
         </span>
         <span className="text-sm font-medium">{d.item_name}</span>
         {d.quantity > 1 && (

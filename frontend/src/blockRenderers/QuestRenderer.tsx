@@ -1,4 +1,5 @@
 import type { BlockRendererProps } from '../services/blockRenderers'
+import { useBlockI18n } from './i18n'
 
 interface QuestObjective {
   id: string
@@ -22,28 +23,20 @@ interface QuestData {
   status: 'active' | 'completed' | 'failed'
 }
 
-const statusStyles: Record<string, { border: string; badge: string; badgeText: string; icon: string }> = {
-  active: {
-    border: 'border-cyan-700/50',
-    badge: 'bg-cyan-900/40 text-cyan-300',
-    badgeText: '\u8FDB\u884C\u4E2D',
-    icon: '\uD83D\uDCDC',
-  },
-  completed: {
-    border: 'border-emerald-700/50',
-    badge: 'bg-emerald-900/40 text-emerald-300',
-    badgeText: '\u5DF2\u5B8C\u6210',
-    icon: '\u2705',
-  },
-  failed: {
-    border: 'border-red-700/50',
-    badge: 'bg-red-900/40 text-red-300',
-    badgeText: '\u5DF2\u5931\u8D25',
-    icon: '\u274C',
-  },
-}
+const statusStyles = {
+  active: { border: 'border-cyan-700/50', badge: 'bg-cyan-900/40 text-cyan-300', icon: '\uD83D\uDCDC' },
+  completed: { border: 'border-emerald-700/50', badge: 'bg-emerald-900/40 text-emerald-300', icon: '\u2705' },
+  failed: { border: 'border-red-700/50', badge: 'bg-red-900/40 text-red-300', icon: '\u274C' },
+} as const
+
+const statusKeys = {
+  active: 'quest.active',
+  completed: 'quest.completed',
+  failed: 'quest.failed',
+} as const
 
 export function QuestRenderer({ data }: BlockRendererProps) {
+  const { t } = useBlockI18n()
   const d = data as QuestData
   if (!d) return null
 
@@ -59,7 +52,7 @@ export function QuestRenderer({ data }: BlockRendererProps) {
           <span className="text-sm font-medium">{d.title}</span>
         </div>
         <span className={`text-xs px-2 py-0.5 rounded-full ${style.badge}`}>
-          {style.badgeText}
+          {t(statusKeys[d.status] || statusKeys.active)}
         </span>
       </div>
 
@@ -70,7 +63,7 @@ export function QuestRenderer({ data }: BlockRendererProps) {
       {d.objectives && d.objectives.length > 0 && (
         <div className="space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-muted-foreground text-xs">{'\u76EE\u6807'}</span>
+            <span className="text-muted-foreground text-xs">{t('quest.objectives')}</span>
             <span className="text-muted-foreground text-xs">{completedCount}/{totalCount}</span>
           </div>
           {d.objectives.map((obj) => (
@@ -88,7 +81,7 @@ export function QuestRenderer({ data }: BlockRendererProps) {
 
       {d.rewards && (
         <div className="flex items-center gap-3 pt-1 border-t">
-          <span className="text-muted-foreground text-xs">{'\u5956\u52B1'}</span>
+          <span className="text-muted-foreground text-xs">{t('quest.rewards')}</span>
           {d.rewards.xp != null && (
             <span className="text-cyan-400 text-xs">{d.rewards.xp} XP</span>
           )}
