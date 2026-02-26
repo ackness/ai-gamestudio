@@ -9,6 +9,7 @@ export interface CodexEntry {
   tags?: string[]
   image_hint?: string
   _isNew?: boolean
+  _newAt?: number
 }
 
 interface CodexState {
@@ -18,6 +19,8 @@ interface CodexState {
   setSearchQuery: (q: string) => void
   fetchEntries: (projectId: string) => Promise<void>
   addEntry: (entry: CodexEntry) => void
+  markEntrySeen: (entryId: string) => void
+  markEntriesSeen: (entryIds: string[]) => void
   clearNewFlags: () => void
 }
 
@@ -33,7 +36,21 @@ export const useCodexStore = create<CodexState>((set, get) => ({
       const resp = await fetch(`/api/plugins/codex/${projectId}`)
       if (resp.ok) {
         const data = await resp.json()
-        set({ entries: data.entries || [], loading: false })
+        const incoming: unknown[] = Array.isArray(data.entries) ? data.entries : []
+        const prevMap = new Map(
+          get().entries.map((entry) => [entry.entry_id, entry] as const),
+        )
+        const merged = incoming
+          .filter((entry: unknown): entry is CodexEntry => !!entry && typeof entry === 'object')
+          .map((entry) => {
+            const previous = prevMap.get(entry.entry_id)
+            return {
+              ...entry,
+              _isNew: previous?._isNew === true,
+              _newAt: previous?._newAt,
+            }
+          })
+        set({ entries: merged, loading: false })
       } else {
         set({ loading: false })
       }
@@ -45,7 +62,7 @@ export const useCodexStore = create<CodexState>((set, get) => ({
   addEntry: (entry: CodexEntry) => {
     const entries = get().entries
     const idx = entries.findIndex((e) => e.entry_id === entry.entry_id)
-    const tagged = { ...entry, _isNew: true }
+    const tagged = { ...entry, _isNew: true, _newAt: Date.now() }
     if (idx >= 0) {
       const updated = [...entries]
       updated[idx] = tagged
@@ -55,7 +72,40 @@ export const useCodexStore = create<CodexState>((set, get) => ({
     }
   },
 
+  markEntrySeen: (entryId: string) => {
+    if (!entryId) return
+    set({
+      entries: get().entries.map((entry) =>
+        entry.entry_id === entryId
+          ? { ...entry, _isNew: false, _newAt: undefined }
+          : entry,
+      ),
+    })
+  },
+
+  markEntriesSeen: (entryIds: string[]) => {
+    const ids = new Set(
+      entryIds
+        .map((id) => String(id || '').trim())
+        .filter((id) => id.length > 0),
+    )
+    if (ids.size === 0) return
+    set({
+      entries: get().entries.map((entry) =>
+        ids.has(entry.entry_id)
+          ? { ...entry, _isNew: false, _newAt: undefined }
+          : entry,
+      ),
+    })
+  },
+
   clearNewFlags: () => {
-    set({ entries: get().entries.map((e) => ({ ...e, _isNew: false })) })
+    set({
+      entries: get().entries.map((entry) => ({
+        ...entry,
+        _isNew: false,
+        _newAt: undefined,
+      })),
+    })
   },
 }))

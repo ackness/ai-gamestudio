@@ -84,6 +84,7 @@ const texts = {
   'codex.updated': { zh: '已更新', en: 'Updated' },
   'codex.expand': { zh: '展开', en: 'Expand' },
   'codex.collapse': { zh: '收起', en: 'Collapse' },
+  'codex.viewInPanel': { zh: '已收录到图鉴，前往图鉴面板查看详情。', en: 'Saved to Codex. Open the Codex panel for details.' },
   'codex.monster': { zh: '怪物', en: 'Monster' },
   'codex.item': { zh: '物品', en: 'Item' },
   'codex.location': { zh: '地点', en: 'Location' },

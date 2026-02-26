@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import type { BlockRendererProps } from '../services/blockRenderers'
 import { useBlockI18n } from './i18n'
 
@@ -28,19 +27,15 @@ const categoryIcons: Record<string, string> = {
   character: '\u{1F464}',
 }
 
-const TRUNCATE_LENGTH = 120
-
 export function CodexRenderer({ data }: BlockRendererProps) {
   const { t } = useBlockI18n()
   const d = data as CodexEntryData
-  const [expanded, setExpanded] = useState(false)
   const catKey = categoryKeys[d.category as keyof typeof categoryKeys]
   const catIcon = categoryIcons[d.category] || categoryIcons.lore
   const isUnlock = d.action === 'unlock'
-  const needsTruncate = d.content.length > TRUNCATE_LENGTH
 
   return (
-    <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl px-4 py-3 max-w-[80%] space-y-2">
+    <div className="bg-amber-500/8 border border-amber-500/30 rounded-lg px-3 py-2.5 max-w-[72%] space-y-1.5">
       <div className="flex items-center gap-2">
         <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${isUnlock ? 'bg-amber-500/30 text-amber-300' : 'bg-muted text-muted-foreground'}`}>
           {isUnlock ? `\u2728 ${t('codex.newDiscovery')}` : `\u{1F504} ${t('codex.updated')}`}
@@ -49,27 +44,8 @@ export function CodexRenderer({ data }: BlockRendererProps) {
           {catIcon} {catKey ? t(catKey) : d.category}
         </span>
       </div>
-      <p className="text-amber-200 font-medium">{d.title}</p>
-      <p className="text-foreground/80 text-sm">
-        {needsTruncate && !expanded ? d.content.slice(0, TRUNCATE_LENGTH) + '...' : d.content}
-        {needsTruncate && (
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="ml-1 text-amber-400 hover:text-amber-300 text-xs underline"
-          >
-            {expanded ? t('codex.collapse') : t('codex.expand')}
-          </button>
-        )}
-      </p>
-      {d.tags && d.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {d.tags.map((tag) => (
-            <span key={tag} className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded">
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
+      <p className="text-foreground text-sm font-medium truncate">{d.title}</p>
+      <p className="text-[11px] text-muted-foreground">{t('codex.viewInPanel')}</p>
     </div>
   )
 }
