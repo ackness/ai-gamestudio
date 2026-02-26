@@ -15,8 +15,8 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class GameLog(SQLModel, table=True):
-    __tablename__ = "game_log"
+class StorageLog(SQLModel, table=True):
+    __tablename__ = "game_log"  # keep table name for DB compat
     __table_args__ = (
         Index("ix_game_log_session_collection_created", "session_id", "collection", "created_at"),
     )
