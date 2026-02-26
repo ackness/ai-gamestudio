@@ -73,14 +73,21 @@ class _ToolContext:
             self.game_db = None
 
 
-def _build_call_kwargs(config: ResolvedLlmConfig, messages: list, tools: list) -> dict:
+def _build_call_kwargs(config: ResolvedLlmConfig, messages: list, tools: list, *, reasoning_effort: str | None = "none") -> dict:
     kw: dict[str, Any] = {
         "model": config.model,
         "messages": messages,
         "tools": tools,
         "tool_choice": "auto",
         "stream": False,
+        "drop_params": True,  # auto-drop unsupported params across providers
     }
+    # Reasoning control: default "none" disables thinking for plugin calls
+    enable_thinking = bool(reasoning_effort and reasoning_effort != "none")
+    if enable_thinking:
+        kw["reasoning_effort"] = reasoning_effort
+    # Also pass enable_thinking via extra_body for OpenAI-compatible APIs (Qwen, etc.)
+    kw["extra_body"] = {"enable_thinking": enable_thinking}
     if not config.is_empty_key():
         kw["api_key"] = config.api_key
     if config.api_base:
@@ -295,7 +302,7 @@ async def _handle_emit(args: dict, ctx: _ToolContext) -> dict:
     strict_errors: list[str] = []
     ignored: list[str] = []
     if items and enforce_declared_types and not declared_output_types:
-        ignored.append("plugin declares no outputs; all emitted items were ignored")
+        strict_errors.append("plugin declares no outputs; do NOT call emit with items")
     for idx, item in enumerate(items):
         try:
             output_item = _build_output_item(
@@ -310,7 +317,9 @@ async def _handle_emit(args: dict, ctx: _ToolContext) -> dict:
 
         output_type = str(output_item.get("type") or "")
         if enforce_declared_types and output_type not in declared_output_types:
-            ignored.append(f"undeclared output type: {output_type}")
+            strict_errors.append(
+                f"undeclared output type: {output_type}; allowed types: {sorted(declared_output_types) if declared_output_types else 'none'}"
+            )
             continue
 
         data = output_item.get("data")

@@ -133,6 +133,7 @@ async def run_plugin_agent(
     on_progress: ProgressCallback | None = None,
     trigger_counts: dict[str, int] | None = None,
     session_language: str | None = None,
+    reasoning_effort: str | None = "none",
 ) -> tuple[list[dict], dict[str, Any]]:
     """Run enabled plugins in parallel after narrative completes."""
     plugins_dir = plugins_dir or settings.PLUGINS_DIR
@@ -225,7 +226,7 @@ async def run_plugin_agent(
         _run_one_plugin(
             plugin_info=pi, context_text=context_text, session_id=session_id,
             game_db=game_db, pe=pe, config=config, plugins_dir=plugins_dir,
-            on_progress=on_progress,
+            on_progress=on_progress, reasoning_effort=reasoning_effort,
         )
         for pi in plugins_to_run
     ]
@@ -287,6 +288,7 @@ async def _run_one_plugin(
     config: ResolvedLlmConfig,
     plugins_dir: str,
     on_progress: ProgressCallback | None = None,
+    reasoning_effort: str | None = "none",
 ) -> tuple[list[dict], int, list[str], dict[str, Any]]:
     """Run a single plugin's LLM call.
 
@@ -368,7 +370,7 @@ async def _run_one_plugin(
 
     for round_idx in range(MAX_TOOL_ROUNDS):
         total_rounds = round_idx + 1
-        call_kwargs = _build_call_kwargs(config, messages, tools)
+        call_kwargs = _build_call_kwargs(config, messages, tools, reasoning_effort=reasoning_effort)
         try:
             response = await litellm.acompletion(**call_kwargs)
         except Exception:
