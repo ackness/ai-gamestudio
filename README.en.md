@@ -1,14 +1,14 @@
 # AI GameStudio (English)
 
-> Build worlds in Markdown, play via chat, and run stable RPG mechanics through plugins.
+> Build worlds in Markdown, play via chat, run RPG mechanics through plugins.
 
-## Highlights
+## Core Features
 
-- Dual-LLM architecture: narrative model + plugin agent.
-- Plugin Spec v1 only: `manifest.json + PLUGIN.md`, `schema_version=1.0`.
-- Fixed tool contract (6 tools: `emit`, `db_read`, `db_log_append`, `db_log_query`, `db_graph_add`, `execute_script`), no legacy version branches.
-- Persistent game state: characters, scenes, events, plugin storage.
-- Long-session support: memory, archive, auto-compression.
+- Dual-model architecture: narrative LLM + plugin agent
+- Plugin Spec v1: `manifest.json + PLUGIN.md`, `schema_version=1.0`
+- Unified tool contract: 6 tools (`emit`, `db_read`, `db_log_append`, `db_log_query`, `db_graph_add`, `execute_script`)
+- Persistent state: characters, scenes, events, plugin storage
+- Long-session support: memory, archive, auto-compression
 
 ## Built-in Plugins
 

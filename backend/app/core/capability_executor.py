@@ -33,12 +33,14 @@ class CapabilityExecutor:
         enabled_plugins: list[str],
         audit_logger: AuditLogger | None = None,
         script_factory: ScriptRunnerFactory | None = None,
+        session_id: str = "",
     ) -> None:
         self._engine = plugin_engine
         self._plugins_dir = plugins_dir
         self._enabled = set(enabled_plugins)
-        self._audit = audit_logger or AuditLogger()
+        self._audit = audit_logger
         self._script_factory = script_factory or create_default_factory(self._audit)
+        self._session_id = session_id
 
     async def execute(
         self,
@@ -163,6 +165,7 @@ class CapabilityExecutor:
             timeout_ms=timeout_ms,
             plugin_name=plugin_name,
             capability_id=capability_id,
+            session_id=self._session_id,
         )
 
         if result.exit_code != 0:

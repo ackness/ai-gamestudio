@@ -2,28 +2,28 @@
 
 [中文（当前）](README.md) | [English](README.en.md)
 
-> 把世界观写成 Markdown，把剧情玩成一款“可持续更新”的文字 RPG。
+> 用 Markdown 构建世界观，用对话推进剧情，用插件驱动 RPG 机制。
 
 ![image.png](.assets/image.png)
 
-## 为什么是 AI GameStudio
+## 为什么做这个项目
 
-多数 AI RPG 项目只能“会讲故事”，但难以“稳定维护游戏状态”。
+大多数 AI RPG 项目擅长讲故事，但很难稳定维护游戏状态。
 
-AI GameStudio 的核心不是单次回复，而是**持续可玩的回合系统**：
+AI GameStudio 的重点不是单次对话，而是**可持续运行的回合制系统**：
 
-- 主 LLM 专注叙事质量
-- Plugin Agent 负责机制执行（战斗、状态、任务、图鉴、图片等）
-- 所有机制都走统一插件规范 v1（`manifest.json + PLUGIN.md`）
+- 主 LLM 负责叙事内容
+- Plugin Agent 负责游戏机制（战斗、状态、任务、图鉴、图片等）
+- 所有机制通过统一的插件规范 v1 实现（`manifest.json + PLUGIN.md`）
 
-## 亮点
+## 核心特点
 
-- 双模型编排：叙事与机制解耦，互不干扰。
-- 插件系统 v1：单一 schema、单一工具契约、无多版本分叉。
-- 强状态一致性：角色/场景/事件/插件存储持久化。
-- 可视化 block 管线：LLM 输出结构化 block，前端实时渲染。
-- 长会话可维护：memory 插件提供归档与压缩。
-- 低门槛扩展：新增插件即扩展玩法，不改主流程。
+- 双模型架构：叙事和机制分离，各司其职
+- 插件系统 v1：统一 schema、统一工具契约、无版本分支
+- 状态持久化：角色、场景、事件、插件存储全部落库
+- 结构化输出：LLM 生成 block，前端实时渲染
+- 长会话支持：memory 插件提供归档和压缩功能
+- 易于扩展：新增插件即可扩展玩法，无需修改主流程
 
 ## 内置插件（10 个）
 
@@ -40,14 +40,14 @@ AI GameStudio 的核心不是单次回复，而是**持续可玩的回合系统*
 | `inventory` | rpg-mechanics | gameplay | 物品与装备系统 |
 | `social` | rpg-mechanics | gameplay | 关系与声望系统 |
 
-## 3 分钟快速启动
+## 快速开始
 
-### 1) 准备环境
+### 环境准备
 
 - [mise](https://mise.jdx.dev/)
 - 一个可用的 LLM API Key（LiteLLM 兼容）
 
-### 2) 安装与运行
+### 安装运行
 
 ```bash
 git clone https://github.com/ackness/ai-gamestudio
@@ -68,7 +68,7 @@ mise run dev:frontend
 
 打开 `http://localhost:5173`。
 
-### 3) 最小 .env
+### 最小配置
 
 ```env
 LLM_MODEL=deepseek/deepseek-chat
@@ -76,7 +76,7 @@ LLM_API_KEY=your-key
 LLM_API_BASE=https://api.deepseek.com
 ```
 
-## 插件规范 v1（当前唯一版本）
+## 插件规范 v1
 
 ### 目录结构
 
@@ -115,7 +115,7 @@ plugins/
 mise run plugin:validate
 ```
 
-### 插件 Agent 测试脚本（你提到的脚本）
+### 插件 Agent 测试
 
 ```bash
 # 列出可测试插件

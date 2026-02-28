@@ -159,7 +159,11 @@ def test_ssrf_dns_rebinding_blocked():
 
     # Mock getaddrinfo to return 127.0.0.1 for a public-looking hostname
     fake_result = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 0))]
-    with patch("backend.app.core.network_safety.socket.getaddrinfo", return_value=fake_result):
+    with patch("backend.app.core.network_safety.socket.getaddrinfo", return_value=fake_result), \
+         patch("backend.app.core.network_safety.settings") as mock_settings:
+        mock_settings.API_BASE_ALLOW_HTTP = False
+        mock_settings.API_BASE_ALLOW_PRIVATE_NET = False
+        mock_settings.API_BASE_ALLOWED_HOSTS = []
         with pytest.raises(ApiBaseValidationError, match="DNS resolved to"):
             ensure_safe_api_base("https://evil.example.com", purpose="test")
 

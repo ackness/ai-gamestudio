@@ -1,18 +1,16 @@
-"""AuditLogger: JSON-lines audit trail for plugin capability invocations.
-
-Appends structured entries to daily files in data/audit/.
-"""
+"""AuditLogger: database-backed audit trail for plugin capability invocations."""
 from __future__ import annotations
 
 import json
-import pathlib
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
 from loguru import logger
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-_DEFAULT_AUDIT_DIR = "data/audit"
+from backend.app.models.audit_log import AuditLog
 
 
 @dataclass
@@ -34,60 +32,52 @@ class AuditEntry:
 
 
 class AuditLogger:
-    """Append-only JSON-lines logger for plugin invocations."""
+    """Database-backed audit logger for plugin invocations."""
 
-    def __init__(self, audit_dir: str | None = None) -> None:
-        self._audit_dir = pathlib.Path(audit_dir or _DEFAULT_AUDIT_DIR)
+    def __init__(self, db: AsyncSession) -> None:
+        self._db = db
 
-    def _ensure_dir(self) -> None:
-        self._audit_dir.mkdir(parents=True, exist_ok=True)
-
-    def _daily_file(self) -> pathlib.Path:
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        return self._audit_dir / f"audit_{today}.jsonl"
-
-    def log(self, entry: AuditEntry) -> None:
-        """Append an audit entry to today's log file."""
+    async def log(self, entry: AuditEntry, *, session_id: str) -> None:
+        """Persist an audit entry to the database."""
         try:
-            self._ensure_dir()
-            line = json.dumps(asdict(entry), ensure_ascii=False) + "\n"
-            with open(self._daily_file(), "a", encoding="utf-8") as f:
-                f.write(line)
+            audit_log = AuditLog(
+                session_id=session_id,
+                invocation_id=entry.invocation_id,
+                plugin_name=entry.plugin,
+                capability=entry.capability,
+                script_path=entry.script,
+                args_json=json.dumps(entry.args, ensure_ascii=False),
+                exit_code=entry.exit_code,
+                duration_ms=entry.duration_ms,
+                stdout=entry.stdout[:2000],
+                stderr=entry.stderr[:2000],
+            )
+            self._db.add(audit_log)
+            await self._db.commit()
         except Exception:
             logger.warning("Failed to write audit entry for {}.{}", entry.plugin, entry.capability)
+            await self._db.rollback()
 
-    def query(
+    async def query(
         self,
         *,
+        session_id: str | None = None,
         plugin: str | None = None,
+        exit_code: int | None = None,
         limit: int = 100,
-    ) -> list[dict[str, Any]]:
-        """Read recent audit entries, optionally filtered by plugin name."""
-        entries: list[dict[str, Any]] = []
+        offset: int = 0,
+    ) -> list[AuditLog]:
+        """Query audit logs with optional filters."""
+        stmt = select(AuditLog)
 
-        if not self._audit_dir.is_dir():
-            return entries
+        if session_id:
+            stmt = stmt.where(AuditLog.session_id == session_id)
+        if plugin:
+            stmt = stmt.where(AuditLog.plugin_name == plugin)
+        if exit_code is not None:
+            stmt = stmt.where(AuditLog.exit_code == exit_code)
 
-        # Read files in reverse chronological order
-        files = sorted(self._audit_dir.glob("audit_*.jsonl"), reverse=True)
-        for f in files:
-            if len(entries) >= limit:
-                break
-            try:
-                lines = f.read_text(encoding="utf-8").strip().split("\n")
-                for line in reversed(lines):
-                    if len(entries) >= limit:
-                        break
-                    if not line.strip():
-                        continue
-                    try:
-                        entry = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if plugin and entry.get("plugin") != plugin:
-                        continue
-                    entries.append(entry)
-            except OSError:
-                continue
+        stmt = stmt.order_by(AuditLog.created_at.desc()).limit(limit).offset(offset)
 
-        return entries
+        result = await self._db.exec(stmt)
+        return list(result.all())
