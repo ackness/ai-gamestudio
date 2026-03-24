@@ -3,9 +3,18 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+DEFAULT_API_BASE_ALLOWED_HOSTS = [
+    "api.openai.com",
+    "openrouter.ai",
+    "api.deepseek.com",
+    "api.anthropic.com",
+    "dashscope.aliyuncs.com",
+]
 
 
 class Settings(BaseSettings):
@@ -29,8 +38,10 @@ class Settings(BaseSettings):
     IMAGE_GEN_API_BASE: str | None = None
     API_BASE_ALLOW_HTTP: bool = False
     API_BASE_ALLOW_PRIVATE_NET: bool = False
-    API_BASE_ALLOWED_HOSTS: list[str] = []
-    CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+    API_BASE_ALLOWED_HOSTS: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: DEFAULT_API_BASE_ALLOWED_HOSTS.copy()
+    )
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     ACCESS_KEY: str | None = None  # if set, all API requests must include X-Access-Key header
     PLUGINS_DIR: str = "plugins"
     TEMPLATES_DIR: str = "templates/worlds"

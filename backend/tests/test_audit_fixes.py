@@ -168,6 +168,33 @@ def test_ssrf_dns_rebinding_blocked():
             ensure_safe_api_base("https://evil.example.com", purpose="test")
 
 
+def test_default_allowed_hosts_bypass_fake_ip_dns_block():
+    from backend.app.core.config import DEFAULT_API_BASE_ALLOWED_HOSTS
+    from backend.app.core.network_safety import ensure_safe_api_base
+
+    fake_result = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.4.254", 0))]
+    with patch("backend.app.core.network_safety.socket.getaddrinfo", return_value=fake_result), \
+         patch("backend.app.core.network_safety.settings") as mock_settings:
+        mock_settings.API_BASE_ALLOW_HTTP = False
+        mock_settings.API_BASE_ALLOW_PRIVATE_NET = False
+        mock_settings.API_BASE_ALLOWED_HOSTS = DEFAULT_API_BASE_ALLOWED_HOSTS
+        assert ensure_safe_api_base("https://api.openai.com/v1", purpose="test") == "https://api.openai.com/v1"
+
+
+def test_whatai_not_in_default_allowed_hosts():
+    from backend.app.core.config import DEFAULT_API_BASE_ALLOWED_HOSTS
+    from backend.app.core.network_safety import ensure_safe_api_base, ApiBaseValidationError
+
+    fake_result = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.4.253", 0))]
+    with patch("backend.app.core.network_safety.socket.getaddrinfo", return_value=fake_result), \
+         patch("backend.app.core.network_safety.settings") as mock_settings:
+        mock_settings.API_BASE_ALLOW_HTTP = False
+        mock_settings.API_BASE_ALLOW_PRIVATE_NET = False
+        mock_settings.API_BASE_ALLOWED_HOSTS = DEFAULT_API_BASE_ALLOWED_HOSTS
+        with pytest.raises(ApiBaseValidationError, match="DNS resolved to"):
+            ensure_safe_api_base("https://api.whatai.cc", purpose="test")
+
+
 # ---------------------------------------------------------------------------
 # M4: Prompt injection — system role prefix downgraded to user
 # ---------------------------------------------------------------------------

@@ -219,8 +219,8 @@ function AuditLogDetailPanel({ row }: { row: TableData }) {
         </span>
       </div>
       <MetadataSection title="参数 Args" data={args} />
-      {row.stdout && <MetadataSection title="标准输出 stdout" data={row.stdout} defaultOpen />}
-      {row.stderr && <MetadataSection title="标准错误 stderr" data={row.stderr} />}
+      {Boolean(row.stdout) && <MetadataSection title="标准输出 stdout" data={row.stdout} defaultOpen />}
+      {Boolean(row.stderr) && <MetadataSection title="标准错误 stderr" data={row.stderr} />}
     </div>
   )
 }
